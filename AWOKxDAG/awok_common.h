@@ -14,6 +14,7 @@
 #include <XPT2046_Touchscreen.h>
 #include <TinyGPSPlus.h>
 #include <esp_wifi.h>
+#include <esp_system.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <string>
@@ -25,13 +26,18 @@ constexpr int kScreenWidth = 240;
 constexpr int kScreenHeight = 320;
 constexpr int kHeaderHeight = 42;
 constexpr int kFooterTop = 278;
-constexpr int kMaxResults = 24;
+constexpr int kMaxWifiResults = 72;
+constexpr int kMaxBleResults = 24;
 constexpr int kVisibleRows = 10;
 constexpr int kMaxSaved = 10;
 constexpr uint32_t kBleScanMs = 5000;
 constexpr uint32_t kBootScreenMs = 1800;
 constexpr uint32_t kSdClockHz = 10000000;
 constexpr char kSdDirectory[] = "/awokxdag";
+constexpr char kFirmwareAuditCsvPath[] = "/awokxdag/firmware_audit.csv";
+constexpr char kFirmwareAuditPreviousCsvPath[] =
+    "/awokxdag/firmware_audit.previous.csv";
+constexpr uint32_t kFirmwareAuditMaxBytes = 256 * 1024;
 constexpr char kSavedCsvPath[] = "/awokxdag/saved_networks.csv";
 constexpr char kScanCsvPath[] = "/awokxdag/latest_wifi_scan.csv";
 constexpr char kBleScanCsvPath[] = "/awokxdag/latest_ble_scan.csv";
@@ -56,9 +62,8 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.1.0";
+constexpr char kVersion[] = "1.1.1";
 constexpr char kAuthor[] = "dag nazty";
-constexpr char kHandshakePcapPath[] = "/awokxdag/latest_handshake.pcap";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
 constexpr int kCaptureSlotBytes = 256;
@@ -139,6 +144,97 @@ constexpr uint32_t kAuthFloodRedrawMs = 500;
 constexpr uint32_t kAuthFloodHopIntervalMs = 250;
 constexpr uint32_t kAuthFloodThreshold = 30;  // auth/assoc frames / window
 
+// Advanced Watch: shared passive Wi-Fi/BLE anomaly detector.
+constexpr char kAdvancedWatchLogCsvPath[] = "/awokxdag/advanced_watch.csv";
+constexpr int kAdvancedHitQueueSlots = 64;
+constexpr int kAdvancedBleQueueSlots = 32;
+constexpr int kAdvancedMaxAps = 32;
+constexpr int kAdvancedMaxDisconnectGroups = 8;
+constexpr int kAdvancedMaxBleFingerprints = 16;
+constexpr uint32_t kAdvancedWindowMs = 2000;
+constexpr uint32_t kAdvancedRedrawMs = 500;
+constexpr uint32_t kAdvancedHopIntervalMs = 300;
+constexpr uint32_t kAdvancedDisconnectThreshold = 20;
+constexpr uint32_t kAdvancedEapolThreshold = 16;
+constexpr uint32_t kAdvancedAssocThreshold = 30;
+constexpr uint32_t kAdvancedCsaThreshold = 8;
+constexpr int kAdvancedNoiseRiseDb = 15;
+constexpr int kAdvancedNoiseFloorMinDbm = -80;
+constexpr uint32_t kAdvancedBleChurnWindowMs = 15000;
+constexpr int kAdvancedBleChurnAddresses = 5;
+
+enum AdvancedHitKind : uint8_t {
+  kAdvancedBeaconHit = 1,
+  kAdvancedDisconnectHit = 2,
+  kAdvancedEapolHit = 3,
+  kAdvancedAssocHit = 4
+};
+
+struct AdvancedHit {
+  uint8_t kind = 0;
+  uint8_t subtype = 0;
+  uint8_t source[6] = {0};
+  uint8_t target[6] = {0};
+  uint8_t channel = 0;
+  int8_t rssi = -127;
+  int8_t noise = -127;
+  uint16_t reason = 0;
+  uint16_t beaconInterval = 0;
+  uint32_t fingerprint = 0;
+  uint8_t security = 0;
+  uint8_t pmf = 0;
+  uint8_t wps = 0;
+  uint8_t csaChannel = 0;
+  uint8_t ssidLen = 0;
+  char ssid[33] = {0};
+};
+
+struct AdvancedApEntry {
+  uint8_t bssid[6] = {0};
+  String ssid;
+  uint8_t channel = 0;
+  int8_t rssi = -127;
+  uint16_t beaconInterval = 0;
+  uint32_t fingerprint = 0;
+  uint8_t security = 0;
+  uint8_t pmf = 0;
+  uint8_t wps = 0;
+  uint32_t lastSeenMs = 0;
+  bool savedDowngradeLogged = false;
+  uint32_t pendingKey = 0;
+  uint8_t pendingCount = 0;
+  uint8_t pendingChannel = 0;
+  uint16_t pendingBeaconInterval = 0;
+  uint32_t pendingFingerprint = 0;
+  uint8_t pendingSecurity = 0;
+  uint8_t pendingPmf = 0;
+  uint8_t pendingWps = 0;
+  char pendingSsid[33] = {0};
+};
+
+struct AdvancedDisconnectGroup {
+  uint8_t source[6] = {0};
+  uint8_t target[6] = {0};
+  uint16_t reason = 0;
+  uint32_t count = 0;
+};
+
+struct AdvancedBleHit {
+  char address[18] = {0};
+  uint32_t fingerprint = 0;
+  int8_t rssi = -127;
+};
+
+struct AdvancedBleFingerprint {
+  uint32_t fingerprint = 0;
+  char addresses[kAdvancedBleChurnAddresses + 2][18] = {{0}};
+  uint8_t addressCount = 0;
+  int8_t lastRssi = -127;
+  uint32_t firstSeenMs = 0;
+  uint32_t lastSeenMs = 0;
+  bool alerted = false;
+};
+
 constexpr uint16_t kBackground = ILI9341_BLACK;
 constexpr uint16_t kPanel = 0x1082;
 constexpr uint16_t kAccent = ILI9341_CYAN;
@@ -146,6 +242,12 @@ constexpr uint16_t kMuted = 0x7BEF;
 constexpr uint16_t kGood = ILI9341_GREEN;
 constexpr uint16_t kWarn = ILI9341_YELLOW;
 constexpr uint16_t kBad = ILI9341_RED;
+
+// Persistent operational audit trail. Details are CSV-escaped by the writer;
+// callers must not put captured passwords or other secrets in this log.
+bool initializeFirmwareAudit();
+bool recordFirmwareAudit(const char* category, const char* action,
+                         const char* outcome, const String& details);
 
 enum class View {
   kHome,
@@ -184,7 +286,8 @@ enum class View {
   kProbeIntel,
   kKarmaWatch,
   kBeaconWatch,
-  kAuthFlood
+  kAuthFlood,
+  kAdvancedWatch
 };
 
 // A suspected surveillance camera found by the camera scan.

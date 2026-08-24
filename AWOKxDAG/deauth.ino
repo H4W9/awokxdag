@@ -150,6 +150,8 @@ void startDeauthMonitor() {
 
   deauthLogReady = startDeauthLog();
   deauthMonitorActive = true;
+  recordFirmwareAudit("monitor", "deauth_watch_start", "success",
+                      deauthLogReady ? "sd_log=ready" : "sd_log=unavailable");
   drawDeauthMonitor();
 }
 
@@ -158,6 +160,10 @@ void stopDeauthMonitor() {
   esp_wifi_set_promiscuous(false);
   WiFi.mode(WIFI_MODE_STA);
   WiFi.disconnect(true, false);
+  recordFirmwareAudit(
+      "monitor", "deauth_watch_stop", "success",
+      "deauth=" + String(deauthFrameCount) +
+          "; disassoc=" + String(disassocFrameCount));
   Serial.println("[deauth] stopped detection monitor");
 }
 
@@ -208,6 +214,16 @@ int deauthTargetIndexOf(const String& bssid) {
     if (macToString(deauthTargets[i].bssid).equalsIgnoreCase(bssid)) return i;
   }
   return -1;
+}
+
+String deauthTargetAuditDetails() {
+  String details = "targets=" + String(deauthTargetCount);
+  for (int i = 0; i < deauthTargetCount; ++i) {
+    details += "; bssid" + String(i + 1) + "=" +
+               macToString(deauthTargets[i].bssid) + "@ch" +
+               String(deauthTargets[i].channel);
+  }
+  return details;
 }
 
 bool addDeauthTarget(const WifiEntry& entry) {
@@ -378,6 +394,8 @@ void startDeauthAttack() {
   WiFi.mode(WIFI_MODE_STA);
   esp_wifi_set_ps(WIFI_PS_NONE);
   deauthAttackActive = true;
+  recordFirmwareAudit("active_test", "deauth_start", "success",
+                      deauthTargetAuditDetails());
   Serial.printf("[deauth] transmitting against %d target(s)\n",
                 deauthTargetCount);
   drawDeauthAttack();
@@ -387,6 +405,9 @@ void stopDeauthAttack() {
   deauthAttackActive = false;
   WiFi.mode(WIFI_MODE_STA);
   WiFi.disconnect(true, false);
+  recordFirmwareAudit("active_test", "deauth_stop", "success",
+                      deauthTargetAuditDetails() +
+                          "; frames=" + String(deauthFramesSent));
   Serial.printf("[deauth] stopped after %lu frame(s)\n",
                 static_cast<unsigned long>(deauthFramesSent));
 }
@@ -403,4 +424,3 @@ void updateDeauthAttack() {
     drawDeauthAttack();
   }
 }
-

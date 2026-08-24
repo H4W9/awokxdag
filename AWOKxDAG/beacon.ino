@@ -111,6 +111,8 @@ void startBeaconFlood() {
   esp_wifi_set_ps(WIFI_PS_NONE);
   esp_wifi_set_channel(kBeaconChannels[0], WIFI_SECOND_CHAN_NONE);
   beaconFloodActive = true;
+  recordFirmwareAudit("active_test", "beacon_flood_start", "success",
+                      "channels=1,6,11");
   Serial.println("[beacon] flood started");
   drawBeaconFlood();
 }
@@ -119,6 +121,8 @@ void stopBeaconFlood() {
   beaconFloodActive = false;
   WiFi.mode(WIFI_MODE_STA);
   WiFi.disconnect(true, false);
+  recordFirmwareAudit("active_test", "beacon_flood_stop", "success",
+                      "frames=" + String(beaconFramesSent));
   Serial.printf("[beacon] stopped after %lu frame(s)\n",
                 static_cast<unsigned long>(beaconFramesSent));
 }
@@ -141,4 +145,3 @@ void updateBeaconFlood() {
     drawBeaconFlood();
   }
 }
-

@@ -142,6 +142,11 @@ void startEvilPortal() {
   portalServer.begin();
   portalLogReady = openPortalLog();
   evilPortalActive = true;
+  recordFirmwareAudit(
+      "active_test", "captive_portal_start", "success",
+      "ssid=" + portalSsid +
+          "; credential_log=" +
+          (portalLogReady ? String("ready") : String("unavailable")));
   Serial.printf("[portal] AP '%s' up at %s\n", portalSsid.c_str(),
                 portalIp.toString().c_str());
   drawEvilPortal();
@@ -167,6 +172,9 @@ void stopEvilPortal() {
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_MODE_STA);
   WiFi.disconnect(true, false);
+  recordFirmwareAudit("active_test", "captive_portal_stop", "success",
+                      "ssid=" + portalSsid +
+                          "; submissions=" + String(portalCredsCount));
   Serial.println("[portal] stopped");
 }
 
@@ -180,4 +188,3 @@ void updateEvilPortal() {
     drawEvilPortal();
   }
 }
-

@@ -107,8 +107,9 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kWifi && y >= 44 && y < 264) {
-    const int index = (y - 44) / 22;
-    if (index < min(wifiCount, kVisibleRows)) {
+    const int row = (y - 44) / 22;
+    const int index = wifiPage * kVisibleRows + row;
+    if (row < kVisibleRows && index < wifiCount) {
       openWifiAudit(wifiEntries[index], View::kWifi);
     }
     return;
@@ -258,6 +259,16 @@ void handleTouch() {
     }
     return;
   }
+  if (currentView == View::kAdvancedWatch) {
+    if (x < kScreenWidth / 2) {
+      stopAdvancedWatch();
+      drawMonitorMenu();
+    } else {
+      resetAdvancedWatch();
+      drawAdvancedWatch();
+    }
+    return;
+  }
   if (currentView == View::kDeauthMonitor) {
     if (x < kScreenWidth / 2) {
       stopDeauthMonitor();
@@ -295,6 +306,9 @@ void handleTouch() {
       drawWifiAudit();
     } else {
       handshakePulseEnabled = !handshakePulseEnabled;
+      recordFirmwareAudit(
+          "active_test", "handshake_deauth_pulse", "success",
+          handshakePulseEnabled ? "enabled" : "disabled");
       drawHandshake();
     }
     return;
@@ -380,7 +394,11 @@ void handleTouch() {
     } else {
       portalCredsCount = 0;
       lastPortalCred = "";
-      SD.remove(kPortalCredsPath);
+      const bool removed = !SD.exists(kPortalCredsPath) ||
+                           SD.remove(kPortalCredsPath);
+      recordFirmwareAudit("storage", "portal_submission_log_clear",
+                          removed ? "success" : "failed",
+                          String("path=") + kPortalCredsPath);
       portalLogReady = openPortalLog();
       drawEvilPortal();
     }
@@ -399,12 +417,29 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kWifi) {
-    if (x < 80) {
-      drawHome();
-    } else if (x < 160) {
-      drawDeauthSelect();
+    const int pages = max(1, (wifiCount + kVisibleRows - 1) / kVisibleRows);
+    if (pages > 1) {
+      if (x < 48) {
+        drawHome();
+      } else if (x < 96) {
+        wifiPage = (wifiPage - 1 + pages) % pages;
+        drawWifiResults();
+      } else if (x < 144) {
+        wifiPage = (wifiPage + 1) % pages;
+        drawWifiResults();
+      } else if (x < 192) {
+        drawDeauthSelect();
+      } else {
+        scanWifi();
+      }
     } else {
-      scanWifi();
+      if (x < 80) {
+        drawHome();
+      } else if (x < 160) {
+        drawDeauthSelect();
+      } else {
+        scanWifi();
+      }
     }
     return;
   }
@@ -482,7 +517,7 @@ void handleSerial() {
       hiddenRevealActive || cameraActive || bleDetectActive ||
       probeLureActive || securityAuditActive || trackerScanActive ||
       harvesterActive || probeIntelActive || karmaWatchActive ||
-      beaconWatchActive || authFloodActive) {
+      beaconWatchActive || authFloodActive || advancedWatchActive) {
     if (command == 'h') {
       if (deauthAttackActive) stopDeauthAttack();
       if (deauthMonitorActive) stopDeauthMonitor();
@@ -505,6 +540,7 @@ void handleSerial() {
       if (karmaWatchActive) stopKarmaWatch();
       if (beaconWatchActive) stopBeaconWatch();
       if (authFloodActive) stopAuthFlood();
+      if (advancedWatchActive) stopAdvancedWatch();
       drawHome();
     }
     return;
@@ -534,6 +570,8 @@ void handleSerial() {
   if (command == 'd') {
     initializeSdCard();
     if (sdReady) {
+      initializeFirmwareAudit();
+      recordFirmwareAudit("system", "sd_retry", "success", "card mounted");
       lastSavedSdWriteOk = exportSavedNetworksToSd();
       if (wifiCount) lastScanSdWriteOk = exportWifiScanToSd();
       if (bleCount) lastBleScanSdWriteOk = exportBleScanToSd();
@@ -542,4 +580,3 @@ void handleSerial() {
   }
   if (command == 'h') drawHome();
 }
-

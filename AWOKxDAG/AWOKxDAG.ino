@@ -13,12 +13,13 @@ Adafruit_ILI9341 display(&SPI, AwokPins::kDisplayDc, AwokPins::kDisplayCs,
                          AwokPins::kDisplayReset);
 XPT2046_Touchscreen touch(AwokPins::kTouchCs);
 
-WifiEntry wifiEntries[kMaxResults];
+WifiEntry wifiEntries[kMaxWifiResults];
 WifiEntry savedEntries[kMaxSaved];
-BleEntry bleEntries[kMaxResults];
+BleEntry bleEntries[kMaxBleResults];
 WifiEntry selectedWifi;
 BleEntry selectedBle;
 int wifiCount = 0;
+int wifiPage = 0;
 int savedCount = 0;
 int bleCount = 0;
 View currentView = View::kHome;
@@ -41,6 +42,7 @@ bool probeIntelActive = false;     // probe-request SSID map (probeintel.ino)
 bool karmaWatchActive = false;     // Karma/Pineapple watch (karmawatch.ino)
 bool beaconWatchActive = false;    // beacon-flood watch (state in beaconwatch.ino)
 bool authFloodActive = false;      // auth/assoc flood watch (authflood.ino)
+bool advancedWatchActive = false;  // combined Wi-Fi/BLE anomaly watch
 // SD export status for the new recon tabs (read by input.ino, which is
 // concatenated before those tabs, so the flags must live in the main sketch).
 bool lastAuditCsvOk = false;
@@ -104,6 +106,7 @@ bool handshakePulseEnabled = true;
 uint8_t handshakeChannel = 0;
 uint8_t handshakeTargetBssid[6] = {0};
 String handshakeTargetSsid;
+String handshakeCapturePath;
 uint32_t handshakeEapolCount = 0;
 uint32_t handshakeBeaconCount = 0;
 uint32_t handshakeFramesWritten = 0;
@@ -479,6 +482,8 @@ bool toggleSavedNetwork(const WifiEntry& entry) {
     --savedCount;
     if (writeSavedNetworks()) {
       Serial.printf("[saved] removed %s\n", entry.ssid.c_str());
+      recordFirmwareAudit("configuration", "saved_network_remove", "success",
+                          "ssid=" + entry.ssid + "; bssid=" + entry.bssid);
       return true;
     }
     for (int i = savedCount; i > existing; --i) {
@@ -486,19 +491,28 @@ bool toggleSavedNetwork(const WifiEntry& entry) {
     }
     savedEntries[existing] = removed;
     ++savedCount;
+    recordFirmwareAudit("configuration", "saved_network_remove", "failed",
+                        "persistent storage write failed; bssid=" +
+                            entry.bssid);
     return false;
   }
 
   if (savedCount >= kMaxSaved) {
     Serial.println("[saved] list full");
+    recordFirmwareAudit("configuration", "saved_network_add", "rejected",
+                        "saved network limit reached; bssid=" + entry.bssid);
     return false;
   }
   savedEntries[savedCount++] = entry;
   if (writeSavedNetworks()) {
     Serial.printf("[saved] added %s\n", entry.ssid.c_str());
+    recordFirmwareAudit("configuration", "saved_network_add", "success",
+                        "ssid=" + entry.ssid + "; bssid=" + entry.bssid);
     return true;
   }
   --savedCount;
+  recordFirmwareAudit("configuration", "saved_network_add", "failed",
+                      "persistent storage write failed; bssid=" + entry.bssid);
   return false;
 }
 
@@ -671,35 +685,47 @@ void drawScanning(const String& kind) {
 
 void drawWifiResults() {
   currentView = View::kWifi;
+  const int pages = max(1, (wifiCount + kVisibleRows - 1) / kVisibleRows);
+  if (wifiPage >= pages) wifiPage = pages - 1;
+  if (wifiPage < 0) wifiPage = 0;
   display.fillScreen(kBackground);
-  String detail = String(wifiCount) + " APs | SD ";
+  String detail = String(wifiCount) + " APs | " + String(wifiPage + 1) + "/" +
+                  String(pages) + " | SD ";
   detail += lastScanSdWriteOk ? "saved" : (sdReady ? "write error" : "missing");
   drawHeader("WI-FI RESULTS", detail);
   display.setTextSize(1);
-  const int rows = min(wifiCount, kVisibleRows);
-  for (int i = 0; i < rows; ++i) {
-    const int y = 48 + i * 22;
-    display.setTextColor(isSaved(wifiEntries[i]) ? kAccent : ILI9341_WHITE,
+  const int start = wifiPage * kVisibleRows;
+  const int rows = min(kVisibleRows, wifiCount - start);
+  for (int row = 0; row < rows; ++row) {
+    const int index = start + row;
+    const int y = 48 + row * 22;
+    display.setTextColor(isSaved(wifiEntries[index]) ? kAccent
+                                                     : ILI9341_WHITE,
                          kBackground);
     display.setCursor(5, y);
-    display.print(clipped(wifiEntries[i].ssid.length() ? wifiEntries[i].ssid
-                                                       : "<hidden>",
+    display.print(clipped(wifiEntries[index].ssid.length()
+                              ? wifiEntries[index].ssid
+                              : "<hidden>",
                           20));
-    if (isSaved(wifiEntries[i])) display.print(" *");
+    if (isSaved(wifiEntries[index])) display.print(" *");
     display.setTextColor(kMuted, kBackground);
     display.setCursor(5, y + 11);
     display.printf("%4ld dBm  ch%-3ld %sG  %s",
-                   static_cast<long>(wifiEntries[i].rssi),
-                   static_cast<long>(wifiEntries[i].channel),
-                   bandLabel(wifiEntries[i].channel),
-                   authShortLabel(wifiEntries[i].auth));
+                   static_cast<long>(wifiEntries[index].rssi),
+                   static_cast<long>(wifiEntries[index].channel),
+                   bandLabel(wifiEntries[index].channel),
+                   authShortLabel(wifiEntries[index].auth));
   }
   if (wifiCount == 0) {
     display.setTextColor(kMuted, kBackground);
     display.setCursor(52, 145);
     display.print("No access points found");
   }
-  drawThreeButtonFooter("Home", "Deauth", "Rescan");
+  if (pages > 1) {
+    drawFiveButtonFooter("Home", "Prev", "Next", "Deauth", "Scan");
+  } else {
+    drawThreeButtonFooter("Home", "Deauth", "Rescan");
+  }
 }
 
 void drawSavedNetworks() {
@@ -1354,7 +1380,8 @@ void drawReconMenu() {
 // case in launchMonitorItem and it paginates automatically. 6 items per page.
 const char* const kMonitorItems[] = {
     "Deauth Watch",   "Rogue Watch", "BLE Spam Watch",
-    "Karma Watch",    "Beacon Watch", "Auth Flood"};
+    "Karma Watch",    "Beacon Watch", "Auth Flood",
+    "Advanced Watch"};
 constexpr int kMonitorItemCount =
     static_cast<int>(sizeof(kMonitorItems) / sizeof(kMonitorItems[0]));
 
@@ -1376,6 +1403,8 @@ void launchMonitorItem(int index) {
     startBeaconWatch();
   } else if (label == "Auth Flood") {
     startAuthFlood();
+  } else if (label == "Advanced Watch") {
+    startAdvancedWatch();
   }
 }
 
@@ -1451,7 +1480,8 @@ void scanWifi() {
   WiFi.disconnect(false, false);
   delay(100);
   const int found = WiFi.scanNetworks(false, true, true);
-  wifiCount = found > 0 ? min(found, kMaxResults) : 0;
+  wifiCount = found > 0 ? min(found, kMaxWifiResults) : 0;
+  wifiPage = 0;
   for (int i = 0; i < wifiCount; ++i) {
     wifiEntries[i].ssid = WiFi.SSID(i);
     wifiEntries[i].bssid = WiFi.BSSIDstr(i);
@@ -1485,9 +1515,9 @@ void scanBle() {
   scanner->setActiveScan(false);
   scanner->setInterval(100);
   scanner->setWindow(80);
-  scanner->setMaxResults(kMaxResults);
+  scanner->setMaxResults(kMaxBleResults);
   NimBLEScanResults results = scanner->getResults(kBleScanMs, false);
-  bleCount = min(results.getCount(), kMaxResults);
+  bleCount = min(results.getCount(), kMaxBleResults);
   for (int i = 0; i < bleCount; ++i) {
     const NimBLEAdvertisedDevice* device = results.getDevice(i);
     bleEntries[i].name = device->haveName()
@@ -1580,9 +1610,14 @@ void setup() {
   drawBootScreen();
   delay(kBootScreenMs);
   initializeSdCard();
+  initGps();
+  initializeFirmwareAudit();
+  recordFirmwareAudit(
+      "system", "boot", "success",
+      "reset_reason=" + String(static_cast<int>(esp_reset_reason())) +
+          "; sd=" + (sdReady ? String("ready") : String("unavailable")));
   loadSavedNetworks();
   if (sdReady) lastSavedSdWriteOk = exportSavedNetworksToSd();
-  initGps();
   drawHome();
   NimBLEDevice::init("");
   NimBLEDevice::setPower(3);
@@ -1616,6 +1651,7 @@ void loop() {
   updateKarmaWatch();
   updateBeaconWatch();
   updateAuthFlood();
+  updateAdvancedWatch();
   // Live-refresh the GPS status screen while it is open.
   static uint32_t lastGpsScreenDrawMs = 0;
   if (currentView == View::kGps && millis() - lastGpsScreenDrawMs >= 1000) {

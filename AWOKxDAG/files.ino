@@ -128,8 +128,12 @@ void handleFilesTouch(int x, int y) {
       fileConfirmDelete = true;
       drawFilesManager();
     } else {
-      SD.remove(fileFullPath(fileRows[fileSelected].name).c_str());
-      Serial.printf("[files] deleted %s\n", fileRows[fileSelected].name.c_str());
+      const String path = fileFullPath(fileRows[fileSelected].name);
+      const bool removed = SD.remove(path.c_str());
+      Serial.printf("[files] %s %s\n", removed ? "deleted" : "delete failed",
+                    fileRows[fileSelected].name.c_str());
+      recordFirmwareAudit("storage", "file_delete",
+                          removed ? "success" : "failed", "path=" + path);
       openFilesManager();
     }
   } else {

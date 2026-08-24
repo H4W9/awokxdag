@@ -163,6 +163,9 @@ void startProbeLure() {
   esp_wifi_set_channel(lureChannel, WIFI_SECOND_CHAN_NONE);
 
   probeLureActive = true;
+  recordFirmwareAudit("active_test", "probe_lure_start", "success",
+                      "ssid=" + lureSsid +
+                          "; channel=" + String(lureChannel));
   Serial.printf("[lure] targeting '%s' on channel %d\n", lureSsid.c_str(),
                 static_cast<int>(lureChannel));
   drawProbeLure();
@@ -173,6 +176,10 @@ void stopProbeLure() {
   esp_wifi_set_promiscuous(false);
   WiFi.mode(WIFI_MODE_STA);
   WiFi.disconnect(true, false);
+  recordFirmwareAudit("active_test", "probe_lure_stop", "success",
+                      "ssid=" + lureSsid +
+                          "; beacons=" + String(lureBeaconsSent) +
+                          "; probes=" + String(lureProbes));
   Serial.printf("[lure] stopped; %lu beacons, %lu probes\n",
                 static_cast<unsigned long>(lureBeaconsSent),
                 static_cast<unsigned long>(lureProbes));

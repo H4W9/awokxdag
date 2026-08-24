@@ -3,9 +3,10 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.1.0
+- **Version:** 1.1.1
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 
 > ## Authorized use only
 > This firmware transmits and disrupts networks (deauthentication, beacon
@@ -20,9 +21,10 @@ C5, white-USB screen board with an ILI9341 touchscreen).
 ## Features
 
 ### Recon (passive)
-- **Wi-Fi Scan** — dual-band AP discovery: SSID, BSSID, RSSI, channel, band,
-  advertised auth mode. Tap a result for a passive audit; **Track** graphs its
-  RSSI; **Deauth** targets it; **Grab** jumps straight to handshake capture.
+- **Wi-Fi Scan** — dual-band discovery for up to 72 APs: SSID, BSSID, RSSI,
+  channel, band, and advertised auth mode, with Prev/Next paging after ten.
+  Tap a result for a passive audit; **Track** graphs its RSSI; **Deauth** targets
+  it; **Grab** jumps straight to handshake capture.
 - **Channel Map** — 2.4 GHz and detected 5 GHz channel occupancy chart.
 - **BLE Scan** — passive advertisement scan with tap-to-inspect detail (address
   type, TX power, connectable/scannable, manufacturer data, service UUIDs).
@@ -87,6 +89,11 @@ C5, white-USB screen board with an ILI9341 touchscreen).
   Flood). Passive.
 - **Auth Flood** — detects authentication / association-request floods against an
   AP (mdk4 `a` / connection-flood DoS) and names the targeted AP. Passive.
+- **Advanced Watch** — runs a shared Wi-Fi/BLE anomaly pipeline that monitors
+  beacon/RSN/PMF/WPS integrity, saved-network security downgrades, grouped
+  disconnect reason storms, channel-switch announcements, EAPOL and association
+  spikes, RF noise-floor changes, and rapid BLE address churn. Alerts are
+  thresholded and GPS logged. Passive; RF and BLE churn results are heuristics.
 
 ### GPS
 - **GPS status** — fix, satellites, coordinates, speed, HDOP, plus a baud cycler
@@ -117,7 +124,7 @@ Attacks:      Beacon Flood | Evil Portal | Evil Twin | Probe Lure
               (Deauth / Handshake launch from a scanned Wi-Fi result)
 
 Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch | Karma Watch |
-              Beacon Watch | Auth Flood
+              Beacon Watch | Auth Flood | Advanced Watch
 
 GPS:          status screen -> Baud / Wardrive
 ```
@@ -136,6 +143,8 @@ works without a card, and readable snapshots mirror to:
 
 | File | Source |
 | --- | --- |
+| `firmware_audit.csv` | Rotating operational audit trail (boot, active tests, configuration and file changes) |
+| `firmware_audit.previous.csv` | Previous audit segment after the live log reaches 256 KB |
 | `saved_networks.csv` | saved AP list |
 | `latest_wifi_scan.csv` | last Wi-Fi scan |
 | `latest_ble_scan.csv` | last BLE scan |
@@ -143,7 +152,7 @@ works without a card, and readable snapshots mirror to:
 | `latest_clients.csv` | client sniffer |
 | `latest_deauth_log.csv` | Deauth Watch |
 | `rogue_log.csv` | Rogue Watch |
-| `latest_handshake.pcap` | WPA handshake capture (link type 105) |
+| `<ESSID>_<BSSID>.pcap` | WPA handshake capture; hidden SSIDs use `<BSSID>.pcap` (link type 105) |
 | `pmkid.txt` | captured PMKID (hashcat-ready) |
 | `portal_creds.csv` | evil portal / evil twin |
 | `pktmon.pcap` | packet monitor |
@@ -156,8 +165,15 @@ works without a card, and readable snapshots mirror to:
 | `karma_log.csv` | Karma Watch alerts |
 | `beacon_flood_log.csv` | Beacon Watch flood windows |
 | `auth_flood_log.csv` | Auth Flood alerts |
+| `advanced_watch.csv` | Combined beacon, downgrade, disconnect, CSA, EAPOL, association, RF and BLE-churn alerts |
 
 The camera and BLE-spam watches are live-view only.
+
+The firmware audit trail includes a per-boot session id, firmware version, GPS
+UTC time when available (otherwise uptime), result, non-secret details, and GPS
+position. It intentionally does not copy portal submissions, packet payloads,
+or credentials. The live segment rotates at 256 KB and retains one previous
+segment.
 
 ---
 
@@ -201,7 +217,7 @@ Single Arduino sketch split into feature tabs (one translation unit):
 `deauth`, `handshake`, `sniffer`, `beacon`, `portal`, `wardrive` (in gps),
 `pktmon`, `cameras`, `wps`, `hidden`, `roguewatch`, `bledetect`, `probelure`,
 `securityaudit`, `tracker`, `harvester`, `probeintel`, `karmawatch`,
-`beaconwatch`, `authflood`, `status`, `files`, `input`.
+`beaconwatch`, `authflood`, `advancedwatch`, `status`, `files`, `input`.
 
 ## Recovery
 

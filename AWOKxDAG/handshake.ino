@@ -17,10 +17,39 @@ void writePcapLe32(File& file, uint32_t value) {
   file.write(bytes, 4);
 }
 
+// FAT-safe, readable capture names. Unsupported bytes collapse to one
+// underscore; the BSSID suffix prevents collisions between same-SSID radios.
+String handshakeCaptureStem(const String& ssid) {
+  String stem;
+  stem.reserve(32);
+  for (size_t i = 0; i < ssid.length() && stem.length() < 32; ++i) {
+    const uint8_t c = static_cast<uint8_t>(ssid[i]);
+    const bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                      (c >= '0' && c <= '9') || c == '-' || c == '_';
+    const char output = safe ? static_cast<char>(c) : '_';
+    if (output == '_' &&
+        (stem.length() == 0 || stem[stem.length() - 1] == '_')) {
+      continue;
+    }
+    stem += output;
+  }
+  while (stem.endsWith("_")) stem.remove(stem.length() - 1);
+  return stem;
+}
+
+String buildHandshakeCapturePath() {
+  String bssid = macToString(handshakeTargetBssid);
+  bssid.replace(":", "");
+  const String stem = handshakeCaptureStem(handshakeTargetSsid);
+  return String(kSdDirectory) + "/" +
+         (stem.length() ? stem + "_" + bssid : bssid) + ".pcap";
+}
+
 bool openHandshakePcap() {
+  handshakeCapturePath = buildHandshakeCapturePath();
   if (!ensureSdCard()) return false;
-  SD.remove(kHandshakePcapPath);
-  captureFile = SD.open(kHandshakePcapPath, FILE_WRITE);
+  SD.remove(handshakeCapturePath.c_str());
+  captureFile = SD.open(handshakeCapturePath.c_str(), FILE_WRITE);
   if (!captureFile) {
     sdReady = false;
     return false;
@@ -35,7 +64,9 @@ bool openHandshakePcap() {
   writePcapLe32(captureFile, 105);
   captureFile.flush();
   captureFileOpen = captureFile.getWriteError() == 0;
-  if (captureFileOpen) Serial.printf("[hs] pcap open %s\n", kHandshakePcapPath);
+  if (captureFileOpen) {
+    Serial.printf("[hs] pcap open %s\n", handshakeCapturePath.c_str());
+  }
   return captureFileOpen;
 }
 
@@ -239,8 +270,16 @@ void drawHandshake() {
 
   display.setTextColor(captureFileOpen ? kAccent : kWarn, kBackground);
   display.setCursor(6, 212);
-  display.print(captureFileOpen ? "SD: latest_handshake.pcap"
-                                : "SD unavailable; not saving");
+  if (captureFileOpen) {
+    const int slash = handshakeCapturePath.lastIndexOf('/');
+    const String filename = slash >= 0
+                                ? handshakeCapturePath.substring(slash + 1)
+                                : handshakeCapturePath;
+    display.print("SD: ");
+    display.print(clipped(filename, 31));
+  } else {
+    display.print("SD unavailable; not saving");
+  }
   display.setTextColor(kMuted, kBackground);
   display.setCursor(6, 232);
   display.print("Authorized testing only.");
@@ -292,6 +331,14 @@ void startHandshakeCapture() {
 
   captureFileOpen = openHandshakePcap();
   handshakeCaptureActive = true;
+  recordFirmwareAudit(
+      "active_test", "handshake_capture_start",
+      captureFileOpen ? "success" : "partial",
+      "bssid=" + macToString(handshakeTargetBssid) +
+          "; channel=" + String(handshakeChannel) +
+          "; file=" + handshakeCapturePath +
+          "; deauth_pulse=" + (handshakePulseEnabled ? String("on")
+                                                        : String("off")));
   Serial.printf("[hs] capturing %s on channel %d\n",
                 macToString(handshakeTargetBssid).c_str(),
                 static_cast<int>(handshakeChannel));
@@ -333,6 +380,13 @@ void stopHandshakeCapture() {
   }
   WiFi.mode(WIFI_MODE_STA);
   WiFi.disconnect(true, false);
+  recordFirmwareAudit(
+      "active_test", "handshake_capture_stop", "success",
+      "bssid=" + macToString(handshakeTargetBssid) +
+          "; file=" + handshakeCapturePath +
+          "; frames=" + String(handshakeFramesWritten) +
+          "; eapol=" + String(handshakeEapolCount) +
+          "; pmkid=" + (handshakePmkidSeen ? String("yes") : String("no")));
   Serial.printf("[hs] stopped; %lu frame(s) written\n",
                 static_cast<unsigned long>(handshakeFramesWritten));
 }
@@ -362,4 +416,3 @@ void updateHandshakeCapture() {
     drawHandshake();
   }
 }
-

@@ -3,9 +3,10 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.1.0
+- **Version:** 1.1.1
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
+- **Changelog:** [CHANGELOG.md](../CHANGELOG.md)
 
 > ## Authorized use only
 > This firmware transmits and disrupts networks (deauthentication, beacon
@@ -20,9 +21,10 @@ C5, white-USB screen board with an ILI9341 touchscreen).
 ## Features
 
 ### Recon (passive)
-- **Wi-Fi Scan** — dual-band AP discovery: SSID, BSSID, RSSI, channel, band,
-  advertised auth mode. Tap a result for a passive audit; **Track** graphs its
-  RSSI; **Deauth** targets it; **Grab** jumps straight to handshake capture.
+- **Wi-Fi Scan** — dual-band discovery for up to 72 APs: SSID, BSSID, RSSI,
+  channel, band, and advertised auth mode, with Prev/Next paging after ten.
+  Tap a result for a passive audit; **Track** graphs its RSSI; **Deauth** targets
+  it; **Grab** jumps straight to handshake capture.
 - **Channel Map** — 2.4 GHz and detected 5 GHz channel occupancy chart.
 - **BLE Scan** — passive advertisement scan with tap-to-inspect detail (address
   type, TX power, connectable/scannable, manufacturer data, service UUIDs).
@@ -61,6 +63,10 @@ C5, white-USB screen board with an ILI9341 touchscreen).
   SSID appearing on a new BSSID.
 - **BLE Spam Watch** — flags BLE advertisement floods (Apple continuity, Swift
   Pair, Samsung, Fast Pair) by rate + vendor payload. Passive.
+- **Advanced Watch** — combined passive Wi-Fi/BLE integrity monitoring for
+  beacon/security changes, saved-network downgrades, disconnect reasons, CSA,
+  EAPOL/auth storms, RF noise anomalies, and rapid BLE identity churn. Alerts
+  are GPS logged; RF and BLE identity results are heuristic.
 
 ### GPS
 - **GPS status** — fix, satellites, coordinates, speed, HDOP, plus a baud cycler
@@ -89,7 +95,7 @@ Recon page 1: Wi-Fi Scan | Channel Map | BLE Scan | Clients | Packet Mon | WPS S
 Attacks:      Beacon Flood | Evil Portal | Evil Twin | Probe Lure
               (Deauth / Handshake launch from a scanned Wi-Fi result)
 
-Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch
+Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch | Advanced Watch
 
 GPS:          status screen -> Baud / Wardrive
 ```
@@ -108,6 +114,8 @@ works without a card, and readable snapshots mirror to:
 
 | File | Source |
 | --- | --- |
+| `firmware_audit.csv` | Rotating operational audit trail |
+| `firmware_audit.previous.csv` | Previous 256 KB audit segment |
 | `saved_networks.csv` | saved AP list |
 | `latest_wifi_scan.csv` | last Wi-Fi scan |
 | `latest_ble_scan.csv` | last BLE scan |
@@ -115,13 +123,19 @@ works without a card, and readable snapshots mirror to:
 | `latest_clients.csv` | client sniffer |
 | `latest_deauth_log.csv` | Deauth Watch |
 | `rogue_log.csv` | Rogue Watch |
-| `latest_handshake.pcap` | WPA handshake capture (link type 105) |
+| `<ESSID>_<BSSID>.pcap` | WPA handshake capture; hidden SSIDs use `<BSSID>.pcap` (link type 105) |
 | `pmkid.txt` | captured PMKID (hashcat-ready) |
 | `portal_creds.csv` | evil portal / evil twin |
 | `pktmon.pcap` | packet monitor |
 | `wardrive.csv` | WiGLE 1.4 wardrive (Wi-Fi + BLE) |
+| `advanced_watch.csv` | Combined Wi-Fi/BLE anomaly alerts |
 
 The camera and BLE-spam watches are live-view only.
+
+The firmware audit trail records boot sessions, active-test starts/stops,
+saved-network changes, security-audit runs, and file deletions. It includes GPS
+time and position when available, excludes captured secrets and packet payloads,
+and retains one previous segment.
 
 ---
 
@@ -164,7 +178,7 @@ Single Arduino sketch split into feature tabs (one translation unit):
 (types/enums/constants) + `board_pins.h`, and per-feature tabs: `gps`,
 `deauth`, `handshake`, `sniffer`, `beacon`, `portal`, `wardrive` (in gps),
 `pktmon`, `cameras`, `wps`, `hidden`, `roguewatch`, `bledetect`, `probelure`,
-`status`, `files`, `input`.
+`advancedwatch`, `status`, `files`, `input`.
 
 ## Recovery
 

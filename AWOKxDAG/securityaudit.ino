@@ -259,6 +259,8 @@ bool exportSecurityAuditToSd() {
   if (!SD.rename(temporaryPath.c_str(), kSecurityAuditCsvPath)) return false;
   Serial.printf("[audit] wrote %d row(s) to %s\n", auditCount,
                 kSecurityAuditCsvPath);
+  recordFirmwareAudit("recon", "security_audit_export", "success",
+                      "access_points=" + String(auditCount));
   return true;
 }
 
@@ -320,6 +322,7 @@ void startSecurityAudit() {
   esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
 
   securityAuditActive = true;
+  recordFirmwareAudit("recon", "security_audit_start", "success", "passive");
   Serial.println("[audit] security audit started");
   drawSecurityAudit();
 }
@@ -330,6 +333,11 @@ void stopSecurityAudit() {
   WiFi.mode(WIFI_MODE_STA);
   WiFi.disconnect(true, false);
   lastAuditCsvOk = exportSecurityAuditToSd();
+  recordFirmwareAudit(
+      "recon", "security_audit_stop",
+      lastAuditCsvOk ? "success" : "partial",
+      "access_points=" + String(auditCount) +
+          "; export=" + (lastAuditCsvOk ? String("ok") : String("failed")));
   Serial.printf("[audit] stopped; %d AP(s)\n", auditCount);
 }
 
