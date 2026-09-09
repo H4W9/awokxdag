@@ -49,6 +49,7 @@ jobs:
           arduino-cli lib install \
             "Adafruit GFX Library" \
             "Adafruit ILI9341" \
+            "Adafruit ST7735 and ST7789 Library" \
             "Adafruit BusIO" \
             "NimBLE-Arduino" \
             "XPT2046_Touchscreen" \
