@@ -8,7 +8,7 @@
 // manufacturer id. Heuristic: the tables below are a curated subset and easy to
 // extend; expect some false positives and negatives.
 
-constexpr int kMaxCameras = 24;
+constexpr int kMaxCameras = 128;
 constexpr int kCameraHitQueueSlots = 32;
 constexpr uint32_t kCameraHopIntervalMs = 300;
 constexpr uint32_t kCameraRedrawMs = 700;
@@ -251,11 +251,7 @@ void startCameraScan() {
   esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
 
   NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->setScanCallbacks(&cameraBleCallbacks, false);
-  scan->setActiveScan(true);
-  scan->setInterval(160);
-  scan->setWindow(80);
-  scan->clearResults();
+  configureBleScan(scan, &cameraBleCallbacks, true, 160, 80, 0);
   scan->start(0, false, true);
 
   cameraActive = true;

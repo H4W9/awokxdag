@@ -22,6 +22,7 @@ int wifiCount = 0;
 int wifiPage = 0;
 int savedCount = 0;
 int bleCount = 0;
+int blePage = 0;
 View currentView = View::kHome;
 View auditReturnView = View::kWifi;
 int reconPage = 0;
@@ -420,12 +421,45 @@ int savedIndex(const WifiEntry& entry) {
 bool isSaved(const WifiEntry& entry) { return savedIndex(entry) >= 0; }
 
 void loadSavedNetworks() {
+  savedCount = 0;
   Preferences preferences;
   if (!preferences.begin("awokxdag", true)) {
     Serial.println("[saved] could not open NVS");
     return;
   }
 
+  if (preferences.isKey("networks")) {
+    SavedNetworkSnapshot snapshot = {};
+    bool valid = preferences.getBytesLength("networks") == sizeof(snapshot) &&
+                 preferences.getBytes("networks", &snapshot, sizeof(snapshot)) ==
+                     sizeof(snapshot) &&
+                 snapshot.version == 1 && snapshot.count <= kMaxSaved;
+    for (uint32_t i = 0; valid && i < snapshot.count; ++i) {
+      valid = memchr(snapshot.entries[i].ssid, 0,
+                     sizeof(snapshot.entries[i].ssid)) != nullptr &&
+              memchr(snapshot.entries[i].bssid, 0,
+                     sizeof(snapshot.entries[i].bssid)) != nullptr;
+    }
+    if (valid) {
+      savedCount = static_cast<int>(snapshot.count);
+      for (int i = 0; i < savedCount; ++i) {
+        const SavedNetworkRecord& entry = snapshot.entries[i];
+        savedEntries[i].ssid = entry.ssid;
+        savedEntries[i].bssid = entry.bssid;
+        savedEntries[i].rssi = entry.rssi;
+        savedEntries[i].channel = entry.channel;
+        savedEntries[i].auth = static_cast<wifi_auth_mode_t>(entry.auth);
+      }
+    } else {
+      Serial.println("[saved] invalid NVS snapshot");
+    }
+    preferences.end();
+    Serial.printf("[saved] loaded %d network(s)\n", savedCount);
+    return;
+  }
+
+  // Read the original per-field format until the next successful save migrates
+  // it. Keep these keys intact in case that first snapshot write fails.
   savedCount = min(static_cast<int>(preferences.getUChar("count", 0)),
                    kMaxSaved);
   for (int i = 0; i < savedCount; ++i) {
@@ -447,27 +481,31 @@ void loadSavedNetworks() {
 }
 
 bool writeSavedNetworks() {
+  lastSavedSdWriteOk = false;
+  if (savedCount < 0 || savedCount > kMaxSaved) return false;
+  SavedNetworkSnapshot snapshot = {};
+  snapshot.version = 1;
+  snapshot.count = savedCount;
+  for (int i = 0; i < savedCount; ++i) {
+    SavedNetworkRecord& entry = snapshot.entries[i];
+    if (savedEntries[i].ssid.length() >= sizeof(entry.ssid) ||
+        savedEntries[i].bssid.length() >= sizeof(entry.bssid)) return false;
+    memcpy(entry.ssid, savedEntries[i].ssid.c_str(),
+           savedEntries[i].ssid.length() + 1);
+    memcpy(entry.bssid, savedEntries[i].bssid.c_str(),
+           savedEntries[i].bssid.length() + 1);
+    entry.rssi = savedEntries[i].rssi;
+    entry.channel = savedEntries[i].channel;
+    entry.auth = static_cast<uint8_t>(savedEntries[i].auth);
+  }
   Preferences preferences;
   if (!preferences.begin("awokxdag", false)) {
-    lastSavedSdWriteOk = false;
     return false;
   }
-  preferences.clear();
-  preferences.putUChar("count", savedCount);
-  for (int i = 0; i < savedCount; ++i) {
-    char key[8];
-    snprintf(key, sizeof(key), "s%d", i);
-    preferences.putString(key, savedEntries[i].ssid);
-    snprintf(key, sizeof(key), "b%d", i);
-    preferences.putString(key, savedEntries[i].bssid);
-    snprintf(key, sizeof(key), "r%d", i);
-    preferences.putInt(key, savedEntries[i].rssi);
-    snprintf(key, sizeof(key), "c%d", i);
-    preferences.putInt(key, savedEntries[i].channel);
-    snprintf(key, sizeof(key), "a%d", i);
-    preferences.putUChar(key, static_cast<uint8_t>(savedEntries[i].auth));
-  }
+  const bool written = preferences.putBytes("networks", &snapshot,
+                                            sizeof(snapshot)) == sizeof(snapshot);
   preferences.end();
+  if (!written) return false;
   lastSavedSdWriteOk = exportSavedNetworksToSd();
   return true;
 }
@@ -759,17 +797,32 @@ void drawSavedNetworks() {
   drawFooter("Home", "Wi-Fi Scan");
 }
 
+int blePageCount() {
+  return max(1, (bleCount + kVisibleRows - 1) / kVisibleRows);
+}
+
+// Maps a visible row to the retained result; the last page may be partial.
+int bleResultIndex(int row) {
+  if (row < 0 || row >= kVisibleRows) return -1;
+  const int index = blePage * kVisibleRows + row;
+  return index >= 0 && index < bleCount ? index : -1;
+}
+
 void drawBleResults() {
   currentView = View::kBle;
+  const int pages = blePageCount();
+  if (blePage < 0 || blePage >= pages) blePage = 0;
   display.fillScreen(kBackground);
-  String detail = String(bleCount) + " advertisers | SD ";
+  String detail = String(bleCount) + " BLE | " + String(blePage + 1) + "/" +
+                  String(pages) + " | SD ";
   detail +=
       lastBleScanSdWriteOk ? "saved" : (sdReady ? "write error" : "missing");
   drawHeader("BLE RESULTS", detail);
   display.setTextSize(1);
-  const int rows = min(bleCount, kVisibleRows);
-  for (int i = 0; i < rows; ++i) {
-    const int y = 48 + i * 22;
+  for (int row = 0; row < kVisibleRows; ++row) {
+    const int i = bleResultIndex(row);
+    if (i < 0) break;
+    const int y = 48 + row * 22;
     display.setTextColor(ILI9341_WHITE, kBackground);
     display.setCursor(5, y);
     display.print(clipped(bleEntries[i].name.length() ? bleEntries[i].name
@@ -785,7 +838,11 @@ void drawBleResults() {
     display.setCursor(54, 145);
     display.print("No advertisers found");
   }
-  drawFooter("Home", "Rescan");
+  if (pages > 1) {
+    drawFourButtonFooter("Home", "Prev", "Next", "Scan");
+  } else {
+    drawFooter("Home", "Rescan");
+  }
 }
 
 void drawBleDetail() {
@@ -1505,19 +1562,30 @@ void scanWifiForChannelMap() {
   drawChannelMap();
 }
 
+// NimBLE uses one scanner across all views. Always replace the previous
+// callback, duplicate policy and result limit when changing scan modes.
+void configureBleScan(NimBLEScan* scan, NimBLEScanCallbacks* callbacks,
+                       bool active, uint16_t interval, uint16_t window,
+                       uint8_t maxResults) {
+  scan->stop();
+  scan->clearResults();
+  scan->setScanCallbacks(callbacks, callbacks != nullptr);
+  scan->setMaxResults(maxResults);
+  scan->setActiveScan(active);
+  scan->setInterval(interval);
+  scan->setWindow(window);
+}
+
 void scanBle() {
   if (scanInProgress) return;
   scanInProgress = true;
   drawScanning("BLE");
   Serial.println("[ble] passive advertisement scan started");
   NimBLEScan* scanner = NimBLEDevice::getScan();
-  scanner->clearResults();
-  scanner->setActiveScan(false);
-  scanner->setInterval(100);
-  scanner->setWindow(80);
-  scanner->setMaxResults(kMaxBleResults);
+  configureBleScan(scanner, nullptr, false, 100, 80, kMaxBleResults);
   NimBLEScanResults results = scanner->getResults(kBleScanMs, false);
   bleCount = min(results.getCount(), kMaxBleResults);
+  blePage = 0;
   for (int i = 0; i < bleCount; ++i) {
     const NimBLEAdvertisedDevice* device = results.getDevice(i);
     bleEntries[i].name = device->haveName()

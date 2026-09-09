@@ -4,7 +4,7 @@
 // that advertise WPS, flagging whether "AP Setup Locked" is set. wpsScanActive
 // lives in the main sketch (read by the input tab); the rest is local here.
 
-constexpr int kMaxWps = 24;
+constexpr int kMaxWps = 128;
 constexpr int kWpsHitQueueSlots = 24;
 constexpr uint32_t kWpsHopIntervalMs = 300;
 constexpr uint32_t kWpsRedrawMs = 700;

@@ -133,11 +133,7 @@ void startBleDetect() {
   signalMonitorActive = false;
 
   NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->setScanCallbacks(&bleDetectCallbacks, false);
-  scan->setActiveScan(false);
-  scan->setInterval(80);
-  scan->setWindow(80);  // near-continuous listening
-  scan->clearResults();
+  configureBleScan(scan, &bleDetectCallbacks, false, 80, 80, 0);
   scan->start(0, false, true);
 
   bleDetectActive = true;

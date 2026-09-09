@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.1.1
+- **Version:** 1.1.2
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](../CHANGELOG.md)
@@ -21,12 +21,12 @@ C5, white-USB screen board with an ILI9341 touchscreen).
 ## Features
 
 ### Recon (passive)
-- **Wi-Fi Scan** — dual-band discovery for up to 72 APs: SSID, BSSID, RSSI,
+- **Wi-Fi Scan** — dual-band discovery for up to 128 APs: SSID, BSSID, RSSI,
   channel, band, and advertised auth mode, with Prev/Next paging after ten.
   Tap a result for a passive audit; **Track** graphs its RSSI; **Deauth** targets
   it; **Grab** jumps straight to handshake capture.
 - **Channel Map** — 2.4 GHz and detected 5 GHz channel occupancy chart.
-- **BLE Scan** — passive advertisement scan with tap-to-inspect detail (address
+- **BLE Scan** — up to 128 advertisers with Prev/Next paging and tap-to-inspect detail (address
   type, TX power, connectable/scannable, manufacturer data, service UUIDs).
 - **Clients** — probe-request / station sniffer: client MACs, probed SSIDs,
   associated BSSIDs.
@@ -170,6 +170,21 @@ arduino-cli compile --fqbn "esp32:esp32:esp32c5:FlashSize=8M,PartitionScheme=def
 | Battery ADC | unset (`kBatteryAdc = -1`) |
 
 Pins and touch calibration live in `board_pins.h`.
+
+## Collection capacity
+
+Wi-Fi and BLE scans retain up to **128 results** each. BLE results use ten rows
+per page, with Prev/Next controls and detail inspection on every page.
+
+Clients, Security Audit, BLE Trackers, Cameras, WPS, Hidden SSID, Harvester,
+Probe Intel, and Karma Watch each retain up to **128 entries** (Probe Intel counts
+SSIDs). Live summary screens keep their existing row limits; available CSV
+exports include the full collected table. Continuous BLE scans use callbacks
+without retaining a NimBLE result list, so the regular scan's 128-result cap does
+not stop their incoming observations. Their feature tables remain bounded.
+
+The larger tables increase static RAM use to approximately **53%** on the C5.
+Device testing under load is still required to measure remaining runtime heap.
 
 ## Source layout
 

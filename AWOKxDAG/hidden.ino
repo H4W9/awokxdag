@@ -6,7 +6,7 @@
 // element (which happens whenever a client (re)connects). Passive.
 // hiddenRevealActive lives in the main sketch (read by the input tab).
 
-constexpr int kMaxHidden = 24;
+constexpr int kMaxHidden = 128;
 constexpr int kHiddenHitQueueSlots = 24;
 constexpr uint32_t kHiddenHopIntervalMs = 300;
 constexpr uint32_t kHiddenRedrawMs = 700;

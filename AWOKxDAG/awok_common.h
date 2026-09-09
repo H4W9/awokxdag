@@ -26,8 +26,10 @@ constexpr int kScreenWidth = 240;
 constexpr int kScreenHeight = 320;
 constexpr int kHeaderHeight = 42;
 constexpr int kFooterTop = 278;
-constexpr int kMaxWifiResults = 72;
-constexpr int kMaxBleResults = 24;
+constexpr int kMaxWifiResults = 128;
+constexpr int kMaxBleResults = 128;
+// NimBLE reserves 255 for unlimited retention; keep snapshot scans bounded.
+static_assert(kMaxBleResults > 0 && kMaxBleResults < 255, "Invalid BLE result limit");
 constexpr int kVisibleRows = 10;
 constexpr int kMaxSaved = 10;
 constexpr uint32_t kBleScanMs = 5000;
@@ -62,14 +64,14 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.1.1";
+constexpr char kVersion[] = "1.1.2";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
 constexpr int kCaptureSlotBytes = 256;
 constexpr int kCaptureQueueSlots = 24;
 constexpr char kClientCsvPath[] = "/awokxdag/latest_clients.csv";
-constexpr int kMaxClients = 24;
+constexpr int kMaxClients = 128;
 constexpr int kSnifferQueueSlots = 32;
 constexpr uint32_t kClientHopIntervalMs = 300;
 constexpr uint32_t kClientRedrawMs = 700;
@@ -88,14 +90,14 @@ constexpr int kBleHitQueueSlots = 24;
 
 // Security Audit: passive beacon-IE posture report (encryption tier, PMF, WPS).
 constexpr char kSecurityAuditCsvPath[] = "/awokxdag/security_audit.csv";
-constexpr int kMaxAudit = 24;
+constexpr int kMaxAudit = 128;
 constexpr int kAuditHitQueueSlots = 24;
 constexpr uint32_t kAuditHopIntervalMs = 300;
 constexpr uint32_t kAuditRedrawMs = 700;
 
 // BLE Trackers: passive AirTag/Find My, Tile, Samsung SmartTag detection.
 constexpr char kTrackerCsvPath[] = "/awokxdag/ble_trackers.csv";
-constexpr int kMaxTrackers = 24;
+constexpr int kMaxTrackers = 128;
 constexpr int kTrackerHitQueueSlots = 32;
 constexpr uint32_t kTrackerRedrawMs = 700;
 // A tracker seen over a span longer than this (with repeat sightings) while you
@@ -106,14 +108,14 @@ constexpr uint32_t kTrackerMinSightings = 4;
 // Harvester: all-channel passive EAPOL/PMKID collection (no deauth).
 constexpr char kHarvestPcapPath[] = "/awokxdag/harvest.pcap";
 constexpr char kHarvestPmkidPath[] = "/awokxdag/harvest_pmkid.txt";
-constexpr int kMaxHarvestAp = 24;
-constexpr int kMaxHarvestSeen = 64;  // beacons written once per BSSID
+constexpr int kMaxHarvestAp = 128;
+constexpr int kMaxHarvestSeen = 128;  // beacons written once per BSSID
 constexpr uint32_t kHarvestHopIntervalMs = 300;
 constexpr uint32_t kHarvestRedrawMs = 700;
 
 // Probe Intel: directed probe-request SSID aggregation.
 constexpr char kProbeIntelCsvPath[] = "/awokxdag/probe_intel.csv";
-constexpr int kMaxProbeSsids = 24;
+constexpr int kMaxProbeSsids = 128;
 constexpr int kProbeMacsPerSsid = 8;
 constexpr int kProbeHitQueueSlots = 32;
 constexpr uint32_t kProbeHopIntervalMs = 300;
@@ -121,7 +123,7 @@ constexpr uint32_t kProbeRedrawMs = 700;
 
 // Karma Watch: one BSSID answering many SSIDs (WiFi Pineapple / Karma / MANA).
 constexpr char kKarmaLogCsvPath[] = "/awokxdag/karma_log.csv";
-constexpr int kMaxKarmaAps = 24;
+constexpr int kMaxKarmaAps = 128;
 constexpr int kKarmaSsidsPerAp = 6;
 constexpr int kKarmaHitQueueSlots = 24;
 constexpr int kKarmaSsidThreshold = 3;  // distinct SSIDs => suspicious
@@ -373,6 +375,24 @@ struct WifiEntry {
   int32_t channel = 0;
   wifi_auth_mode_t auth = WIFI_AUTH_OPEN;
 };
+
+// Fixed-width NVS format: the whole list is replaced as one blob, so a failed
+// update does not erase the previously saved networks. Never persist String.
+struct SavedNetworkRecord {
+  char ssid[33];
+  char bssid[18];
+  uint8_t auth;
+  int32_t rssi;
+  int32_t channel;
+};
+
+struct SavedNetworkSnapshot {
+  uint32_t version;
+  uint32_t count;
+  SavedNetworkRecord entries[kMaxSaved];
+};
+static_assert(sizeof(SavedNetworkRecord) == 60, "NVS record layout changed");
+static_assert(sizeof(SavedNetworkSnapshot) == 608, "NVS snapshot layout changed");
 
 struct DeauthTarget {
   uint8_t bssid[6] = {0};

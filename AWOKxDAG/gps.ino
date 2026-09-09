@@ -82,10 +82,11 @@ String gpsCsvFields() {
 }
 
 // "yyyy-MM-dd HH:mm:ss" from GPS UTC, for WiGLE FirstSeen. Falls back to an
-// uptime marker when the date is not yet valid.
+// uptime marker when the date/time is invalid or the GPS link has gone stale.
 String gpsTimestamp() {
-  if (gps.date.isValid() && gps.time.isValid()) {
-    char buffer[24];
+  if (gps.date.isValid() && gps.time.isValid() &&
+      gps.date.age() < 5000 && gps.time.age() < 5000) {
+    char buffer[32];
     snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d",
              gps.date.year(), gps.date.month(), gps.date.day(),
              gps.time.hour(), gps.time.minute(), gps.time.second());
@@ -149,7 +150,7 @@ bool openWardriveCsv() {
       return false;
     }
     file.println(
-        "WigleWifi_1.4,appRelease=AWOKxDAG,model=ESP32C5,release=1.1.1,"
+        "WigleWifi_1.4,appRelease=AWOKxDAG,model=ESP32C5,release=1.1.2,"
         "device=AWOKxDAG,display=ILI9341,board=ESP32C5,brand=AWOK");
     file.println(
         "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
@@ -355,11 +356,7 @@ void startWardrive() {
 
   // Continuous passive BLE scan alongside the Wi-Fi scans.
   NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->setScanCallbacks(&wardriveBleCallbacks, false);
-  scan->setActiveScan(false);
-  scan->setInterval(160);
-  scan->setWindow(80);
-  scan->clearResults();
+  configureBleScan(scan, &wardriveBleCallbacks, false, 160, 80, 0);
   scan->start(0, false, true);
 
   wardriveActive = true;

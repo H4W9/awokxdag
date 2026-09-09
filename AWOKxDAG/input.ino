@@ -13,12 +13,22 @@ bool readTouch(int& screenX, int& screenY) {
   return true;
 }
 
+// A held contact is one press, even if it spans multiple redraws. In
+// particular, Delete -> OK must require releasing and pressing again.
+bool consumeTouchPress(bool pressed, uint32_t now) {
+  static bool wasPressed = false;
+  const bool newPress = pressed && !wasPressed;
+  wasPressed = pressed;
+  if (!newPress || now - lastTouchMs < 250) return false;
+  lastTouchMs = now;
+  return true;
+}
+
 void handleTouch() {
-  if (scanInProgress || millis() - lastTouchMs < 250) return;
+  if (scanInProgress) return;
   int x = 0;
   int y = 0;
-  if (!readTouch(x, y)) return;
-  lastTouchMs = millis();
+  if (!consumeTouchPress(readTouch(x, y), millis())) return;
   Serial.printf("[touch] x=%d y=%d\n", x, y);
   if (currentView == View::kHome) {
     if (homePage == 1) {
@@ -120,8 +130,8 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kBle && y >= 44 && y < 264) {
-    const int index = (y - 44) / 22;
-    if (index < min(bleCount, kVisibleRows)) {
+    const int index = bleResultIndex((y - 44) / 22);
+    if (index >= 0) {
       openBleDetail(bleEntries[index]);
     }
     return;
@@ -455,6 +465,27 @@ void handleTouch() {
     }
     return;
   }
+  if (currentView == View::kBle) {
+    const int pages = blePageCount();
+    if (pages > 1) {
+      if (x < 60) {
+        drawHome();
+      } else if (x < 120) {
+        blePage = (blePage - 1 + pages) % pages;
+        drawBleResults();
+      } else if (x < 180) {
+        blePage = (blePage + 1) % pages;
+        drawBleResults();
+      } else {
+        scanBle();
+      }
+    } else if (x < kScreenWidth / 2) {
+      drawHome();
+    } else {
+      scanBle();
+    }
+    return;
+  }
   if (currentView == View::kBleDetail) {
     if (x < kScreenWidth / 2) {
       drawBleResults();
@@ -499,8 +530,6 @@ void handleTouch() {
   }
   if (x < kScreenWidth / 2) {
     drawHome();
-  } else if (currentView == View::kBle) {
-    scanBle();
   } else if (currentView == View::kChannels) {
     scanWifiForChannelMap();
   } else if (currentView == View::kSaved) {

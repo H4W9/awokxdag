@@ -25,6 +25,9 @@ uint32_t pktmonStartMs = 0;
 
 // Runs in the Wi-Fi task: tally by frame type and enqueue a copy for the loop.
 void pktmonCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
+  // WIFI_PKT_MISC supplies receive metadata only, with no frame payload.
+  if (type != WIFI_PKT_MGMT && type != WIFI_PKT_DATA && type != WIFI_PKT_CTRL)
+    return;
   const wifi_promiscuous_pkt_t* packet =
       static_cast<const wifi_promiscuous_pkt_t*>(buf);
   const int length = packet->rx_ctrl.sig_len;
@@ -34,7 +37,7 @@ void pktmonCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
   } else if (type == WIFI_PKT_DATA) {
     ++pktData;
   } else {
-    ++pktCtrl;  // WIFI_PKT_CTRL / MISC
+    ++pktCtrl;
   }
   ++pktTotal;
 
@@ -99,7 +102,7 @@ void drawPacketMon() {
   display.setCursor(6, 104);
   display.printf("Data: %lu", static_cast<unsigned long>(pktData));
   display.setCursor(6, 118);
-  display.printf("Ctrl/misc: %lu", static_cast<unsigned long>(pktCtrl));
+  display.printf("Ctrl: %lu", static_cast<unsigned long>(pktCtrl));
 
   const uint32_t elapsed = (millis() - pktmonStartMs) / 1000;
   display.setTextColor(kMuted, kBackground);

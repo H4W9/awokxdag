@@ -5,6 +5,41 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-09-09
+
+### Added
+
+- BLE result paging with Prev/Next controls and detail inspection for every
+  retained advertiser.
+- Six host regression groups covering saved-network persistence, BLE scan
+  transitions and paging, touchscreen contacts, GPS freshness, and packet
+  monitor buffer handling, with address and undefined-behavior sanitizers.
+
+### Changed
+
+- Increased BLE results from 24 to 128 and Wi-Fi results from 72 to 128.
+- Increased Clients, Security Audit, BLE Trackers, Cameras, WPS, Hidden SSID,
+  Harvester, Probe Intel, and Karma Watch tables from 24 to 128 entries, and
+  Harvester beacon deduplication from 64 to 128 BSSIDs.
+- Saved networks now use a checked, versioned NVS snapshot. Existing per-field
+  records remain readable and migrate on the next successful save.
+- Bumped firmware, WiGLE metadata, documentation, and release-workflow defaults
+  to version 1.1.2.
+
+### Fixed
+
+- Packet Monitor no longer reads frame payloads from metadata-only Wi-Fi
+  notifications, preventing an out-of-bounds read.
+- Held touchscreen contacts no longer trigger repeated actions or bypass the
+  file manager's two-tap delete confirmation.
+- Failed saved-network writes no longer report success or erase the previous
+  list before writing its replacement; failed edits restore the in-memory list.
+- Continuous BLE scans now receive repeat advertisements without inheriting a
+  previous scan's result limit. Regular scans reset the previous monitor's
+  callback and restore bounded result retention.
+- GPS timestamps now fall back to uptime when date or time updates are stale;
+  the timestamp buffer also accommodates the full formatted value.
+
 ## [1.1.1] - 2026-08-24
 
 ### Added
@@ -65,7 +100,8 @@ All notable changes to AWOKxDAG are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/dagnazty/awokxdag/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/dagnazty/awokxdag/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/dagnazty/awokxdag/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dagnazty/awokxdag/releases/tag/v1.0.0

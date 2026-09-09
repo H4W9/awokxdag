@@ -221,11 +221,7 @@ void startTrackerScan() {
   signalMonitorActive = false;
 
   NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->setScanCallbacks(&trackerScanCallbacks, false);
-  scan->setActiveScan(false);
-  scan->setInterval(80);
-  scan->setWindow(80);
-  scan->clearResults();
+  configureBleScan(scan, &trackerScanCallbacks, false, 80, 80, 0);
   scan->start(0, false, true);
 
   trackerScanActive = true;

@@ -908,11 +908,7 @@ void startAdvancedWatch() {
   esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
 
   NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->setScanCallbacks(&advancedBleCallbacks, false);
-  scan->setActiveScan(false);
-  scan->setInterval(160);
-  scan->setWindow(80);
-  scan->clearResults();
+  configureBleScan(scan, &advancedBleCallbacks, false, 160, 80, 0);
   scan->start(0, false, true);
 
   advancedWatchActive = true;
