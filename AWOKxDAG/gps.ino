@@ -150,7 +150,7 @@ bool openWardriveCsv() {
       return false;
     }
     file.println(
-        "WigleWifi_1.4,appRelease=AWOKxDAG,model=ESP32C5,release=1.1.3,"
+        "WigleWifi_1.4,appRelease=AWOKxDAG,model=ESP32C5,release=1.1.4,"
         "device=AWOKxDAG,display=ILI9341,board=ESP32C5,brand=AWOK");
     file.println(
         "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
@@ -314,7 +314,7 @@ void drawWardrive() {
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setCursor(6, 92);
-  if (kRadiosCoexist) {
+  if (radiosCoexist) {
     display.printf("Wi-Fi: %lu   BLE: %lu",
                    static_cast<unsigned long>(wardriveNetworks),
                    static_cast<unsigned long>(wardriveBleCount));
@@ -341,10 +341,10 @@ void drawWardrive() {
   display.setCursor(6, 176);
   display.print(wardriveCsvReady ? "SD: wardrive.csv (WiGLE)"
                                  : "SD unavailable; not logging");
-  if (!kRadiosCoexist) {
+  if (!radiosCoexist) {
     display.setTextColor(kMuted, kBackground);
     display.setCursor(6, 196);
-    display.print("BLE off: mini RAM fits one radio;");
+    display.print("BLE off: memory/startup check;");
     display.setCursor(6, 208);
     display.print("logging Wi-Fi APs only.");
   }
@@ -352,21 +352,7 @@ void drawWardrive() {
 }
 
 void startWardrive() {
-  // On the mini the radios cannot coexist, so wardrive runs Wi-Fi-only there
-  // (still logs APs with GPS) and drawWardrive() notes BLE is off. On full
-  // boards it logs Wi-Fi + BLE together.
-  if (kRadiosCoexist) {
-    // Bring BLE up first, while the heap is unfragmented, so the controller can
-    // grab its large contiguous block; Wi-Fi then fills the smaller fragments.
-    if (!ensureBleReady(true)) {
-      showRadioError("BLE initialization failed");
-      return;
-    }
-  }
-  if (!ensureWifiStation(!kRadiosCoexist)) {
-    showRadioError("Wi-Fi initialization failed");
-    return;
-  }
+  if (!prepareDualRadioView()) return;
   wardriveNetworks = 0;
   wardriveBleCount = 0;
   wardriveScans = 0;
@@ -380,14 +366,14 @@ void startWardrive() {
   WiFi.disconnect(false, false);
   wardriveCsvReady = openWardriveCsv();
 
-  if (kRadiosCoexist) {
+  if (radiosCoexist) {
     // Continuous passive BLE scan alongside the Wi-Fi scans.
     NimBLEScan* scan = NimBLEDevice::getScan();
     configureBleScan(scan, &wardriveBleCallbacks, false, 160, 80, 0);
-    scan->start(0, false, true);
-    Serial.println("[wardrive] started (Wi-Fi + BLE)");
+    startDualRadioScan(scan);
+    if (radiosCoexist) Serial.println("[wardrive] started (Wi-Fi + BLE)");
   } else {
-    Serial.println("[wardrive] started (Wi-Fi only; BLE off on mini)");
+    Serial.println("[wardrive] started (Wi-Fi only; BLE unavailable)");
   }
 
   wardriveActive = true;
@@ -396,7 +382,7 @@ void startWardrive() {
 
 void stopWardrive() {
   wardriveActive = false;
-  if (kRadiosCoexist) {
+  if (radiosCoexist) {
     NimBLEScan* scan = NimBLEDevice::getScan();
     scan->stop();
     scan->clearResults();

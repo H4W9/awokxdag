@@ -24,12 +24,11 @@
 #include "board_pins.h"
 #ifdef AWOK_DUAL_C5_MINI
 #include "mini_display.h"
-// The mini has only ~75 KB internal RAM free; Wi-Fi (~49 KB) and BLE (~33 KB)
-// cannot be initialized at the same time. Views that would use both radios run
-// Wi-Fi-only here and say so. Full boards keep both.
-constexpr bool kRadiosCoexist = false;
+#include "result_memory.h"
+// Set for each dual-radio session after checking the actual internal heap.
+bool radiosCoexist = false;
 #else
-constexpr bool kRadiosCoexist = true;
+constexpr bool radiosCoexist = true;
 #endif
 #include "boot_screen_data.h"
 
@@ -75,7 +74,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.1.3";
+constexpr char kVersion[] = "1.1.4";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -582,3 +581,6 @@ void shutdownWifi();
 bool ensureWifiStation(bool releaseBle = true);
 bool ensureBleReady(bool needsWifi);
 void releaseBleMemory();
+
+bool prepareDualRadioView();
+void startDualRadioScan(NimBLEScan* scan);

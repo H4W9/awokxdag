@@ -756,7 +756,7 @@ void drawAdvancedWatch() {
   display.fillScreen(kBackground);
   drawHeader("ADVANCED WATCH",
              alert ? "ALERT: anomaly detected"
-                   : (kRadiosCoexist ? "Wi-Fi + BLE integrity"
+                   : (radiosCoexist ? "Wi-Fi + BLE integrity"
                                      : "Wi-Fi integrity (BLE off, mini)"));
   display.setTextSize(2);
   display.setTextColor(alert ? kBad : kGood, kBackground);
@@ -794,7 +794,7 @@ void drawAdvancedWatch() {
                  static_cast<unsigned long>(advancedCsaAlerts),
                  advancedNoiseCurrent, advancedNoiseBaseline);
   display.setCursor(6, 172);
-  if (kRadiosCoexist) {
+  if (radiosCoexist) {
     display.printf("RF alerts %lu | BLE churn %lu",
                    static_cast<unsigned long>(advancedRfAlerts),
                    static_cast<unsigned long>(advancedBleChurnAlerts));
@@ -883,21 +883,7 @@ void resetAdvancedWatch() {
 }
 
 void startAdvancedWatch() {
-  // On the mini the radios cannot coexist, so this runs Wi-Fi-only there (still
-  // watches for deauth/EAPOL) and drawAdvancedWatch() notes BLE is off. On full
-  // boards it also watches BLE address-rotation/spam.
-  if (kRadiosCoexist) {
-    // Bring BLE up first, while the heap is unfragmented, so the controller can
-    // grab its large contiguous block; Wi-Fi then fills the smaller fragments.
-    if (!ensureBleReady(true)) {
-      showRadioError("BLE initialization failed");
-      return;
-    }
-  }
-  if (!ensureWifiStation(!kRadiosCoexist)) {
-    showRadioError("Wi-Fi initialization failed");
-    return;
-  }
+  if (!prepareDualRadioView()) return;
   resetAdvancedWatch();
   advancedHopIndex = 0;
   lastAdvancedHopMs = millis();
@@ -928,13 +914,13 @@ void startAdvancedWatch() {
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
 
-  if (kRadiosCoexist) {
+  if (radiosCoexist) {
     NimBLEScan* scan = NimBLEDevice::getScan();
     configureBleScan(scan, &advancedBleCallbacks, false, 160, 80, 0);
-    scan->start(0, false, true);
-    Serial.println("[advanced] Wi-Fi + BLE watch started");
+    startDualRadioScan(scan);
+    if (radiosCoexist) Serial.println("[advanced] Wi-Fi + BLE watch started");
   } else {
-    Serial.println("[advanced] Wi-Fi-only watch started (BLE off on mini)");
+    Serial.println("[advanced] Wi-Fi-only watch started (BLE unavailable)");
   }
 
   advancedWatchActive = true;
@@ -946,7 +932,7 @@ void startAdvancedWatch() {
 void stopAdvancedWatch() {
   advancedWatchActive = false;
   esp_wifi_set_promiscuous(false);
-  if (kRadiosCoexist) {
+  if (radiosCoexist) {
     NimBLEScan* scan = NimBLEDevice::getScan();
     scan->stop();
     scan->clearResults();

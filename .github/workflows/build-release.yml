@@ -7,7 +7,7 @@ on:
       version:
         description: "Release version (e.g. 1.0.0)"
         required: true
-        default: "1.1.3"
+        default: "1.1.4"
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
@@ -60,7 +60,7 @@ jobs:
         # the one in libnet80211.a (a stock core has this empty; enabling raw
         # deauth injection). The esp32 platform default carries this flag too.
         # -D${{ matrix.define }} selects the board profile (pins, display,
-        # single-radio vs. dual-radio behavior) independent of the sketch's
+        # radio memory policy) independent of the sketch's
         # Arduino IDE default.
         run: |
           arduino-cli compile \
@@ -119,8 +119,8 @@ jobs:
 
             - **Dual C5 Touch** — files prefixed `awokxdag-touch-…`
             - **Dual C5 Mini** (experimental) — files prefixed `awokxdag-mini-…`
-              (Wi-Fi and BLE run one at a time; the dual-radio views run
-              Wi-Fi-only on the Mini.)
+              (dual-radio views use PSRAM-backed result tables and attempt
+              Wi-Fi + BLE after a memory check; Wi-Fi-only fallback remains).
 
             **Easiest flash:** write the merged image for your board to `0x0`:
             ```

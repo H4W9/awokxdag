@@ -21,9 +21,22 @@ Adafruit_ILI9341 display(&SPI, AwokPins::kDisplayDc, AwokPins::kDisplayCs,
 XPT2046_Touchscreen touch(AwokPins::kTouchCs);
 #endif
 
+#ifdef AWOK_DUAL_C5_MINI
+MiniResultTable<WifiEntry, kMaxWifiResults> wifiEntries;
+MiniResultTable<BleEntry, kMaxBleResults> bleEntries;
+MiniResultTable<ClientEntry, kMaxClients> clientEntries;
+MiniResultTable<ProbeSsidEntry, kMaxProbeSsids> probeSsids;
+MiniResultTable<KarmaEntry, kMaxKarmaAps> karmaAps;
+size_t resultTableExternalBytes = 0;
+bool resultTablesReady = false;
+#else
 WifiEntry wifiEntries[kMaxWifiResults];
-WifiEntry savedEntries[kMaxSaved];
 BleEntry bleEntries[kMaxBleResults];
+ClientEntry clientEntries[kMaxClients];
+ProbeSsidEntry probeSsids[kMaxProbeSsids];
+KarmaEntry karmaAps[kMaxKarmaAps];
+#endif
+WifiEntry savedEntries[kMaxSaved];
 WifiEntry selectedWifi;
 BleEntry selectedBle;
 int wifiCount = 0;
@@ -127,7 +140,6 @@ uint32_t lastHandshakePulseMs = 0;
 
 // Client / probe-request sniffer. Callback enqueues SnifferHit records; the
 // main loop merges them into the clientEntries table (String work off-task).
-ClientEntry clientEntries[kMaxClients];
 int clientCount = 0;
 SnifferHit snifferQueue[kSnifferQueueSlots];
 volatile int snifferHead = 0;
@@ -1636,13 +1648,15 @@ void showRadioError(const char* message) {
 }
 
 bool ensureWifiStation(bool releaseBle) {
-  if (WiFi.getMode() == WIFI_STA) return true;
-  // One-radio-at-a-time: Wi-Fi-only tools free the BLE controller first so
-  // Wi-Fi can reclaim its block (they cannot coexist in ~75 KB on the mini).
+  // Wi-Fi-only tools free the BLE controller to leave more runtime headroom.
   // Dual-radio views pass releaseBle=false to keep BLE up alongside Wi-Fi.
   if (releaseBle) releaseBleMemory();
+  if (WiFi.getMode() == WIFI_STA) return true;
   logMemory("before Wi-Fi init");
-  if (WiFi.mode(WIFI_STA)) return true;
+  if (WiFi.mode(WIFI_STA)) {
+    logMemory("after Wi-Fi init");
+    return true;
+  }
   Serial.println("[wifi] station initialization failed; operation cancelled");
   logMemory("Wi-Fi init failed");
   return false;
@@ -1661,10 +1675,7 @@ void shutdownWifi() {
 }
 
 bool ensureBleReady(bool needsWifi) {
-  // On the mini, Wi-Fi (~49 KB) and BLE (~33 KB) cannot fit in ~75 KB of
-  // internal RAM at once, so BLE-only tools fully tear Wi-Fi down first to free
-  // its block. (needsWifi = true is only for the dual-radio views, which cannot
-  // actually coexist on the mini and are gated off there.)
+  // BLE-only tools release Wi-Fi; dual-radio views check memory first.
   if (!needsWifi) shutdownWifi();
   if (NimBLEDevice::isInitialized()) return true;
   logMemory("before BLE init");
@@ -1695,6 +1706,48 @@ void releaseBleMemory() {
   delay(100);
   NimBLEDevice::deinit();
   logMemory("after BLE shutdown");
+}
+
+// Called only when entering a dual-radio tool, before callbacks are enabled.
+bool prepareDualRadioView() {
+#ifdef AWOK_DUAL_C5_MINI
+  // A previous Wi-Fi scan can leave STA resident. Release it before admitting
+  // BLE, which needs a contiguous controller allocation.
+  shutdownWifi();
+  releaseBleMemory();
+  const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  radiosCoexist = miniHasDualRadioBudget(
+      resultTableExternalBytes, heap_caps_get_free_size(caps),
+      heap_caps_get_largest_free_block(caps));
+  logMemory("dual-radio admission");
+  if (radiosCoexist) {
+    if (ensureBleReady(true) && ensureWifiStation(false)) return true;
+    // Failed bring-up is not an active session. Release any initialized stack
+    // before retrying Wi-Fi alone; the view will show BLE off.
+    shutdownWifi();
+    releaseBleMemory();
+    radiosCoexist = false;
+  }
+  Serial.println("[radio] Wi-Fi only: dual-radio memory/init check failed");
+  const bool ready = ensureWifiStation();
+#else
+  if (!ensureBleReady(true)) return false;
+  const bool ready = ensureWifiStation(false);
+#endif
+  if (!ready) showRadioError("Wi-Fi initialization failed");
+  return ready;
+}
+
+void startDualRadioScan(NimBLEScan* scan) {
+#ifdef AWOK_DUAL_C5_MINI
+  if (!scan->start(0, false, true)) {
+    Serial.println("[radio] BLE scan start failed; continuing Wi-Fi only");
+    releaseBleMemory();
+    radiosCoexist = false;
+  }
+#else
+  scan->start(0, false, true);
+#endif
 }
 
 bool lastWifiScanOk = false;
@@ -1881,6 +1934,21 @@ void setup() {
       "m=deauth watch, s=saved, d=SD retry, h=home");
   initializeDisplayAndTouch();
   logMemory("after display init");
+#ifdef AWOK_DUAL_C5_MINI
+  resultTablesReady = wifiEntries.initialize(resultTableExternalBytes) &&
+      bleEntries.initialize(resultTableExternalBytes) &&
+      clientEntries.initialize(resultTableExternalBytes) &&
+      probeSsids.initialize(resultTableExternalBytes) &&
+      karmaAps.initialize(resultTableExternalBytes);
+  Serial.printf("[memory] result tables in PSRAM=%u bytes\n",
+                unsigned(resultTableExternalBytes));
+  logMemory("after result table allocation");
+  if (!resultTablesReady) {
+    showRadioError("Result table allocation failed");
+    display.present(false);
+    return;
+  }
+#endif
   drawBootScreen();
 #ifdef AWOK_DUAL_C5_MINI
   display.present(false);
@@ -1899,12 +1967,14 @@ void setup() {
 #ifdef AWOK_DUAL_C5_MINI
   display.present();
 #endif
-  // Radios are brought up lazily and used one at a time: only ~75 KB internal
-  // RAM is free and Wi-Fi (~49 KB) + BLE (~33 KB) cannot coexist on the mini.
+  // Radios are brought up lazily; dual-radio views check their memory budget.
   logMemory("ready; BLE deferred until needed");
 }
 
 void loop() {
+#ifdef AWOK_DUAL_C5_MINI
+  if (!resultTablesReady) { delay(50); return; }
+#endif
   updateGps();
 #ifdef AWOK_DUAL_C5_MINI
   updateMiniJoystick();

@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.1.3
+- **Version:** 1.1.4
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -205,7 +205,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.1.3/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.1.4/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
@@ -237,8 +237,21 @@ exports include the full collected table. Continuous BLE scans use callbacks
 without retaining a NimBLE result list, so the regular scan's 128-result cap does
 not stop their incoming observations. Their feature tables remain bounded.
 
-The larger tables increase static RAM use to approximately **53%** on the C5.
-Device testing under load is still required to measure remaining runtime heap.
+On Mini, the Wi-Fi, BLE, Clients, Probe Intel, and Karma Watch result tables
+are allocated in PSRAM at boot, preserving their 128-entry capacities and moving
+**47 KiB** of table storage out of internal RAM. Strings are constructed normally;
+radio buffers and callback queues remain internal. A table falls back to internal
+RAM if its PSRAM allocation fails; failure of both allocations stops startup.
+Touch keeps its static result tables.
+
+Mini Wardrive, Cameras, and Advanced Watch now attempt Wi-Fi + BLE when at least
+32 KiB of tables were placed in PSRAM and, after stopping previous radios, at
+least 110 KiB of internal RAM is free with a 36 KiB contiguous block. BLE starts
+first, then Wi-Fi. If the budget check, radio initialization, or BLE scan start
+fails, the view retains Wi-Fi-only operation and displays BLE off. These memory
+thresholds are estimates; simultaneous scanning and repeated tool switching still
+need hardware validation under load. See Serial Monitor for table placement and
+internal free/largest-block readings before and after radio initialization.
 
 ## Source layout
 

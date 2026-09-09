@@ -138,8 +138,7 @@ void startDeauthMonitor() {
   signalMonitorActive = false;
 
   Serial.println("[deauth] starting passive detection monitor");
-  // One-radio-at-a-time: free the BLE controller so Wi-Fi has its RAM (the
-  // radios cannot coexist in ~75 KB on the mini).
+  // This Wi-Fi-only tool frees the BLE controller for more runtime headroom.
   releaseBleMemory();
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_MODE_STA);
@@ -396,8 +395,7 @@ void startDeauthAttack() {
   deauthTargetCursor = 0;
   signalMonitorActive = false;
 
-  // One-radio-at-a-time: free the BLE controller so Wi-Fi has its RAM (the
-  // radios cannot coexist in ~75 KB on the mini).
+  // This Wi-Fi-only tool frees the BLE controller for more runtime headroom.
   releaseBleMemory();
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_MODE_STA);

@@ -5,6 +5,31 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-09-09
+
+### Fixed
+
+- Mini dual-radio views can now attempt Wi-Fi + BLE with the stock core by
+  placing five application result tables (47 KiB) in PSRAM, retaining their
+  128-entry capacities. Driver queues and DMA buffers stay internal; Touch
+  retains its static tables.
+- Replaced the Mini's permanent BLE disable with per-session heap admission,
+  BLE-first startup, and Wi-Fi-only fallback on insufficient memory or reported
+  radio/scan startup failure. Logs report actual table placement and heap use.
+  Allocation failure is checked before tools can run. Hardware validation of
+  coexistence and repeated tool switching is still pending.
+
+### Changed
+
+- Bumped firmware, WiGLE metadata, documentation, and release-workflow defaults
+  to 1.1.4 for both Mini and Touch builds.
+
+### Validation
+
+- Both board profiles compile. Sanitized host checks cover result-table object
+  lifetime, allocation fallback, memory admission, and radio-startup recovery.
+  On-device testing of Mini coexistence and repeated tool switching is pending.
+
 ## [1.1.3] - 2026-09-09
 
 ### Added
@@ -149,7 +174,8 @@ All notable changes to AWOKxDAG are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/dagnazty/awokxdag/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/dagnazty/awokxdag/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/dagnazty/awokxdag/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/dagnazty/awokxdag/compare/v1.1.0...v1.1.1

@@ -9,7 +9,6 @@
 RogueHit karmaQueue[kKarmaHitQueueSlots];
 volatile int karmaHead = 0;
 volatile int karmaTail = 0;
-KarmaEntry karmaAps[kMaxKarmaAps];
 int karmaApCount = 0;
 int karmaAlertCount = 0;
 int karmaHopIndex = 0;

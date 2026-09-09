@@ -6,7 +6,6 @@
 // leaking from devices in range, ranked by how many probes and how many
 // distinct devices ask for each. Passive: it never transmits.
 
-ProbeSsidEntry probeSsids[kMaxProbeSsids];
 int probeSsidCount = 0;
 ProbeHit probeHitQueue[kProbeHitQueueSlots];
 volatile int probeHitHead = 0;
