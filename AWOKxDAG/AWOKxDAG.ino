@@ -1,3 +1,7 @@
+// Arduino IDE selection. The packaging script can explicitly select Touch.
+#if !defined(AWOK_DUAL_C5_TOUCH) && !defined(AWOK_DUAL_C5_MINI)
+#define AWOK_DUAL_C5_MINI
+#endif
 #include "awok_common.h"
 
 // The Wi-Fi driver refuses to transmit raw management frames it deems
@@ -9,9 +13,13 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2,
   return 0;
 }
 
+#ifdef AWOK_DUAL_C5_MINI
+AwokMiniDisplay display;
+#else
 Adafruit_ILI9341 display(&SPI, AwokPins::kDisplayDc, AwokPins::kDisplayCs,
                          AwokPins::kDisplayReset);
 XPT2046_Touchscreen touch(AwokPins::kTouchCs);
+#endif
 
 WifiEntry wifiEntries[kMaxWifiResults];
 WifiEntry savedEntries[kMaxSaved];
@@ -259,7 +267,7 @@ String bytesToHex(const std::string& data, size_t maximumBytes) {
 
 bool initializeSdCard() {
   digitalWrite(AwokPins::kDisplayCs, HIGH);
-  digitalWrite(AwokPins::kTouchCs, HIGH);
+  if (AwokPins::kTouchCs >= 0) digitalWrite(AwokPins::kTouchCs, HIGH);
   digitalWrite(AwokPins::kSdCs, HIGH);
 
   if (!SD.begin(AwokPins::kSdCs, SPI, kSdClockHz) ||
@@ -422,6 +430,19 @@ bool isSaved(const WifiEntry& entry) { return savedIndex(entry) >= 0; }
 
 void loadSavedNetworks() {
   savedCount = 0;
+  nvs_handle_t handle;
+  const esp_err_t nvsError = nvs_open("awokxdag", NVS_READONLY, &handle);
+  if (nvsError != ESP_OK) {
+    if (nvsError == ESP_ERR_NVS_NOT_FOUND) {
+      Serial.println("[saved] no saved networks yet");
+    } else {
+      Serial.printf("[saved] NVS open failed: %s (0x%x)\n",
+                    esp_err_to_name(nvsError), unsigned(nvsError));
+      logMemory("saved NVS open failed");
+    }
+    return;
+  }
+  nvs_close(handle);
   Preferences preferences;
   if (!preferences.begin("awokxdag", true)) {
     Serial.println("[saved] could not open NVS");
@@ -556,6 +577,10 @@ bool toggleSavedNetwork(const WifiEntry& entry) {
 
 void drawButton(int x, int y, int w, int h, const String& label,
                 uint16_t outline) {
+#ifdef AWOK_DUAL_C5_MINI
+  display.button(x, y, w, h, label.c_str(), outline);
+  return;
+#endif
   display.drawRoundRect(x, y, w, h, 6, outline);
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setTextSize(2);
@@ -569,6 +594,10 @@ void drawButton(int x, int y, int w, int h, const String& label,
 }
 
 void drawHeader(const String& title, const String& detail) {
+#ifdef AWOK_DUAL_C5_MINI
+  display.header(title.c_str(), detail.c_str());
+  return;
+#endif
   display.fillRect(0, 0, kScreenWidth, kHeaderHeight, kPanel);
   display.setTextColor(kAccent, kPanel);
   display.setTextSize(2);
@@ -600,6 +629,10 @@ void drawFooter(const char* leftLabel, const char* rightLabel) {
 
 void drawSmallButton(int x, int y, int w, int h, const String& label,
                      uint16_t outline) {
+#ifdef AWOK_DUAL_C5_MINI
+  display.button(x, y, w, h, label.c_str(), outline);
+  return;
+#endif
   display.drawRoundRect(x, y, w, h, 5, outline);
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setTextSize(1);
@@ -670,7 +703,7 @@ void drawAboutPage() {
   display.print(kVersion);
   display.setTextColor(kMuted, kBackground);
   display.setCursor(6, 144);
-  display.print("Board:   ESP32-C5, ILI9341 touch");
+  display.print(AwokPins::kBoardLabel);
   display.setCursor(6, 158);
   display.print("Storage: microSD at /awokxdag");
 
@@ -701,10 +734,24 @@ void drawHome() {
   drawButton(20, 132, 200, 40, "Monitor");
   drawButton(20, 176, 200, 40, "GPS");
   drawButton(20, 220, 200, 40, "Status");
+#ifdef AWOK_DUAL_C5_MINI
+  display.button(128, 284, 106, 30, "About", kAccent);
+#else
   drawFooter(kVersion, "About >");
+#endif
 }
 
 void drawBootScreen() {
+#ifdef AWOK_DUAL_C5_MINI
+  display.fillScreen(kBackground);
+  drawHeader("AWOKxDAG", "Dual C5 Mini");
+  display.setTextSize(1);
+  display.setCursor(0, 50);
+  display.print("Version "); display.print(kVersion);
+  display.setCursor(0, 70);
+  display.print("Starting...");
+  return;
+#endif
   // XBM stores black source pixels as set bits. Painting those black over a
   // white canvas preserves the supplied white-on-black composition exactly.
   display.fillScreen(ILI9341_WHITE);
@@ -719,6 +766,9 @@ void drawScanning(const String& kind) {
   display.setTextSize(2);
   display.setCursor(43, 135);
   display.print("Scanning...");
+#ifdef AWOK_DUAL_C5_MINI
+  display.present(false);
+#endif
 }
 
 void drawWifiResults() {
@@ -734,6 +784,9 @@ void drawWifiResults() {
   display.setTextSize(1);
   const int start = wifiPage * kVisibleRows;
   const int rows = min(kVisibleRows, wifiCount - start);
+#ifdef AWOK_DUAL_C5_MINI
+  display.selectableRows(rows);
+#endif
   for (int row = 0; row < rows; ++row) {
     const int index = start + row;
     const int y = 48 + row * 22;
@@ -772,6 +825,9 @@ void drawSavedNetworks() {
   String detail = String(savedCount) + " saved | SD ";
   detail += lastSavedSdWriteOk ? "synced" : (sdReady ? "ready" : "missing");
   drawHeader("SAVED NETWORKS", detail);
+#ifdef AWOK_DUAL_C5_MINI
+  display.selectableRows(savedCount);
+#endif
   display.setTextSize(1);
   for (int i = 0; i < savedCount; ++i) {
     const int y = 48 + i * 22;
@@ -818,6 +874,9 @@ void drawBleResults() {
   detail +=
       lastBleScanSdWriteOk ? "saved" : (sdReady ? "write error" : "missing");
   drawHeader("BLE RESULTS", detail);
+#ifdef AWOK_DUAL_C5_MINI
+  display.selectableRows(min(kVisibleRows, bleCount - blePage * kVisibleRows));
+#endif
   display.setTextSize(1);
   for (int row = 0; row < kVisibleRows; ++row) {
     const int i = bleResultIndex(row);
@@ -941,6 +1000,25 @@ void drawChannelMap() {
              wifiCount ? String(wifiCount) + " APs from latest passive scan"
                        : "run a Wi-Fi scan to collect data");
   display.setTextSize(1);
+
+#ifdef AWOK_DUAL_C5_MINI
+  if (wifiCount == 0) {
+    display.setCursor(0, 48); display.print("No channel data");
+  } else {
+    int maximum = 1;
+    for (int ch = 1; ch <= 165; ++ch)
+      maximum = max(maximum, accessPointsOnChannel(ch));
+    int row = 0;
+    for (int ch = 1; ch <= 165; ++ch) {
+      const int count = accessPointsOnChannel(ch);
+      if (!count) continue;
+      const String label = "Ch " + String(ch) + ": " + String(count) + " APs";
+      display.bar(48 + row++ * 2, label.c_str(), count, maximum);
+    }
+  }
+  drawFooter("Home", "Rescan");
+  return;
+#endif
 
   if (wifiCount == 0) {
     display.setTextColor(kMuted, kBackground);
@@ -1236,6 +1314,9 @@ void drawWifiSignalMonitor() {
                  static_cast<long>(selectedWifi.channel), signalSampleCount,
                  signalMisses);
 
+#ifdef AWOK_DUAL_C5_MINI
+  display.graph(96, signalSamples, signalSampleCount);
+#else
   constexpr int kGraphLeft = 34;
   constexpr int kGraphRight = 232;
   constexpr int kGraphTop = 96;
@@ -1272,6 +1353,7 @@ void drawWifiSignalMonitor() {
     previousY = y;
   }
 
+#endif
   display.setTextColor(signalSdLogReady ? kAccent : kMuted, kBackground);
   display.setCursor(6, 258);
   display.print(signalSdLogReady ? "SD logging: latest_wifi_signal.csv"
@@ -1280,7 +1362,8 @@ void drawWifiSignalMonitor() {
 }
 
 int32_t sampleSelectedWifiSignal(bool& found) {
-  WiFi.mode(WIFI_STA);
+  found = false;
+  if (!ensureWifiStation()) return -127;
   WiFi.disconnect(false, false);
   uint8_t bssid[6];
   const bool haveBssid = parseBssid(selectedWifi.bssid, bssid);
@@ -1528,15 +1611,115 @@ void sortBle() {
   }
 }
 
+void logMemory(const char* stage) {
+  const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  Serial.printf("[memory] %s: internal free=%u largest=%u; PSRAM total=%u free=%u\n",
+                stage, unsigned(heap_caps_get_free_size(caps)),
+                unsigned(heap_caps_get_largest_free_block(caps)),
+                unsigned(ESP.getPsramSize()), unsigned(ESP.getFreePsram()));
+}
+
+void showRadioError(const char* message) {
+  // Reuse the Home/About return handler: either footer goes back to Home.
+  currentView = View::kHome;
+  homePage = 1;
+  signalMonitorActive = false;
+  display.fillScreen(kBackground);
+  drawHeader("RADIO ERROR", message);
+  display.setTextSize(1);
+  display.setTextColor(kWarn, kBackground);
+  display.setCursor(6, 60);
+  display.print("Radio initialization failed.");
+  display.setCursor(6, 80);
+  display.print("Check Serial Monitor for details.");
+  drawFooter("Home", "Home");
+}
+
+bool ensureWifiStation(bool releaseBle) {
+  if (WiFi.getMode() == WIFI_STA) return true;
+  // One-radio-at-a-time: Wi-Fi-only tools free the BLE controller first so
+  // Wi-Fi can reclaim its block (they cannot coexist in ~75 KB on the mini).
+  // Dual-radio views pass releaseBle=false to keep BLE up alongside Wi-Fi.
+  if (releaseBle) releaseBleMemory();
+  logMemory("before Wi-Fi init");
+  if (WiFi.mode(WIFI_STA)) return true;
+  Serial.println("[wifi] station initialization failed; operation cancelled");
+  logMemory("Wi-Fi init failed");
+  return false;
+}
+
+// Fully tear Wi-Fi down so its ~49 KB is freed and the next bring-up starts
+// from a clean state. WiFi.mode(WIFI_OFF) alone leaves the driver half
+// initialized, so a later WiFi.mode(WIFI_STA) fails with ESP_ERR_WIFI_NOT_INIT
+// (0x3001). Mirrors ESP32 Marauder's shutdownWiFi().
+void shutdownWifi() {
+  esp_wifi_set_promiscuous(false);
+  WiFi.disconnect(false, false);
+  WiFi.mode(WIFI_OFF);
+  esp_wifi_stop();
+  esp_wifi_deinit();
+}
+
+bool ensureBleReady(bool needsWifi) {
+  // On the mini, Wi-Fi (~49 KB) and BLE (~33 KB) cannot fit in ~75 KB of
+  // internal RAM at once, so BLE-only tools fully tear Wi-Fi down first to free
+  // its block. (needsWifi = true is only for the dual-radio views, which cannot
+  // actually coexist on the mini and are gated off there.)
+  if (!needsWifi) shutdownWifi();
+  if (NimBLEDevice::isInitialized()) return true;
+  logMemory("before BLE init");
+  if (!NimBLEDevice::init("")) {
+    logMemory("BLE init failed");
+    showRadioError("BLE initialization failed");
+    return false;
+  }
+  NimBLEDevice::setPower(3);
+  logMemory("after BLE init");
+  return true;
+}
+
+void releaseBleMemory() {
+  // One-radio-at-a-time: fully free the BLE controller so Wi-Fi can reclaim its
+  // block. Mirrors ESP32 Marauder's shutdownBLE(): stop, clear results, let
+  // pending callbacks/timers drain, then a SINGLE deinit().
+  // NimBLEDevice::deinit() == deinit(false) frees controller RAM but KEEPS the
+  // NimBLEScan object. deinit(true) deletes it and runs ble_npl_callout_deinit()
+  // on the scan-response timer after the NimBLE port is already torn down ->
+  // null-ptr load (~0x6c) on loopTask (Guru Meditation, load access fault).
+  if (!NimBLEDevice::isInitialized()) return;
+  NimBLEScan* scan = NimBLEDevice::getScan();
+  if (scan) {
+    scan->stop();
+    scan->clearResults();
+  }
+  delay(100);
+  NimBLEDevice::deinit();
+  logMemory("after BLE shutdown");
+}
+
+bool lastWifiScanOk = false;
 void scanWifi() {
   if (scanInProgress) return;
+  lastWifiScanOk = false;
   scanInProgress = true;
   drawScanning("WI-FI");
   Serial.println("[wifi] passive access-point scan started");
-  WiFi.mode(WIFI_STA);
+  if (!ensureWifiStation()) {
+    scanInProgress = false;
+    showRadioError("Wi-Fi initialization failed");
+    return;
+  }
   WiFi.disconnect(false, false);
   delay(100);
   const int found = WiFi.scanNetworks(false, true, true);
+  if (found < 0) {
+    Serial.printf("[wifi] scan failed (%d); previous results retained\n", found);
+    WiFi.scanDelete();
+    scanInProgress = false;
+    logMemory("Wi-Fi scan failed");
+    showRadioError("Wi-Fi scan failed");
+    return;
+  }
   wifiCount = found > 0 ? min(found, kMaxWifiResults) : 0;
   wifiPage = 0;
   for (int i = 0; i < wifiCount; ++i) {
@@ -1554,12 +1737,13 @@ void scanWifi() {
   sortWifi();
   lastScanSdWriteOk = exportWifiScanToSd();
   scanInProgress = false;
+  lastWifiScanOk = true;
   drawWifiResults();
 }
 
 void scanWifiForChannelMap() {
   scanWifi();
-  drawChannelMap();
+  if (lastWifiScanOk) drawChannelMap();
 }
 
 // NimBLE uses one scanner across all views. Always replace the previous
@@ -1578,6 +1762,7 @@ void configureBleScan(NimBLEScan* scan, NimBLEScanCallbacks* callbacks,
 
 void scanBle() {
   if (scanInProgress) return;
+  if (!ensureBleReady(false)) return;
   scanInProgress = true;
   drawScanning("BLE");
   Serial.println("[ble] passive advertisement scan started");
@@ -1628,6 +1813,7 @@ void scanBle() {
   sortBle();
   lastBleScanSdWriteOk = exportBleScanToSd();
   scanner->clearResults();
+  releaseBleMemory();
   scanInProgress = false;
   drawBleResults();
 }
@@ -1649,6 +1835,22 @@ void openBleDetail(const BleEntry& entry) {
 }
 
 void initializeDisplayAndTouch() {
+#ifdef AWOK_DUAL_C5_MINI
+  for (int pin : {AwokPins::kButtonLeft, AwokPins::kButtonCenter,
+                  AwokPins::kButtonUp, AwokPins::kButtonRight,
+                  AwokPins::kButtonDown}) pinMode(pin, INPUT_PULLUP);
+  pinMode(AwokPins::kDisplayCs, OUTPUT);
+  pinMode(AwokPins::kSdCs, OUTPUT);
+  pinMode(AwokPins::kBacklight, OUTPUT);
+  digitalWrite(AwokPins::kDisplayCs, HIGH);
+  digitalWrite(AwokPins::kSdCs, HIGH);
+  digitalWrite(AwokPins::kBacklight, HIGH); // off until panel initialization
+  SPI.begin(AwokPins::kSpiSck, AwokPins::kSpiMiso, AwokPins::kSpiMosi, -1);
+  if (!display.begin()) {
+    while (true) delay(1000);
+  }
+  display.setTextWrap(false);
+#else
   pinMode(AwokPins::kDisplayCs, OUTPUT);
   pinMode(AwokPins::kTouchCs, OUTPUT);
   pinMode(AwokPins::kSdCs, OUTPUT);
@@ -1664,6 +1866,7 @@ void initializeDisplayAndTouch() {
   display.begin(27000000);
   display.setRotation(0);
   display.setTextWrap(false);
+#endif
 }
 
 void setup() {
@@ -1671,11 +1874,17 @@ void setup() {
   delay(200);
   Serial.println();
   Serial.println("AWOKxDAG starting");
+  Serial.println(AwokPins::kBoardLabel);
+  logMemory("boot");
   Serial.println(
       "Commands: w=Wi-Fi, c=channels, b=BLE, p=clients, g=gps, "
       "m=deauth watch, s=saved, d=SD retry, h=home");
   initializeDisplayAndTouch();
+  logMemory("after display init");
   drawBootScreen();
+#ifdef AWOK_DUAL_C5_MINI
+  display.present(false);
+#endif
   delay(kBootScreenMs);
   initializeSdCard();
   initGps();
@@ -1687,12 +1896,19 @@ void setup() {
   loadSavedNetworks();
   if (sdReady) lastSavedSdWriteOk = exportSavedNetworksToSd();
   drawHome();
-  NimBLEDevice::init("");
-  NimBLEDevice::setPower(3);
+#ifdef AWOK_DUAL_C5_MINI
+  display.present();
+#endif
+  // Radios are brought up lazily and used one at a time: only ~75 KB internal
+  // RAM is free and Wi-Fi (~49 KB) + BLE (~33 KB) cannot coexist on the mini.
+  logMemory("ready; BLE deferred until needed");
 }
 
 void loop() {
   updateGps();
+#ifdef AWOK_DUAL_C5_MINI
+  updateMiniJoystick();
+#endif
   handleTouch();
   handleSerial();
   updateWifiSignalMonitor();
@@ -1726,5 +1942,8 @@ void loop() {
     lastGpsScreenDrawMs = millis();
     drawGps();
   }
+#ifdef AWOK_DUAL_C5_MINI
+  display.present();
+#endif
   delay(10);
 }

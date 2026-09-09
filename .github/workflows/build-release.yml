@@ -7,7 +7,7 @@ on:
       version:
         description: "Release version (e.g. 1.0.0)"
         required: true
-        default: "1.1.2"
+        default: "1.1.3"
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
@@ -19,6 +19,16 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: touch
+            define: AWOK_DUAL_C5_TOUCH
+            label: "Dual C5 Touch"
+          - variant: mini
+            define: AWOK_DUAL_C5_MINI
+            label: "Dual C5 Mini"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,25 +54,53 @@ jobs:
             "XPT2046_Touchscreen" \
             "TinyGPSPlus"
 
-      - name: Compile (produces the merged image)
+      - name: Compile ${{ matrix.label }} (produces the merged image)
         # -z muldefs lets our ieee80211_raw_frame_sanity_check override win over
         # the one in libnet80211.a (a stock core has this empty; enabling raw
         # deauth injection). The esp32 platform default carries this flag too.
+        # -D${{ matrix.define }} selects the board profile (pins, display,
+        # single-radio vs. dual-radio behavior) independent of the sketch's
+        # Arduino IDE default.
         run: |
           arduino-cli compile \
             --fqbn "esp32:esp32:esp32c5:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=enabled" \
             --build-property "compiler.c.elf.extra_flags=-Wl,-z,muldefs" \
-            --build-path build \
+            --build-property "compiler.cpp.extra_flags=-D${{ matrix.define }}" \
+            --build-path "build-${{ matrix.variant }}" \
             AWOKxDAG/AWOKxDAG.ino
 
-      - name: Stage release artifacts
+      - name: Stage ${{ matrix.label }} artifacts
         run: |
           mkdir -p release
-          cp build/AWOKxDAG.ino.merged.bin     release/awokxdag-merged.bin
-          cp build/AWOKxDAG.ino.bin            release/awokxdag-app.bin
-          cp build/AWOKxDAG.ino.bootloader.bin release/bootloader.bin
-          cp build/AWOKxDAG.ino.partitions.bin release/partitions.bin
-          cp build/boot_app0.bin               release/boot_app0.bin
+          b="build-${{ matrix.variant }}"
+          v="${{ matrix.variant }}"
+          cp "$b/AWOKxDAG.ino.merged.bin"     "release/awokxdag-$v-merged.bin"
+          cp "$b/AWOKxDAG.ino.bin"            "release/awokxdag-$v-app.bin"
+          cp "$b/AWOKxDAG.ino.bootloader.bin" "release/awokxdag-$v-bootloader.bin"
+          cp "$b/AWOKxDAG.ino.partitions.bin" "release/awokxdag-$v-partitions.bin"
+          cp "$b/boot_app0.bin"               "release/awokxdag-$v-boot_app0.bin"
+          ls -la release
+
+      - name: Upload ${{ matrix.label }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.variant }}
+          path: release/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
           cd release
           sha256sum * > SHA256SUMS
           ls -la
@@ -76,11 +114,18 @@ jobs:
           body: |
             AWOKxDAG v${{ inputs.version }} — ESP32-C5 firmware.
 
-            **Easiest flash:** write `awokxdag-merged.bin` to address `0x0`:
+            Two board profiles are built from the same source:
+
+            - **Dual C5 Touch** — files prefixed `awokxdag-touch-…`
+            - **Dual C5 Mini** (experimental) — files prefixed `awokxdag-mini-…`
+              (Wi-Fi and BLE run one at a time; the dual-radio views run
+              Wi-Fi-only on the Mini.)
+
+            **Easiest flash:** write the merged image for your board to `0x0`:
             ```
-            esptool --chip esp32c5 write_flash 0x0 awokxdag-merged.bin
+            esptool --chip esp32c5 write_flash 0x0 awokxdag-<board>-merged.bin
             ```
-            Or use the individual images (`bootloader.bin` @ 0x2000,
-            `partitions.bin` @ 0x8000, `boot_app0.bin` @ 0xe000,
-            `awokxdag-app.bin` @ 0x10000). Verify with `SHA256SUMS`.
+            Or use the individual images (`…-bootloader.bin` @ 0x2000,
+            `…-partitions.bin` @ 0x8000, `…-boot_app0.bin` @ 0xe000,
+            `…-app.bin` @ 0x10000). Verify with `SHA256SUMS`.
           files: release/*

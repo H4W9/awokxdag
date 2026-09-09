@@ -15,11 +15,22 @@
 #include <TinyGPSPlus.h>
 #include <esp_wifi.h>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
+#include <nvs.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <string>
 
 #include "board_pins.h"
+#ifdef AWOK_DUAL_C5_MINI
+#include "mini_display.h"
+// The mini has only ~75 KB internal RAM free; Wi-Fi (~49 KB) and BLE (~33 KB)
+// cannot be initialized at the same time. Views that would use both radios run
+// Wi-Fi-only here and say so. Full boards keep both.
+constexpr bool kRadiosCoexist = false;
+#else
+constexpr bool kRadiosCoexist = true;
+#endif
 #include "boot_screen_data.h"
 
 constexpr int kScreenWidth = 240;
@@ -64,7 +75,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.1.2";
+constexpr char kVersion[] = "1.1.3";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -565,3 +576,9 @@ String bytesToHex(const std::string& data, size_t maximumBytes = 16);
 void drawButton(int x, int y, int w, int h, const String& label,
                 uint16_t outline = kAccent);
 void drawHeader(const String& title, const String& detail = "");
+void logMemory(const char* stage);
+void showRadioError(const char* message);
+void shutdownWifi();
+bool ensureWifiStation(bool releaseBle = true);
+bool ensureBleReady(bool needsWifi);
+void releaseBleMemory();

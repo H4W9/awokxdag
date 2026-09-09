@@ -138,6 +138,9 @@ void startDeauthMonitor() {
   signalMonitorActive = false;
 
   Serial.println("[deauth] starting passive detection monitor");
+  // One-radio-at-a-time: free the BLE controller so Wi-Fi has its RAM (the
+  // radios cannot coexist in ~75 KB on the mini).
+  releaseBleMemory();
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_MODE_STA);
   esp_wifi_set_promiscuous(false);
@@ -262,6 +265,9 @@ void drawDeauthSelect() {
              String(deauthTargetCount) + " selected | tap to toggle");
   display.setTextSize(1);
   const int rows = min(wifiCount, kVisibleRows);
+#ifdef AWOK_DUAL_C5_MINI
+  display.selectableRows(rows);
+#endif
   for (int i = 0; i < rows; ++i) {
     const int y = 48 + i * 22;
     const bool selected = isDeauthTarget(wifiEntries[i]);
@@ -390,6 +396,9 @@ void startDeauthAttack() {
   deauthTargetCursor = 0;
   signalMonitorActive = false;
 
+  // One-radio-at-a-time: free the BLE controller so Wi-Fi has its RAM (the
+  // radios cannot coexist in ~75 KB on the mini).
+  releaseBleMemory();
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_MODE_STA);
   esp_wifi_set_ps(WIFI_PS_NONE);

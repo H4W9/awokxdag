@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.1.2
+- **Version:** 1.1.3
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](../CHANGELOG.md)
@@ -151,10 +151,12 @@ and retains one previous segment.
      PSRAM **Enabled**, USB CDC On Boot **Disabled**.
 4. Upload to the **white USB** port only (hold SCREEN BOOT, apply power, release).
 
-CLI equivalent:
+The sketch is currently configured for Mini in Arduino IDE. From the repository
+root, the packaging script selects a board explicitly:
 
 ```bash
-arduino-cli compile --fqbn "esp32:esp32:esp32c5:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=enabled" AWOKxDAG/AWOKxDAG.ino
+python3 scripts/build_firmware.py dual-c5-mini
+# Or: python3 scripts/build_firmware.py dual-c5-touch
 ```
 
 ## Hardware map

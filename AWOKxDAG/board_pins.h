@@ -1,7 +1,9 @@
 #pragma once
 
-// AWOK Dual C5 Touch / Marauder v8 (white USB, screen ESP32-C5).
-// Source cross-check: GhostESP sdkconfig.MarauderV8.
+// The sketch selects the IDE profile; the packaging script selects explicitly.
+// AWOK_DUAL_C5_MINI selects Mini. Without that define, these are Touch pins.
+// Mini display mapping recovered from the bundled Mini firmware; provenance
+// and hardware validation status are documented in docs/dual-c5-mini-port.md.
 namespace AwokPins {
 constexpr int kSpiSck = 6;
 constexpr int kSpiMiso = 2;
@@ -10,15 +12,27 @@ constexpr int kSpiMosi = 7;
 constexpr int kDisplayCs = 23;
 constexpr int kDisplayDc = 24;
 constexpr int kDisplayReset = -1;  // Reset is not controlled by a GPIO.
+#ifdef AWOK_DUAL_C5_MINI
+constexpr char kBoardLabel[] = "Dual C5 Mini (experimental)";
+constexpr int kBacklight = 5;
+constexpr bool kBacklightOn = false;
+constexpr int kTouchCs = -1;
+constexpr int kButtonLeft = 0;
+constexpr int kButtonCenter = 1;
+constexpr int kButtonUp = 4;
+constexpr int kButtonRight = 8;
+constexpr int kButtonDown = 9;
+#else
+constexpr char kBoardLabel[] = "Dual C5 Touch";
 constexpr int kBacklight = 8;
 constexpr bool kBacklightOn = true;
-
 constexpr int kTouchCs = 3;
+#endif
 constexpr int kSdCs = 10;
 
 // GPS on UART1 (matches Marauder v8 / ESP32-C5 mapping). The macro names follow
 // Marauder's convention where kGpsRx is the ESP pin wired to the GPS module's
-// TX line. 9600 baud NMEA.
+// TX line.
 // Battery voltage sense (ADC). Set to the real GPIO if the board exposes a
 // battery divider; -1 disables the reading (Status shows "n/a").
 constexpr int kBatteryAdc = -1;
@@ -27,7 +41,7 @@ constexpr float kBatteryDivider = 2.0f;  // divider ratio if kBatteryAdc is set
 constexpr int kGpsUart = 1;
 constexpr int kGpsRx = 14;  // ESP RX <- GPS TX
 constexpr int kGpsTx = 13;  // ESP TX -> GPS RX
-constexpr unsigned long kGpsBaud = 115200;  // confirmed on hardware
+constexpr unsigned long kGpsBaud = 115200;  // confirmed on Touch; Mini pending
 }  // namespace AwokPins
 
 namespace AwokTouchCalibration {

@@ -1,6 +1,10 @@
 // AWOKxDAG — touch + serial input dispatch (compiled as part of the sketch; see awok_common.h)
 
 bool readTouch(int& screenX, int& screenY) {
+#ifdef AWOK_DUAL_C5_MINI
+  return digitalRead(AwokPins::kButtonCenter) == LOW &&
+         display.selection(screenX, screenY);
+#else
   if (!touch.touched()) return false;
   TS_Point point = touch.getPoint();
   if (point.z < AwokTouchCalibration::kPressureMin) return false;
@@ -11,7 +15,30 @@ bool readTouch(int& screenX, int& screenY) {
                           AwokTouchCalibration::kYMax, 0, kScreenHeight - 1),
                       0, kScreenHeight - 1);
   return true;
+#endif
 }
+
+#ifdef AWOK_DUAL_C5_MINI
+void updateMiniJoystick() {
+  static uint32_t nextMove = 0;
+  static int lastDirection = 0;
+  const uint32_t now = millis();
+  // Holding center never moves selection into another control.
+  if (digitalRead(AwokPins::kButtonCenter) == LOW) return;
+  const int direction = digitalRead(AwokPins::kButtonLeft) == LOW ? -2 :
+      digitalRead(AwokPins::kButtonRight) == LOW ? 2 :
+      digitalRead(AwokPins::kButtonUp) == LOW ? -1 :
+      digitalRead(AwokPins::kButtonDown) == LOW ? 1 : 0;
+  if (!direction) { lastDirection = 0; return; }
+  const bool first = direction != lastDirection;
+  if (first || static_cast<int32_t>(now - nextMove) >= 0) {
+    display.navigate(direction == 2 ? 1 : direction == -2 ? -1 : direction,
+                     abs(direction) == 2);
+    nextMove = now + (first ? 350 : 150);
+    lastDirection = direction;
+  }
+}
+#endif
 
 // A held contact is one press, even if it spans multiple redraws. In
 // particular, Delete -> OK must require releasing and pressing again.

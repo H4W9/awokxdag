@@ -755,7 +755,9 @@ void drawAdvancedWatch() {
                      advancedAlertTotal > 0;
   display.fillScreen(kBackground);
   drawHeader("ADVANCED WATCH",
-             alert ? "ALERT: anomaly detected" : "Wi-Fi + BLE integrity");
+             alert ? "ALERT: anomaly detected"
+                   : (kRadiosCoexist ? "Wi-Fi + BLE integrity"
+                                     : "Wi-Fi integrity (BLE off, mini)"));
   display.setTextSize(2);
   display.setTextColor(alert ? kBad : kGood, kBackground);
   display.setCursor(6, 48);
@@ -792,9 +794,14 @@ void drawAdvancedWatch() {
                  static_cast<unsigned long>(advancedCsaAlerts),
                  advancedNoiseCurrent, advancedNoiseBaseline);
   display.setCursor(6, 172);
-  display.printf("RF alerts %lu | BLE churn %lu",
-                 static_cast<unsigned long>(advancedRfAlerts),
-                 static_cast<unsigned long>(advancedBleChurnAlerts));
+  if (kRadiosCoexist) {
+    display.printf("RF alerts %lu | BLE churn %lu",
+                   static_cast<unsigned long>(advancedRfAlerts),
+                   static_cast<unsigned long>(advancedBleChurnAlerts));
+  } else {
+    display.printf("RF alerts %lu | BLE churn off",
+                   static_cast<unsigned long>(advancedRfAlerts));
+  }
 
   display.drawFastHLine(6, 190, 228, kPanel);
   display.setTextColor(advancedAlertTotal ? kBad : kMuted, kBackground);
@@ -876,6 +883,21 @@ void resetAdvancedWatch() {
 }
 
 void startAdvancedWatch() {
+  // On the mini the radios cannot coexist, so this runs Wi-Fi-only there (still
+  // watches for deauth/EAPOL) and drawAdvancedWatch() notes BLE is off. On full
+  // boards it also watches BLE address-rotation/spam.
+  if (kRadiosCoexist) {
+    // Bring BLE up first, while the heap is unfragmented, so the controller can
+    // grab its large contiguous block; Wi-Fi then fills the smaller fragments.
+    if (!ensureBleReady(true)) {
+      showRadioError("BLE initialization failed");
+      return;
+    }
+  }
+  if (!ensureWifiStation(!kRadiosCoexist)) {
+    showRadioError("Wi-Fi initialization failed");
+    return;
+  }
   resetAdvancedWatch();
   advancedHopIndex = 0;
   lastAdvancedHopMs = millis();
@@ -896,8 +918,7 @@ void startAdvancedWatch() {
     }
   }
 
-  WiFi.disconnect(true, false);
-  WiFi.mode(WIFI_MODE_STA);
+  WiFi.disconnect(false, false);
   esp_wifi_set_promiscuous(false);
   wifi_promiscuous_filter_t filter = {};
   filter.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT |
@@ -907,25 +928,32 @@ void startAdvancedWatch() {
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
 
-  NimBLEScan* scan = NimBLEDevice::getScan();
-  configureBleScan(scan, &advancedBleCallbacks, false, 160, 80, 0);
-  scan->start(0, false, true);
+  if (kRadiosCoexist) {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    configureBleScan(scan, &advancedBleCallbacks, false, 160, 80, 0);
+    scan->start(0, false, true);
+    Serial.println("[advanced] Wi-Fi + BLE watch started");
+  } else {
+    Serial.println("[advanced] Wi-Fi-only watch started (BLE off on mini)");
+  }
 
   advancedWatchActive = true;
   recordFirmwareAudit("monitor", "advanced_watch_start", "success",
                       advancedLogReady ? "sd_log=ready" : "sd_log=unavailable");
-  Serial.println("[advanced] Wi-Fi + BLE watch started");
   drawAdvancedWatch();
 }
 
 void stopAdvancedWatch() {
   advancedWatchActive = false;
   esp_wifi_set_promiscuous(false);
-  NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->stop();
-  scan->clearResults();
-  WiFi.mode(WIFI_MODE_STA);
-  WiFi.disconnect(true, false);
+  if (kRadiosCoexist) {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    scan->stop();
+    scan->clearResults();
+    releaseBleMemory();
+  }
+  // Keep Wi-Fi STA resident; promiscuous is already off. Powering Wi-Fi down
+  // here breaks the next radio bring-up (0x3001 / heap fragmentation).
   recordFirmwareAudit("monitor", "advanced_watch_stop", "success",
                       "alerts=" + String(advancedAlertTotal));
   Serial.printf("[advanced] stopped; %lu alert(s)\n",

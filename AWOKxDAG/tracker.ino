@@ -211,6 +211,7 @@ void drawTrackerScan() {
 }
 
 void startTrackerScan() {
+  if (!ensureBleReady(false)) return;
   trackerCount = 0;
   trackerHitHead = 0;
   trackerHitTail = 0;
@@ -234,6 +235,7 @@ void stopTrackerScan() {
   NimBLEScan* scan = NimBLEDevice::getScan();
   scan->stop();
   scan->clearResults();
+  releaseBleMemory();
   lastTrackerCsvOk = exportTrackersToSd();
   Serial.printf("[tracker] stopped; %d tracker(s)\n", trackerCount);
 }

@@ -202,7 +202,8 @@ void drawCameraScan() {
   currentView = View::kCameraScan;
   display.fillScreen(kBackground);
   drawHeader("CAMERAS", String(cameraCount) + " suspected  ch " +
-                            String(kDeauthHopChannels[cameraHopIndex]));
+                            String(kDeauthHopChannels[cameraHopIndex]) +
+                            (kRadiosCoexist ? "" : "  (Wi-Fi only)"));
   display.setTextSize(1);
   const int rows = min(cameraCount, kVisibleRows);
   for (int i = 0; i < rows; ++i) {
@@ -223,11 +224,30 @@ void drawCameraScan() {
     display.print("Scanning for cameras...");
     display.setCursor(30, 156);
     display.print("Heuristic; not exhaustive");
+    if (!kRadiosCoexist) {
+      display.setCursor(30, 172);
+      display.print("BLE off: mini RAM fits one radio");
+    }
   }
   drawFooter("Home", "Reset");
 }
 
 void startCameraScan() {
+  // On the mini the radios cannot coexist, so this runs Wi-Fi-only there
+  // (still flags camera-like Wi-Fi devices) and drawCameraScan() notes BLE is
+  // off. On full boards it scans Wi-Fi promiscuous + BLE together.
+  if (kRadiosCoexist) {
+    // Bring BLE up first, while the heap is unfragmented, so the controller can
+    // grab its large contiguous block; Wi-Fi then fills the smaller fragments.
+    if (!ensureBleReady(true)) {
+      showRadioError("BLE initialization failed");
+      return;
+    }
+  }
+  if (!ensureWifiStation(!kRadiosCoexist)) {
+    showRadioError("Wi-Fi initialization failed");
+    return;
+  }
   cameraCount = 0;
   cameraHitHead = 0;
   cameraHitTail = 0;
@@ -239,8 +259,7 @@ void startCameraScan() {
   cameraStartMs = millis();
   signalMonitorActive = false;
 
-  WiFi.disconnect(true, false);
-  WiFi.mode(WIFI_MODE_STA);
+  WiFi.disconnect(false, false);
   esp_wifi_set_promiscuous(false);
   wifi_promiscuous_filter_t filter = {};
   filter.filter_mask =
@@ -250,23 +269,30 @@ void startCameraScan() {
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
 
-  NimBLEScan* scan = NimBLEDevice::getScan();
-  configureBleScan(scan, &cameraBleCallbacks, true, 160, 80, 0);
-  scan->start(0, false, true);
+  if (kRadiosCoexist) {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    configureBleScan(scan, &cameraBleCallbacks, true, 160, 80, 0);
+    scan->start(0, false, true);
+    Serial.println("[cameras] continuous Wi-Fi + BLE scan started");
+  } else {
+    Serial.println("[cameras] Wi-Fi-only scan started (BLE off on mini)");
+  }
 
   cameraActive = true;
-  Serial.println("[cameras] continuous Wi-Fi + BLE scan started");
   drawCameraScan();
 }
 
 void stopCameraScan() {
   cameraActive = false;
   esp_wifi_set_promiscuous(false);
-  NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->stop();
-  scan->clearResults();
-  WiFi.mode(WIFI_MODE_STA);
-  WiFi.disconnect(true, false);
+  if (kRadiosCoexist) {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    scan->stop();
+    scan->clearResults();
+    releaseBleMemory();
+  }
+  // Keep Wi-Fi STA resident; promiscuous is already off. Powering Wi-Fi down
+  // here breaks the next radio bring-up (0x3001 / heap fragmentation).
   Serial.printf("[cameras] stopped; %d suspected\n", cameraCount);
 }
 

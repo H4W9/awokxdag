@@ -119,6 +119,7 @@ void drawBleDetect() {
 }
 
 void startBleDetect() {
+  if (!ensureBleReady(false)) return;
   bleDetectTotal = 0;
   bleDetectSpam = 0;
   bleDetectWindowSpam = 0;
@@ -146,6 +147,7 @@ void stopBleDetect() {
   NimBLEScan* scan = NimBLEDevice::getScan();
   scan->stop();
   scan->clearResults();
+  releaseBleMemory();
   Serial.println("[bledetect] stopped");
 }
 

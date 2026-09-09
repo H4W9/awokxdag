@@ -5,10 +5,50 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-09-09
+
+### Added
+
+- Dual-board release workflow: the Actions build now produces both Dual C5
+  Touch (`awokxdag-touch-*`) and Dual C5 Mini (`awokxdag-mini-*`) firmware
+  images from the same source in one release, with combined SHA-256 checksums.
+- Mini dual-radio views degrade to Wi-Fi-only instead of failing: Wardrive
+  logs Wi-Fi APs to WiGLE with GPS, Cameras flags camera-like Wi-Fi devices,
+  and Advanced Watch monitors deauth/EAPOL/CSA/RF. Each notes on screen that
+  BLE is off because the Mini has room for only one radio at a time.
+
+### Changed
+
+- Reworked the radio lifecycle to a reliable one-radio-at-a-time model on the
+  Mini, where Wi-Fi (~49 KB) and BLE (~33 KB) cannot coexist in ~75 KB of free
+  internal RAM: each radio is fully torn down before the other starts. Wi-Fi
+  shutdown now fully deinitializes the driver (`esp_wifi_stop` +
+  `esp_wifi_deinit`) and BLE frees its controller between uses. Wi-Fi-only and
+  BLE-only tools switch cleanly; the Touch board still runs both radios.
+- Bumped firmware, WiGLE metadata, and release-workflow defaults to 1.1.3.
+
+### Fixed
+
+- Fixed a Guru Meditation (load access fault) when tearing down a BLE scan. The
+  release path called `NimBLEDevice::deinit(false)` then `deinit(true)`, and
+  deleting the scan object ran its scan-response-timer callout deinit after the
+  NimBLE port had already been freed. BLE now stops the scan, drains pending
+  callbacks, and calls a single `NimBLEDevice::deinit()`.
+- Fixed Wi-Fi failing to reinitialize (`ESP_ERR_WIFI_NOT_INIT`, 0x3001) after a
+  radio switch; `WiFi.mode(WIFI_OFF)` alone left the driver half-initialized.
+- Fixed "ble ll env init error code:-13" (out of memory) when opening a
+  dual-radio view on the Mini after Wi-Fi was already up.
+
 ## [1.1.2] - 2026-09-09
 
 ### Added
 
+- Experimental Dual C5 Mini build profile with a native 128 × 128 ST7735
+  interface: highlighted joystick selection, wrapped details, compact charts,
+  and quick access to screen actions. Physical validation is pending.
+- Board-specific firmware packaging with SHA-256 checksums, plus a sanitized
+  host regression test for Mini layout bounds, wrapping, selection, live
+  redraws, and content capacity.
 - BLE result paging with Prev/Next controls and detail inspection for every
   retained advertiser.
 - Six host regression groups covering saved-network persistence, BLE scan
@@ -17,6 +57,8 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ### Changed
 
+- Packaging and the Touch release workflow now select their board profile
+  explicitly, independent of the sketch's Arduino IDE Mini selection.
 - Increased BLE results from 24 to 128 and Wi-Fi results from 72 to 128.
 - Increased Clients, Security Audit, BLE Trackers, Cameras, WPS, Hidden SSID,
   Harvester, Probe Intel, and Karma Watch tables from 24 to 128 entries, and
@@ -28,6 +70,13 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ### Fixed
 
+- Reduced Mini display RAM from a 32 KB RGB565 canvas to an 8 KB indexed-color
+  canvas, compacted layout records, and deferred BLE initialization until a BLE
+  tool starts. BLE shutdown releases its allocations for subsequent Wi-Fi use.
+- Wi-Fi initialization and scan errors now cancel the scan, preserve previous
+  results, and report available internal RAM, largest free block, and PSRAM.
+- An absent saved-network namespace now reports an empty first-run list;
+  actual NVS failures include the Espressif error name and code.
 - Packet Monitor no longer reads frame payloads from metadata-only Wi-Fi
   notifications, preventing an out-of-bounds read.
 - Held touchscreen contacts no longer trigger repeated actions or bypass the
@@ -100,7 +149,8 @@ All notable changes to AWOKxDAG are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/dagnazty/awokxdag/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/dagnazty/awokxdag/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/dagnazty/awokxdag/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/dagnazty/awokxdag/compare/v1.0.0...v1.1.0

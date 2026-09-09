@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.1.2
+- **Version:** 1.1.3
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -189,13 +189,30 @@ segment.
      PSRAM **Enabled**, USB CDC On Boot **Disabled**.
 4. Upload to the **white USB** port only (hold SCREEN BOOT, apply power, release).
 
-CLI equivalent:
+The sketch is currently configured for **Mini** in Arduino IDE. The packaging
+script selects the requested board explicitly. To build the Touch profile:
 
 ```bash
-arduino-cli compile --fqbn "esp32:esp32:esp32c5:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=enabled" AWOKxDAG/AWOKxDAG.ino
+python3 scripts/build_firmware.py dual-c5-touch
 ```
 
-## Hardware map
+### Experimental Dual C5 Mini
+
+Install **Adafruit ST7735 and ST7789 Library** in addition to the libraries above,
+then build and package the Mini profile:
+
+```bash
+python3 scripts/build_firmware.py dual-c5-mini
+```
+
+Outputs are in `build/dual-c5-mini-1.1.3/`, with explicit board names and
+`SHA256SUMS`. This command only compiles and packages; it does not flash.
+The Mini uses a native 128 × 128 layout with readable text, highlighted menu
+rows, wrapped details, and compact charts. Up/down moves through rows, center
+selects, right jumps to actions, and left returns to the top of the screen.
+Use `dual-c5-touch` with the same script to package the default Touch build.
+
+## Hardware map (Dual C5 Touch)
 
 | Function | GPIO |
 | --- | ---: |

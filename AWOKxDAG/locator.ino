@@ -35,6 +35,9 @@ void drawLocator() {
   }
 
   // Proximity bar: closer (stronger) fills more of the bar.
+#ifdef AWOK_DUAL_C5_MINI
+  display.bar(96, "Proximity", found ? constrain(locatorRssi, -90, -30) + 90 : 0, 60);
+#else
   const int barLeft = 12;
   const int barWidth = 216;
   display.drawRect(barLeft, 96, barWidth, 22, kMuted);
@@ -44,6 +47,7 @@ void drawLocator() {
     display.fillRect(barLeft + 1, 97, fill, 20, signalColor(locatorRssi));
   }
 
+#endif
   display.setTextSize(2);
   if (!found) {
     display.setTextColor(kWarn, kBackground);
