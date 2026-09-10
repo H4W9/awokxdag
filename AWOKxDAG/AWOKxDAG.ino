@@ -188,6 +188,37 @@ BleHit bleHitQueue[kBleHitQueueSlots];
 volatile int bleHitHead = 0;
 volatile int bleHitTail = 0;
 
+// Link Mode (ESP-NOW pairing + Split Wardrive). Cross-tab globals must be
+// defined here (Arduino auto-prototypes functions but not variables, and
+// link.ino is concatenated after input.ino which references stop guards).
+bool linkEspNowReady = false;      // esp_now_init() succeeded this session
+LinkState linkState = kLinkOff;
+bool linkRoleMaster = true;        // lower MAC wins; set at pairing
+bool linkConfirmedLocal = false;   // this unit pressed Confirm
+uint8_t linkSelfMac[6] = {0};
+uint8_t linkPeerMac[6] = {0};
+bool linkPeerValid = false;        // heard a peer HELLO this pairing
+uint16_t linkCode = 0;             // 4-digit visual confirm code
+uint32_t linkSessionId = 0;
+int32_t linkClockOffset = 0;       // masterMillis - localMillis (slave only)
+uint32_t linkPartnerNetworks = 0;
+uint32_t linkPartnerBle = 0;
+uint8_t linkPartnerChannel = 0;
+int8_t linkPartnerRssi = -127;
+uint32_t linkPartnerLastSeenMs = 0;
+bool linkWardriveActive = false;
+int linkChannelCursor = 0;         // round-robin index into the assigned half
+bool linkInWindow = false;         // currently parked on the rendezvous channel
+uint32_t linkWindowBeat = 0;       // beat number of the window we last opened
+uint32_t lastLinkHelloMs = 0;
+uint32_t lastLinkSyncMs = 0;
+uint32_t lastLinkTelemMs = 0;
+uint32_t lastLinkWardriveDrawMs = 0;
+bool linkWindowScanStopped = false;  // aborted the async scan for this window
+LinkQueueItem linkPacketQueue[kLinkPacketQueueSlots];
+volatile int linkPacketHead = 0;
+volatile int linkPacketTail = 0;
+
 String clipped(const String& value, size_t maxChars) {
   if (value.length() <= maxChars) return value;
   return value.substring(0, maxChars - 1) + "~";
@@ -755,20 +786,17 @@ void drawHome() {
 
 void drawBootScreen() {
 #ifdef AWOK_DUAL_C5_MINI
-  display.fillScreen(kBackground);
-  drawHeader("AWOKxDAG", "Dual C5 Mini");
-  display.setTextSize(1);
-  display.setCursor(0, 50);
-  display.print("Version "); display.print(kVersion);
-  display.setCursor(0, 70);
-  display.print("Starting...");
-  return;
-#endif
+  // Same logo as Touch, downscaled to 96x128 and centered on the 128x128 panel
+  // (see scripts/gen_mini_boot.py). splash() pushes it straight to the ST7735.
+  display.splash(kMiniBootScreenBitmap, kMiniBootScreenWidth,
+                 kMiniBootScreenHeight);
+#else
   // XBM stores black source pixels as set bits. Painting those black over a
   // white canvas preserves the supplied white-on-black composition exactly.
   display.fillScreen(ILI9341_WHITE);
   display.drawXBitmap(0, 0, kBootScreenBitmap, kBootScreenWidth,
                       kBootScreenHeight, ILI9341_BLACK);
+#endif
 }
 
 void drawScanning(const String& kind) {
@@ -1949,10 +1977,7 @@ void setup() {
     return;
   }
 #endif
-  drawBootScreen();
-#ifdef AWOK_DUAL_C5_MINI
-  display.present(false);
-#endif
+  drawBootScreen();  // Mini: splash() pushes to the panel itself (no present())
   delay(kBootScreenMs);
   initializeSdCard();
   initGps();
@@ -2006,6 +2031,7 @@ void loop() {
   updateBeaconWatch();
   updateAuthFlood();
   updateAdvancedWatch();
+  updateLink();
   // Live-refresh the GPS status screen while it is open.
   static uint32_t lastGpsScreenDrawMs = 0;
   if (currentView == View::kGps && millis() - lastGpsScreenDrawMs >= 1000) {

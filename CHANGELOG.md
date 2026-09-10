@@ -5,6 +5,59 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-10
+
+### Added
+
+- **Link Mode** — pairs two AWOKxDAG units (any mix of Touch and Mini) over an
+  ESP-NOW back-channel, using a display-and-confirm 4-digit code derived from the
+  two MAC addresses so neither board has to type anything. The lower MAC becomes
+  master and owns the shared session id and clock. Discovery is plaintext
+  broadcast (ESP-NOW cannot encrypt broadcast); once paired, telemetry moves to an
+  encrypted unicast peer (PMK + per-pair LMK baked into the firmware).
+- **Split Wardrive** over a link: the paired units alternate-deal the dual-band
+  channel list (master even indices, slave odd), so each scans half the spectrum
+  and halves its per-channel revisit interval. A one-second, time-synced
+  rendezvous on channel 1 exchanges telemetry; each screen shows its own, the
+  partner's, and the combined AP count, the partner's link RSSI, and a
+  partner-lost alert. Each board logs its own WiGLE `wardrive.csv` and geotags
+  from its own GPS. Starting it unpaired wardrives every channel solo. Reached
+  from the GPS screen (`Home | Baud | Drive | Link`) or serial `n`. Wi-Fi-only in
+  this release.
+- **Mini boot logo** — the Dual C5 Mini now shows the AWOK logo at startup
+  instead of a text placeholder. The 240×320 Touch splash is downscaled to a
+  96×128 1-bit image (`scripts/gen_mini_boot.py`) and blitted straight to the
+  ST7735 through a new `splash()` path, since the Mini's retained-mode renderer
+  cannot draw arbitrary bitmaps through its normal layout document.
+- **Firmware website** — responsive documentation generated from `README.md`,
+  `CHANGELOG.md`, and Markdown files in `docs/`, with section navigation, a latest
+  release summary, and links to [ESPTerminator](https://espterminator.com/) for
+  web flashing. Includes dag's logo in the header and footer, browser
+  favicons, and a mobile home-screen icon.
+- **Website publishing workflow** — prepared GitHub Pages automation to rebuild
+  and publish when documentation changes are pushed to `main`.
+
+### Changed
+
+- The WiGLE CSV `release=` metadata now derives from `kVersion` instead of a
+  hardcoded string, so wardrive logs track the firmware version automatically.
+- The 240×320 Touch boot bitmap is compiled only into Touch builds now (~9.6 KB
+  of flash reclaimed on the Mini, which carries its own 96×128 splash instead).
+- Bumped firmware, WiGLE metadata, documentation, and release-workflow defaults
+  to 1.2.0 for both Mini and Touch builds.
+
+### Validation
+
+- Link Mode confirmed on hardware: two units pair via the display-and-confirm
+  4-digit code and run the split-channel wardrive with encrypted telemetry,
+  logging to WiGLE once each unit has a GPS fix (the AP count is fix-gated, as
+  with solo Wardrive). A confirm-handshake bug found on-device — the first unit
+  to pair went silent and starved the second, hanging it on the confirm screen —
+  was fixed by having a paired unit answer the peer's lingering HELLOs so both
+  latch.
+- The Mini boot logo and split wardrive were exercised on-device; the Touch
+  profile shares the same code paths but was not re-flashed this round.
+
 ## [1.1.4] - 2026-09-09
 
 ### Fixed
@@ -174,7 +227,8 @@ All notable changes to AWOKxDAG are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/dagnazty/awokxdag/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/dagnazty/awokxdag/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/dagnazty/awokxdag/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/dagnazty/awokxdag/compare/v1.1.1...v1.1.2

@@ -2,8 +2,8 @@
 
 // The sketch selects the IDE profile; the packaging script selects explicitly.
 // AWOK_DUAL_C5_MINI selects Mini. Without that define, these are Touch pins.
-// Mini display mapping recovered from the bundled Mini firmware; provenance
-// and hardware validation status are documented in docs/dual-c5-mini-port.md.
+// Mini display mapping recovered from the bundled Mini firmware and confirmed
+// working on hardware.
 namespace AwokPins {
 constexpr int kSpiSck = 6;
 constexpr int kSpiMiso = 2;
@@ -13,7 +13,7 @@ constexpr int kDisplayCs = 23;
 constexpr int kDisplayDc = 24;
 constexpr int kDisplayReset = -1;  // Reset is not controlled by a GPIO.
 #ifdef AWOK_DUAL_C5_MINI
-constexpr char kBoardLabel[] = "Dual C5 Mini (experimental)";
+constexpr char kBoardLabel[] = "Dual C5 Mini";
 constexpr int kBacklight = 5;
 constexpr bool kBacklightOn = false;
 constexpr int kTouchCs = -1;
@@ -41,7 +41,7 @@ constexpr float kBatteryDivider = 2.0f;  // divider ratio if kBatteryAdc is set
 constexpr int kGpsUart = 1;
 constexpr int kGpsRx = 14;  // ESP RX <- GPS TX
 constexpr int kGpsTx = 13;  // ESP TX -> GPS RX
-constexpr unsigned long kGpsBaud = 115200;  // confirmed on Touch; Mini pending
+constexpr unsigned long kGpsBaud = 115200;  // confirmed on Touch and Mini
 }  // namespace AwokPins
 
 namespace AwokTouchCalibration {

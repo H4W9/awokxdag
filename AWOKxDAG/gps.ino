@@ -150,8 +150,9 @@ bool openWardriveCsv() {
       return false;
     }
     file.println(
-        "WigleWifi_1.4,appRelease=AWOKxDAG,model=ESP32C5,release=1.1.4,"
-        "device=AWOKxDAG,display=ILI9341,board=ESP32C5,brand=AWOK");
+        String("WigleWifi_1.4,appRelease=AWOKxDAG,model=ESP32C5,release=") +
+        kVersion +
+        ",device=AWOKxDAG,display=ILI9341,board=ESP32C5,brand=AWOK");
     file.println(
         "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
         "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");
@@ -298,7 +299,7 @@ void drawGps() {
   } else {
     display.print("Fix locked.");
   }
-  drawThreeButtonFooter("Home", "Baud", "Wardrive");
+  drawFourButtonFooter("Home", "Baud", "Drive", "Link");
 }
 
 void drawWardrive() {

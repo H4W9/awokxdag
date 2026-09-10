@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.1.4
+- **Version:** 1.2.0
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -102,6 +102,18 @@ C5, white-USB screen board with an ILI9341 touchscreen).
   CSV while moving. A GPS-fix indicator sits in the header on every screen, and
   scan/deauth/client/portal/handshake logs are geotagged with the current fix.
 
+### Link (two-unit)
+- **Link Mode** — pairs two AWOKxDAG units (any mix of Touch and Mini) over an
+  ESP-NOW back-channel using a display-and-confirm 4-digit code — no typing on
+  either board. Powers **Split Wardrive**: the paired units alternate-deal the
+  dual-band channel list so each scans half the spectrum, halving the per-channel
+  revisit interval (so you cover the band roughly twice as fast). A one-second
+  time-synced rendezvous on channel 1 swaps telemetry, so each screen shows its
+  own, the partner's, and the combined AP count, the partner's link RSSI, and a
+  partner-lost alert. Each board logs its own WiGLE `wardrive.csv` and uses its
+  own GPS. Started unpaired, it wardrives every channel solo. Reached from the GPS
+  screen; Wi-Fi-only in this release.
+
 ### Status / utility
 - **Status** — uptime, free heap, chip temp, SD used/total, GPS fix, Wi-Fi MAC,
   battery (set `kBatteryAdc` in `board_pins.h` to enable).
@@ -126,15 +138,16 @@ Attacks:      Beacon Flood | Evil Portal | Evil Twin | Probe Lure
 Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch | Karma Watch |
               Beacon Watch | Auth Flood | Advanced Watch
 
-GPS:          status screen -> Baud / Wardrive
+GPS:          status screen -> Baud / Drive / Link
+Link:         unpaired -> Pair / Solo;  paired -> Unpair / Start (Split Wardrive)
 ```
 
 ## Serial commands (115200 baud)
 
 `w` Wi-Fi scan · `c` channel map · `b` BLE scan · `p` clients · `k` packet
-monitor · `m` deauth watch · `g` GPS screen · `u` cycle GPS baud · `r` toggle
-raw NMEA echo · `s` saved · `d` retry SD · `h` home (also stops any running
-tool).
+monitor · `m` deauth watch · `g` GPS screen · `n` Link mode · `u` cycle GPS baud
+· `r` toggle raw NMEA echo · `s` saved · `d` retry SD · `h` home (also stops any
+running tool).
 
 ## SD-card output (`/awokxdag/`)
 
@@ -196,7 +209,7 @@ script selects the requested board explicitly. To build the Touch profile:
 python3 scripts/build_firmware.py dual-c5-touch
 ```
 
-### Experimental Dual C5 Mini
+### Dual C5 Mini
 
 Install **Adafruit ST7735 and ST7789 Library** in addition to the libraries above,
 then build and package the Mini profile:
@@ -205,11 +218,13 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.1.4/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.2.0/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
-selects, right jumps to actions, and left returns to the top of the screen.
+selects, right jumps to actions, and left returns to the top of the screen. At
+boot it shows the same AWOK logo as the Touch board, downscaled to 96 × 128 by
+`scripts/gen_mini_boot.py` (re-run with `--threshold` to retune the 1-bit art).
 Use `dual-c5-touch` with the same script to package the default Touch build.
 
 ## Hardware map (Dual C5 Touch)
@@ -225,6 +240,25 @@ Use `dual-c5-touch` with the same script to package the default Touch build.
 | Battery ADC | unset (`kBatteryAdc = -1`) |
 
 Pins and touch calibration live in `board_pins.h`.
+
+## Hardware map (Dual C5 Mini)
+
+| Function | GPIO |
+| --- | ---: |
+| SPI SCK / MISO / MOSI | 6 / 2 / 7 |
+| ST7735 CS / DC / Reset | 23 / 24 / (none) |
+| Backlight | 5 (active low) |
+| Buttons Left / Center / Up / Right / Down | 0 / 1 / 4 / 8 / 9 |
+| SD card CS | 10 |
+| GPS UART1 RX / TX | 14 / 13 @ 115200 NMEA |
+| Battery ADC | unset (`kBatteryAdc = -1`) |
+
+The Mini shares the SPI bus, display CS/DC, SD, and GPS wiring with the Touch
+board; it swaps the ILI9341 + XPT2046 touchscreen for a 128 × 128 ST7735 driven
+by five buttons, and its backlight is active-low on GPIO 5. Selected by building
+with `AWOK_DUAL_C5_MINI` (via `scripts/build_firmware.py dual-c5-mini`). This
+mapping was recovered from the bundled Mini firmware (see the comments in
+`board_pins.h`) and is confirmed working on hardware.
 
 ## Collection capacity
 
@@ -261,7 +295,8 @@ Single Arduino sketch split into feature tabs (one translation unit):
 `deauth`, `handshake`, `sniffer`, `beacon`, `portal`, `wardrive` (in gps),
 `pktmon`, `cameras`, `wps`, `hidden`, `roguewatch`, `bledetect`, `probelure`,
 `securityaudit`, `tracker`, `harvester`, `probeintel`, `karmawatch`,
-`beaconwatch`, `authflood`, `advancedwatch`, `status`, `files`, `input`.
+`beaconwatch`, `authflood`, `advancedwatch`, `locator`, `link` (Link Mode +
+Split Wardrive), `auditlog`, `status`, `files`, `input`.
 
 ## Recovery
 

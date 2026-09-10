@@ -93,6 +93,17 @@ class AwokMiniDisplay : public Adafruit_GFX {
     }
     dirty_ = true;
   }
+  // Boot splash: draw a monochrome XBM (set bit = lit) straight into the canvas,
+  // centered, and push it to the panel now. Bypasses the layout document, which
+  // only models header/rows/footer; the next present() rebuilds normally.
+  void splash(const uint8_t* bitmap, int w, int h) {
+    if (!canvas_) return;
+    canvas_->fillScreen(ST7735_BLACK);
+    canvas_->drawXBitmap((128 - w) / 2, std::max(0, (128 - h) / 2), bitmap, w, h,
+                         ST7735_WHITE);
+    blitCanvas();
+    dirty_ = redraw_ = true;  // force a full rebuild on the next present()
+  }
   bool selection(int& x, int& y) const { return layout.selection(x, y); }
   void navigate(int direction, bool jump = false) {
     if (jump) layout.jump(direction > 0); else layout.move(direction);
@@ -144,6 +155,12 @@ class AwokMiniDisplay : public Adafruit_GFX {
     canvas_->setTextColor(layout.overflow ? ST7735_RED : ST7735_CYAN);
     canvas_->setCursor(1, 119);
     canvas_->print(layout.overflow ? "Content limit reached" : "L:top R:acts C:select");
+    blitCanvas();
+    dirty_ = redraw_ = false;
+  }
+  MiniLayout layout;
+ private:
+  void blitCanvas() {
     uint16_t pixels[128];
     panel_.startWrite();
     panel_.setAddrWindow(0, 0, 128, 128);
@@ -152,10 +169,7 @@ class AwokMiniDisplay : public Adafruit_GFX {
       panel_.writePixels(pixels, 128, true);
     }
     panel_.endWrite();
-    dirty_ = redraw_ = false;
   }
-  MiniLayout layout;
- private:
   void drawGraphSlice(int y, int part) {
     // Draw only this 11px slice so scrolling cannot overwrite the header.
     int previousX = -1, previousY = -1;

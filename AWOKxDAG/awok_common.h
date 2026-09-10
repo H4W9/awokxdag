@@ -14,6 +14,7 @@
 #include <XPT2046_Touchscreen.h>
 #include <TinyGPSPlus.h>
 #include <esp_wifi.h>
+#include <esp_now.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include <nvs.h>
@@ -24,13 +25,14 @@
 #include "board_pins.h"
 #ifdef AWOK_DUAL_C5_MINI
 #include "mini_display.h"
+#include "mini_boot_screen_data.h"
 #include "result_memory.h"
 // Set for each dual-radio session after checking the actual internal heap.
 bool radiosCoexist = false;
 #else
 constexpr bool radiosCoexist = true;
+#include "boot_screen_data.h"  // 240x320 Touch splash; unused on the Mini
 #endif
-#include "boot_screen_data.h"
 
 constexpr int kScreenWidth = 240;
 constexpr int kScreenHeight = 320;
@@ -74,7 +76,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.1.4";
+constexpr char kVersion[] = "1.2.0";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -299,7 +301,74 @@ enum class View {
   kKarmaWatch,
   kBeaconWatch,
   kAuthFlood,
-  kAdvancedWatch
+  kAdvancedWatch,
+  kLinkWardrive
+};
+
+// ---- Link Mode (ESP-NOW pairing of two AWOKxDAG units) ------------------
+// See docs/link-mode.md. v1 = shared core + Split Wardrive. All ESP-NOW frames
+// are the single POD LinkPacket below, tagged by `type`. The recv callback runs
+// in the Wi-Fi task and only enqueues into linkPacketQueue; updateLink() parses.
+constexpr uint32_t kLinkMagic = 0x41574B4C;  // "AWKL"
+constexpr uint8_t kLinkProtoVersion = 1;
+constexpr uint8_t kLinkChannel = 1;          // rendezvous + pairing channel
+constexpr uint32_t kLinkRendezvousMs = 1000;  // beat period (live feel)
+constexpr uint32_t kLinkWindowMs = 300;       // link-channel dwell per beat
+constexpr uint32_t kLinkHelloIntervalMs = 250;
+constexpr uint32_t kLinkPeerTimeoutMs = 4000;  // partner-lost threshold
+constexpr uint32_t kLinkWardriveDwellMs = 200;  // per-channel async scan dwell
+constexpr uint32_t kLinkWardriveRedrawMs = 700;
+constexpr int kLinkPacketQueueSlots = 16;
+constexpr uint8_t kLinkBroadcastAddr[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+// ESP-NOW encryption keys for the post-pairing unicast link. Broadcast discovery
+// (HELLO) stays in the clear because ESP-NOW cannot encrypt broadcast; once
+// paired, SYNC/TELEM move to an encrypted unicast peer. NOTE: these keys ship in
+// the firmware binary, so encryption stops casual sniffing but is NOT secret from
+// anyone who has the build. The per-pair LMK also mixes in the confirm code (from
+// both MACs) for key separation between pairs, not as an added secret.
+constexpr uint8_t kLinkPmk[16] = {0x9E, 0x1C, 0x74, 0xB3, 0x2A, 0xF5, 0x60, 0xD8,
+                                  0x4B, 0x07, 0xC9, 0x3E, 0xA1, 0x52, 0x8F, 0x66};
+constexpr uint8_t kLinkLmkBase[16] = {0x51, 0xE4, 0x0B, 0x9A, 0x7D, 0x38, 0xC2,
+                                      0x6F, 0x14, 0xBE, 0x05, 0xA7, 0x3C, 0xD0,
+                                      0x89, 0x22};
+
+enum LinkMsgType : uint8_t {
+  kLinkMsgHello = 1,  // identity + confirm code + confirmed flag
+  kLinkMsgSync = 2,   // master millis for clock sync
+  kLinkMsgTelem = 3   // running counts + channel + session id
+};
+
+enum LinkState : uint8_t {
+  kLinkOff = 0,         // ESP-NOW down / not on the Link screen
+  kLinkDiscovering = 1,  // broadcasting HELLO, waiting to hear a peer
+  kLinkAwaitConfirm = 2,  // peer found, 4-digit code shown, waiting for Confirm
+  kLinkReady = 3         // paired; role + session settled
+};
+
+// One ESP-NOW frame. POD, ~40 bytes, copied verbatim over the air.
+struct LinkPacket {
+  uint32_t magic = kLinkMagic;
+  uint8_t version = kLinkProtoVersion;
+  uint8_t type = 0;      // LinkMsgType
+  uint8_t flags = 0;     // bit0 = confirmed
+  uint8_t role = 0;      // sender's computed role: 0 master, 1 slave
+  uint16_t code = 0;     // 4-digit confirm code
+  uint16_t reserved = 0;
+  uint32_t sessionId = 0;
+  uint32_t masterMillis = 0;  // SYNC: master clock
+  uint32_t networks = 0;      // TELEM: sender Wi-Fi count
+  uint32_t bleCount = 0;      // TELEM: sender BLE count
+  uint8_t channel = 0;        // TELEM: sender's current assigned channel
+  uint8_t srcMac[6] = {0};    // sender MAC (also in recv info; handy in queue)
+};
+
+constexpr uint8_t kLinkFlagConfirmed = 0x01;
+
+// A received frame plus the RSSI the radio reported, queued for the main loop.
+struct LinkQueueItem {
+  LinkPacket pkt;
+  int8_t rssi = -127;
 };
 
 // A suspected surveillance camera found by the camera scan.

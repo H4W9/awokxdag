@@ -365,13 +365,15 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kGps) {
-    if (x < 80) {
+    if (x < 60) {
       drawHome();
-    } else if (x < 160) {
+    } else if (x < 120) {
       cycleGpsBaud();
       drawGps();
-    } else {
+    } else if (x < 180) {
       startWardrive();
+    } else {
+      openLinkWardrive();
     }
     return;
   }
@@ -382,6 +384,46 @@ void handleTouch() {
     } else {
       stopWardrive();
       drawHome();
+    }
+    return;
+  }
+  if (currentView == View::kLinkWardrive) {
+    if (linkWardriveActive) {
+      stopLinkWardrive();
+      if (x < kScreenWidth / 2) {
+        drawLinkWardrive();
+      } else {
+        drawHome();
+      }
+      return;
+    }
+    if (linkState == kLinkDiscovering) {
+      linkCancelPairing();
+      drawLinkWardrive();
+    } else if (linkState == kLinkAwaitConfirm) {
+      if (x < kScreenWidth / 2) {
+        linkCancelPairing();
+        drawLinkWardrive();
+      } else {
+        linkConfirm();
+      }
+    } else if (linkState == kLinkReady) {
+      if (x < 80) {
+        drawGps();
+      } else if (x < 160) {
+        linkUnpair();
+        drawLinkWardrive();
+      } else {
+        startLinkWardrive();
+      }
+    } else {  // kLinkOff — unpaired idle
+      if (x < 80) {
+        drawGps();
+      } else if (x < 160) {
+        linkStartDiscovery();
+      } else {
+        startLinkWardrive();
+      }
     }
     return;
   }
@@ -573,7 +615,8 @@ void handleSerial() {
       hiddenRevealActive || cameraActive || bleDetectActive ||
       probeLureActive || securityAuditActive || trackerScanActive ||
       harvesterActive || probeIntelActive || karmaWatchActive ||
-      beaconWatchActive || authFloodActive || advancedWatchActive) {
+      beaconWatchActive || authFloodActive || advancedWatchActive ||
+      linkWardriveActive) {
     if (command == 'h') {
       if (deauthAttackActive) stopDeauthAttack();
       if (deauthMonitorActive) stopDeauthMonitor();
@@ -597,6 +640,7 @@ void handleSerial() {
       if (beaconWatchActive) stopBeaconWatch();
       if (authFloodActive) stopAuthFlood();
       if (advancedWatchActive) stopAdvancedWatch();
+      if (linkWardriveActive) stopLinkWardrive();
       drawHome();
     }
     return;
@@ -605,6 +649,7 @@ void handleSerial() {
   if (command == 'p') startClientSniffer();
   if (command == 'k') startPacketMon();
   if (command == 'g') drawGps();
+  if (command == 'n') openLinkWardrive();
   if (command == 'u') {
     cycleGpsBaud();
     if (currentView == View::kGps) drawGps();
