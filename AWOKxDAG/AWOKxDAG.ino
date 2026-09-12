@@ -1,6 +1,17 @@
-// Arduino IDE selection. The packaging script can explicitly select Touch.
-#if !defined(AWOK_DUAL_C5_TOUCH) && !defined(AWOK_DUAL_C5_MINI)
-#define AWOK_DUAL_C5_MINI
+// Arduino IDE selection.
+#if !defined(AWOK_DUAL_C5_TOUCH) && !defined(AWOK_DUAL_C5_MINI) && \
+    !defined(AWOK_DUAL_ESP32_TOUCH_V1) && !defined(AWOK_DUAL_ESP32_TOUCH_V2) && \
+    !defined(AWOK_DUAL_ESP32_TOUCH_V3) && \
+    !defined(AWOK_DUAL_ESP32_MINI_V1) && !defined(AWOK_DUAL_ESP32_MINI_V2) && \
+    !defined(AWOK_DUAL_ESP32_MINI_V3)
+#define AWOK_DUAL_C5_TOUCH
+//#define AWOK_DUAL_C5_MINI
+//#define AWOK_DUAL_ESP32_TOUCH_V1
+//#define AWOK_DUAL_ESP32_TOUCH_V2
+//#define AWOK_DUAL_ESP32_TOUCH_V3
+//#define AWOK_DUAL_ESP32_MINI_V1
+//#define AWOK_DUAL_ESP32_MINI_V2
+//#define AWOK_DUAL_ESP32_MINI_V3
 #endif
 #include "awok_common.h"
 
@@ -13,7 +24,7 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2,
   return 0;
 }
 
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
 AwokMiniDisplay display;
 #else
 Adafruit_ILI9341 display(&SPI, AwokPins::kDisplayDc, AwokPins::kDisplayCs,
@@ -21,7 +32,7 @@ Adafruit_ILI9341 display(&SPI, AwokPins::kDisplayDc, AwokPins::kDisplayCs,
 XPT2046_Touchscreen touch(AwokPins::kTouchCs);
 #endif
 
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
 MiniResultTable<WifiEntry, kMaxWifiResults> wifiEntries;
 MiniResultTable<BleEntry, kMaxBleResults> bleEntries;
 MiniResultTable<ClientEntry, kMaxClients> clientEntries;
@@ -198,6 +209,7 @@ bool linkConfirmedLocal = false;   // this unit pressed Confirm
 uint8_t linkSelfMac[6] = {0};
 uint8_t linkPeerMac[6] = {0};
 bool linkPeerValid = false;        // heard a peer HELLO this pairing
+bool linkPeerDualBand = false;     // peer advertised 5 GHz (from HELLO flags)
 uint16_t linkCode = 0;             // 4-digit visual confirm code
 uint32_t linkSessionId = 0;
 int32_t linkClockOffset = 0;       // masterMillis - localMillis (slave only)
@@ -408,7 +420,7 @@ bool exportBleScanToSd() {
   file.println(
       "scan_uptime_ms,name,address,address_type,rssi,tx_power,connectable,"
       "scannable,advertisement_bytes,manufacturer_id,manufacturer_data_hex,"
-      "service_uuids");
+      "service_uuids,identification_hint");
   const uint32_t scanUptime = millis();
   for (int i = 0; i < bleCount; ++i) {
     file.print(scanUptime);
@@ -435,7 +447,9 @@ bool exportBleScanToSd() {
     file.print(',');
     file.print(csvField(bleEntries[i].manufacturerDataHex));
     file.print(',');
-    file.println(csvField(bleEntries[i].serviceUuids));
+    file.print(csvField(bleEntries[i].serviceUuids));
+    file.print(',');
+    file.println(csvField((bleEntries[i].flipperLike ? "Flipper-like service" : "")));
   }
   file.flush();
   const bool writeOk = file.getWriteError() == 0;
@@ -620,7 +634,7 @@ bool toggleSavedNetwork(const WifiEntry& entry) {
 
 void drawButton(int x, int y, int w, int h, const String& label,
                 uint16_t outline) {
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.button(x, y, w, h, label.c_str(), outline);
   return;
 #endif
@@ -637,7 +651,7 @@ void drawButton(int x, int y, int w, int h, const String& label,
 }
 
 void drawHeader(const String& title, const String& detail) {
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.header(title.c_str(), detail.c_str());
   return;
 #endif
@@ -672,7 +686,7 @@ void drawFooter(const char* leftLabel, const char* rightLabel) {
 
 void drawSmallButton(int x, int y, int w, int h, const String& label,
                      uint16_t outline) {
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.button(x, y, w, h, label.c_str(), outline);
   return;
 #endif
@@ -730,9 +744,10 @@ void drawAboutPage() {
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setCursor(6, 80);
-  display.print("Dual-band Wi-Fi/BLE pentest toolkit");
+  display.print(AwokPins::kDualBand ? "Dual-band Wi-Fi/BLE pentest toolkit"
+                                  : "2.4 GHz Wi-Fi/BLE pentest toolkit");
   display.setCursor(6, 92);
-  display.print("for the ESP32-C5 (AWOK Dual C5).");
+  display.print(AwokPins::kBoardLabel);
 
   display.setTextColor(kMuted, kBackground);
   display.setCursor(6, 116);
@@ -763,6 +778,7 @@ void drawAboutPage() {
 }
 
 void drawHome() {
+  if (networkToolsOpen()) closeNetworkTools();
   signalMonitorActive = false;
   currentView = View::kHome;
   if (homePage == 1) {
@@ -777,7 +793,7 @@ void drawHome() {
   drawButton(20, 132, 200, 40, "Monitor");
   drawButton(20, 176, 200, 40, "GPS");
   drawButton(20, 220, 200, 40, "Status");
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.button(128, 284, 106, 30, "About", kAccent);
 #else
   drawFooter(kVersion, "About >");
@@ -785,7 +801,7 @@ void drawHome() {
 }
 
 void drawBootScreen() {
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   // Same logo as Touch, downscaled to 96x128 and centered on the 128x128 panel
   // (see scripts/gen_mini_boot.py). splash() pushes it straight to the ST7735.
   display.splash(kMiniBootScreenBitmap, kMiniBootScreenWidth,
@@ -806,7 +822,7 @@ void drawScanning(const String& kind) {
   display.setTextSize(2);
   display.setCursor(43, 135);
   display.print("Scanning...");
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.present(false);
 #endif
 }
@@ -824,7 +840,7 @@ void drawWifiResults() {
   display.setTextSize(1);
   const int start = wifiPage * kVisibleRows;
   const int rows = min(kVisibleRows, wifiCount - start);
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.selectableRows(rows);
 #endif
   for (int row = 0; row < rows; ++row) {
@@ -865,7 +881,7 @@ void drawSavedNetworks() {
   String detail = String(savedCount) + " saved | SD ";
   detail += lastSavedSdWriteOk ? "synced" : (sdReady ? "ready" : "missing");
   drawHeader("SAVED NETWORKS", detail);
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.selectableRows(savedCount);
 #endif
   display.setTextSize(1);
@@ -914,7 +930,7 @@ void drawBleResults() {
   detail +=
       lastBleScanSdWriteOk ? "saved" : (sdReady ? "write error" : "missing");
   drawHeader("BLE RESULTS", detail);
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.selectableRows(min(kVisibleRows, bleCount - blePage * kVisibleRows));
 #endif
   display.setTextSize(1);
@@ -924,8 +940,9 @@ void drawBleResults() {
     const int y = 48 + row * 22;
     display.setTextColor(ILI9341_WHITE, kBackground);
     display.setCursor(5, y);
-    display.print(clipped(bleEntries[i].name.length() ? bleEntries[i].name
-                                                      : "<unnamed>",
+    display.print(clipped(bleEntries[i].flipperLike
+                              ? String("[F?] ") + bleEntries[i].name
+                              : bleEntries[i].name.length() ? bleEntries[i].name : "<unnamed>",
                           20));
     display.setTextColor(kMuted, kBackground);
     display.setCursor(5, y + 11);
@@ -1015,7 +1032,9 @@ void drawBleDetail() {
   }
   display.setTextColor(kMuted, kBackground);
   display.setCursor(6, 258);
-  display.print("Passive advertisement metadata only.");
+  const char* hint = (selectedBle.flipperLike ? "Flipper-like service" : "");
+  display.print(*hint ? "Flipper-like UUID; identity unverified"
+                      : "Passive advertisement metadata only.");
   drawFooter("Back", "Rescan");
 }
 
@@ -1041,7 +1060,7 @@ void drawChannelMap() {
                        : "run a Wi-Fi scan to collect data");
   display.setTextSize(1);
 
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   if (wifiCount == 0) {
     display.setCursor(0, 48); display.print("No channel data");
   } else {
@@ -1092,6 +1111,11 @@ void drawChannelMap() {
 
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setCursor(5, 151);
+  if (!AwokPins::kDualBand) {
+    display.print("This board supports 2.4 GHz only");
+    drawFooter("Home", "Scan");
+    return;
+  }
   display.print("5 GHz channels found in scan");
   constexpr int kMax5Bars = 9;
   int channels5[kMax5Bars] = {};
@@ -1354,7 +1378,7 @@ void drawWifiSignalMonitor() {
                  static_cast<long>(selectedWifi.channel), signalSampleCount,
                  signalMisses);
 
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.graph(96, signalSamples, signalSampleCount);
 #else
   constexpr int kGraphLeft = 34;
@@ -1480,7 +1504,7 @@ const char* const kReconItems[] = {
     "Wi-Fi Scan",   "Channel Map",  "BLE Scan",     "Clients",
     "Packet Mon",   "WPS Scan",     "Hidden SSID",  "Cameras",
     "Security Audit", "BLE Trackers", "Harvester",  "Probe Intel",
-    "Saved"};
+    "Saved", "Network Tools"};
 constexpr int kReconItemCount =
     static_cast<int>(sizeof(kReconItems) / sizeof(kReconItems[0]));
 constexpr int kMenuPerPage = 6;
@@ -1529,6 +1553,8 @@ void launchReconItem(int index) {
     startHarvester();
   } else if (label == "Probe Intel") {
     startProbeIntel();
+  } else if (label == "Network Tools") {
+    openNetworkTools();
   } else if (label == "Saved") {
     drawSavedNetworks();
   }
@@ -1539,9 +1565,9 @@ void drawReconMenu() {
   const int pages = reconPageCount();
   if (reconPage >= pages) reconPage = 0;
   display.fillScreen(kBackground);
-  drawHeader("RECON", pages > 1 ? "passive discovery  " + String(reconPage + 1) +
+  drawHeader("RECON", pages > 1 ? "discovery tools  " + String(reconPage + 1) +
                                       "/" + String(pages)
-                                : "passive discovery");
+                                : "discovery tools");
   const int start = reconPage * kMenuPerPage;
   for (int row = 0; row < kMenuPerPage; ++row) {
     const int index = start + row;
@@ -1738,15 +1764,20 @@ void releaseBleMemory() {
 
 // Called only when entering a dual-radio tool, before callbacks are enabled.
 bool prepareDualRadioView() {
-#ifdef AWOK_DUAL_C5_MINI
+#if defined(AWOK_DUAL_C5_MINI) || defined(AWOK_CLASSIC_ESP32)
   // A previous Wi-Fi scan can leave STA resident. Release it before admitting
   // BLE, which needs a contiguous controller allocation.
   shutdownWifi();
   releaseBleMemory();
+#ifdef AWOK_CLASSIC_ESP32
+  // Original boards have no verified PSRAM; serialize radios during bring-up.
+  radiosCoexist = false;
+#else
   const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
   radiosCoexist = miniHasDualRadioBudget(
       resultTableExternalBytes, heap_caps_get_free_size(caps),
       heap_caps_get_largest_free_block(caps));
+#endif
   logMemory("dual-radio admission");
   if (radiosCoexist) {
     if (ensureBleReady(true) && ensureWifiStation(false)) return true;
@@ -1767,7 +1798,7 @@ bool prepareDualRadioView() {
 }
 
 void startDualRadioScan(NimBLEScan* scan) {
-#ifdef AWOK_DUAL_C5_MINI
+#if defined(AWOK_DUAL_C5_MINI) || defined(AWOK_CLASSIC_ESP32)
   if (!scan->start(0, false, true)) {
     Serial.println("[radio] BLE scan start failed; continuing Wi-Fi only");
     releaseBleMemory();
@@ -1878,6 +1909,11 @@ void scanBle() {
              << 8);
       }
     }
+    bleEntries[i].flipperLike = false;
+    for (int service = 0; service < device->getServiceUUIDCount(); ++service) {
+      if (*NetworkParse::flipper(device->getServiceUUID(service).toString().c_str()))
+        bleEntries[i].flipperLike = true;
+    }
     bleEntries[i].serviceUuids = "";
     const int serviceCount = min(static_cast<int>(device->getServiceUUIDCount()),
                                  3);
@@ -1916,10 +1952,12 @@ void openBleDetail(const BleEntry& entry) {
 }
 
 void initializeDisplayAndTouch() {
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   for (int pin : {AwokPins::kButtonLeft, AwokPins::kButtonCenter,
                   AwokPins::kButtonUp, AwokPins::kButtonRight,
-                  AwokPins::kButtonDown}) pinMode(pin, INPUT_PULLUP);
+                  AwokPins::kButtonDown}) {
+    pinMode(pin, AwokPins::buttonHasInternalPullup(pin) ? INPUT_PULLUP : INPUT);
+  }
   pinMode(AwokPins::kDisplayCs, OUTPUT);
   pinMode(AwokPins::kSdCs, OUTPUT);
   pinMode(AwokPins::kBacklight, OUTPUT);
@@ -1956,13 +1994,15 @@ void setup() {
   Serial.println();
   Serial.println("AWOKxDAG starting");
   Serial.println(AwokPins::kBoardLabel);
+  Serial.printf("[board] %s, %s, result capacity=%d\n", AwokPins::kChipLabel,
+                AwokPins::kDualBand ? "2.4/5 GHz" : "2.4 GHz", kResultCapacity);
   logMemory("boot");
   Serial.println(
       "Commands: w=Wi-Fi, c=channels, b=BLE, p=clients, g=gps, "
       "m=deauth watch, s=saved, d=SD retry, h=home");
   initializeDisplayAndTouch();
   logMemory("after display init");
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   resultTablesReady = wifiEntries.initialize(resultTableExternalBytes) &&
       bleEntries.initialize(resultTableExternalBytes) &&
       clientEntries.initialize(resultTableExternalBytes) &&
@@ -1989,7 +2029,7 @@ void setup() {
   loadSavedNetworks();
   if (sdReady) lastSavedSdWriteOk = exportSavedNetworksToSd();
   drawHome();
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.present();
 #endif
   // Radios are brought up lazily; dual-radio views check their memory budget.
@@ -1997,11 +2037,11 @@ void setup() {
 }
 
 void loop() {
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   if (!resultTablesReady) { delay(50); return; }
 #endif
   updateGps();
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   updateMiniJoystick();
 #endif
   handleTouch();
@@ -2032,13 +2072,14 @@ void loop() {
   updateAuthFlood();
   updateAdvancedWatch();
   updateLink();
+  updateNetworkTools();
   // Live-refresh the GPS status screen while it is open.
   static uint32_t lastGpsScreenDrawMs = 0;
   if (currentView == View::kGps && millis() - lastGpsScreenDrawMs >= 1000) {
     lastGpsScreenDrawMs = millis();
     drawGps();
   }
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.present();
 #endif
   delay(10);

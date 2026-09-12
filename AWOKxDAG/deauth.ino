@@ -264,7 +264,7 @@ void drawDeauthSelect() {
              String(deauthTargetCount) + " selected | tap to toggle");
   display.setTextSize(1);
   const int rows = min(wifiCount, kVisibleRows);
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.selectableRows(rows);
 #endif
   for (int i = 0; i < rows; ++i) {

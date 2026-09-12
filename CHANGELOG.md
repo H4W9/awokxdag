@@ -5,6 +5,65 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-11
+
+### Added
+
+- **Network Tools** under Recon: RAM-only Wi-Fi connection setup with a masked
+  Touch/Mini character picker, subnet-aware ARP host discovery, common TCP port
+  checks, RTSP/ONVIF camera-service discovery, printer-port candidates, SIP OPTIONS
+  discovery, and a read-only UPnP gateway mapping viewer.
+- Bounded, cancellable LAN scans with paginated host/service details, automatic
+  CSV exports on completion/cancellation, manual snapshots, separate host/service
+  summaries, and explicit scope/result limits and inconclusive timeout counts.
+  Serial **h** also saves partial scan results before disconnecting and releasing
+  the Network Tools resources.
+- Flipper-like advertised-service hints in BLE results, details, and CSV exports.
+  These hints do not authenticate device identity.
+- README and third-party acknowledgement of **7h30th3r0n3 / Evil-M5Project**,
+  whose scanning features informed these additions.
+- Host-side subnet/URL/HTTP/XML/BLE parser tests, including malformed-input checks
+  under AddressSanitizer and UndefinedBehaviorSanitizer, plus socket-state tests
+  for scan progression, timeouts, oversized responses, and cleanup on exit.
+
+- Original **Dual ESP32 Mini v1/v2/v3** screen-side profiles: shared native Mini
+  UI, ST7735 and five-button wiring, SD/GPS pins and input-only GPIO handling.
+  Original Mini GPS defaults to 9600 baud; Touch defaults to 115200.
+  C5 and original Mini display selection now share `AWOK_MINI_DISPLAY` while
+  retaining their different radio and memory policies.
+
+- Experimental original **Dual ESP32 Touch v1/v2/v3** white-port build profiles,
+  with revision-specific SD pins, ILI9341/XPT2046 and GPS wiring, and guards
+  against selecting the wrong chip or conflicting profiles.
+- Classic ESP32 uses 2.4 GHz channels, 32-entry result tables and 128 Wardrive
+  deduplication addresses. BLE-only tools remain available; combined views use
+  Wi-Fi only. C5 profiles retain their existing capacities and radio policies.
+- **Link Mode now works across board families.** A C5 (dual-band) and a classic
+  2.4 GHz unit pair and run Split Wardrive together: HELLO advertises each unit's
+  band capability, and the pair splits by band — the C5 takes all of 5 GHz and
+  the 2.4-only unit takes all of 2.4 GHz, for full coverage with no overlap. Two
+  C5s still alternate-deal the full dual-band plan; two classics split 2.4 GHz.
+- **Credits & license** section in the README crediting ESP32 Marauder
+  (justcallmekoko), FZEasyMarauderFlash (SkeletonMan03), and the upstream
+  libraries, and noting that AWOKxDAG's own code is MIT while referenced projects
+  keep their own licenses (Marauder is GPL-3.0).
+
+### Fixed
+
+- Link Mode could not pair a C5 with a 2.4 GHz board: the ESP-NOW protocol
+  version was band-dependent (C5 sent 1, classic sent 2) and the receive path
+  drops version mismatches, so every cross-board frame was rejected. The version
+  is now uniform across boards, and the Split Wardrive channel plan is shared and
+  band-aware instead of each unit dealing from its own (differently sized) list.
+  Reflash both units — an older 1.2.0 C5 (version 1) will not pair with a 1.3.0
+  unit.
+
+### Validation
+
+- Builds passed for C5 Mini, C5 Touch, original ESP32 Touch v1, and original
+  ESP32 Mini v3. Parser, socket-state, and existing result-memory tests passed.
+  The new features have not yet been flashed or validated on hardware.
+
 ## [1.2.0] - 2026-09-10
 
 ### Added
@@ -227,7 +286,8 @@ All notable changes to AWOKxDAG are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/dagnazty/awokxdag/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dagnazty/awokxdag/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/dagnazty/awokxdag/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/dagnazty/awokxdag/compare/v1.1.2...v1.1.3

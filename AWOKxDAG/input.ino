@@ -1,7 +1,7 @@
 // AWOKxDAG — touch + serial input dispatch (compiled as part of the sketch; see awok_common.h)
 
 bool readTouch(int& screenX, int& screenY) {
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   return digitalRead(AwokPins::kButtonCenter) == LOW &&
          display.selection(screenX, screenY);
 #else
@@ -18,7 +18,7 @@ bool readTouch(int& screenX, int& screenY) {
 #endif
 }
 
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
 void updateMiniJoystick() {
   static uint32_t nextMove = 0;
   static int lastDirection = 0;
@@ -57,6 +57,10 @@ void handleTouch() {
   int y = 0;
   if (!consumeTouchPress(readTouch(x, y), millis())) return;
   Serial.printf("[touch] x=%d y=%d\n", x, y);
+  if (networkToolsOpen()) {
+    handleNetworkTouch(x, y);
+    return;
+  }
   if (currentView == View::kHome) {
     if (homePage == 1) {
       homePage = 0;  // any tap on the About page returns to the tiles
@@ -607,6 +611,10 @@ void handleTouch() {
 }
 
 void handleSerial() {
+  if (networkToolsOpen()) {
+    handleNetworkSerial();
+    return;
+  }
   if (!Serial.available() || scanInProgress) return;
   const char command = static_cast<char>(tolower(Serial.read()));
   if (deauthAttackActive || deauthMonitorActive || handshakeCaptureActive ||

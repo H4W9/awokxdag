@@ -89,7 +89,8 @@ void linkFillCommon(LinkPacket& p, uint8_t type) {
 void linkSendHello() {
   LinkPacket p;
   linkFillCommon(p, kLinkMsgHello);
-  p.flags = linkConfirmedLocal ? kLinkFlagConfirmed : 0;
+  p.flags = (linkConfirmedLocal ? kLinkFlagConfirmed : 0) |
+            (AwokPins::kDualBand ? kLinkFlagDualBand : 0);
   p.code = linkCode;
   p.sessionId = linkSessionId;
   // Carry the clock so the slave can sync while both sit on ch 1 during pairing,
@@ -174,6 +175,7 @@ void linkHandlePacket(const LinkQueueItem& item) {
     if (linkState == kLinkDiscovering) {
       memcpy(linkPeerMac, p.srcMac, 6);
       linkPeerValid = true;
+      linkPeerDualBand = (p.flags & kLinkFlagDualBand) != 0;
       linkRoleMaster = memcmp(linkSelfMac, linkPeerMac, 6) < 0;
       if (linkRoleMaster && !linkSessionId) linkSessionId = esp_random();
       linkCode = linkComputeCode(linkSelfMac, linkPeerMac);
@@ -288,26 +290,73 @@ void linkUnpair() {
 
 // ---- Split Wardrive ------------------------------------------------------
 
-// Round-robin the next channel this unit is responsible for. Paired: alternate
-// deal over kDeauthHopChannels (master even indices, slave odd). Solo: all.
-uint8_t linkNextAssignedChannel() {
-  const bool paired = linkState == kLinkReady;
-  const int parity = linkRoleMaster ? 0 : 1;
-  for (int tries = 0; tries < kDeauthHopChannelCount; ++tries) {
-    const int idx = linkChannelCursor % kDeauthHopChannelCount;
-    linkChannelCursor = (linkChannelCursor + 1) % kDeauthHopChannelCount;
-    if (!paired || (idx % 2) == parity) return kDeauthHopChannels[idx];
+int linkPlanSize(LinkPlan plan) {
+  switch (plan) {
+    case kLinkPlan24: return kLink24ChannelCount;
+    case kLinkPlan5: return kLink5ChannelCount;
+    default: return kLink24ChannelCount + kLink5ChannelCount;
   }
-  return kDeauthHopChannels[0];
+}
+
+uint8_t linkPlanAt(LinkPlan plan, int idx) {
+  if (plan == kLinkPlan24) return kLink24Channels[idx];
+  if (plan == kLinkPlan5) return kLink5Channels[idx];
+  return idx < kLink24ChannelCount ? kLink24Channels[idx]
+                                   : kLink5Channels[idx - kLink24ChannelCount];
+}
+
+// Fills `plan` with this unit's channel set and returns true when that set is
+// alternate-dealt by role parity (false = this unit scans the whole set):
+//  - Solo: every channel the local board supports (whole set).
+//  - Mixed pair (one C5 + one 2.4-only classic): partition by band so nothing
+//    overlaps and nothing is dropped — the C5 takes ALL of 5 GHz, the 2.4-only
+//    unit takes ALL of 2.4 GHz (whole set, no deal).
+//  - Same-capability pair: alternate-deal the shared plan (two C5s split the
+//    full dual-band plan; two classics split 2.4 GHz).
+bool linkAssignedPlan(LinkPlan& plan) {
+  const bool localDual = AwokPins::kDualBand;
+  if (linkState != kLinkReady) {  // solo
+    plan = localDual ? kLinkPlanFull : kLinkPlan24;
+    return false;
+  }
+  if (localDual != linkPeerDualBand) {  // mixed pair: exclusive band, whole set
+    plan = localDual ? kLinkPlan5 : kLinkPlan24;
+    return false;
+  }
+  plan = localDual ? kLinkPlanFull : kLinkPlan24;  // same capability: deal it
+  return true;
+}
+
+// Denominator shown on the Split Wardrive screen: this unit's set size.
+int linkPlanCount() {
+  LinkPlan plan;
+  linkAssignedPlan(plan);
+  return linkPlanSize(plan);
+}
+
+uint8_t linkNextAssignedChannel() {
+  LinkPlan plan;
+  const bool deal = linkAssignedPlan(plan);
+  const int count = linkPlanSize(plan);
+  const int parity = linkRoleMaster ? 0 : 1;
+  for (int tries = 0; tries < count; ++tries) {
+    const int idx = linkChannelCursor % count;
+    linkChannelCursor = (linkChannelCursor + 1) % count;
+    if (!deal || (idx % 2) == parity) return linkPlanAt(plan, idx);
+  }
+  return linkPlanAt(plan, 0);
 }
 
 int linkAssignedChannelCount() {
-  if (linkState != kLinkReady) return kDeauthHopChannelCount;
-  int count = 0;
+  LinkPlan plan;
+  const bool deal = linkAssignedPlan(plan);
+  const int count = linkPlanSize(plan);
+  if (!deal) return count;  // solo or mixed: this unit scans the whole set
+  int n = 0;
   const int parity = linkRoleMaster ? 0 : 1;
-  for (int i = 0; i < kDeauthHopChannelCount; ++i)
-    if ((i % 2) == parity) ++count;
-  return count;
+  for (int i = 0; i < count; ++i)
+    if ((i % 2) == parity) ++n;
+  return n;
 }
 
 void linkStartNextScan() {
@@ -487,7 +536,7 @@ void drawLinkWardrive() {
     display.setTextColor(kMuted, kBackground);
     display.setCursor(6, 130);
     display.printf("My ch %d (%d of %d)  scans %lu", linkScanChannel,
-                   linkAssignedChannelCount(), kDeauthHopChannelCount,
+                   linkAssignedChannelCount(), linkPlanCount(),
                    static_cast<unsigned long>(wardriveScans));
     if (paired) {
       display.setCursor(6, 142);
@@ -581,8 +630,8 @@ void drawLinkWardrive() {
     display.setCursor(6, 106);
     display.printf("Session: %lu", static_cast<unsigned long>(linkSessionId));
     display.setCursor(6, 120);
-    display.printf("My half: %d of %d channels", linkAssignedChannelCount(),
-                   kDeauthHopChannelCount);
+    display.printf("My set: %d of %d channels", linkAssignedChannelCount(),
+                   linkPlanCount());
     display.setTextColor(kMuted, kBackground);
     display.setCursor(6, 144);
     display.print("Start launches the split wardrive.");

@@ -35,7 +35,7 @@ void drawLocator() {
   }
 
   // Proximity bar: closer (stronger) fills more of the bar.
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.bar(96, "Proximity", found ? constrain(locatorRssi, -90, -30) + 90 : 0, 60);
 #else
   const int barLeft = 12;

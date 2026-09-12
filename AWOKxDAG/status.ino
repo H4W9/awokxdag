@@ -95,7 +95,7 @@ void drawStatus() {
 
   display.setTextColor(kMuted, kBackground);
   display.setCursor(6, y);
-  display.print("Firmware: AWOKxDAG (ESP32-C5)");
+  display.print(String("Firmware: AWOKxDAG (") + AwokPins::kChipLabel + ")");
 
   drawFooter("Home", "Files");
 }

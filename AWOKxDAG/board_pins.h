@@ -1,10 +1,84 @@
 #pragma once
 
-// The sketch selects the IDE profile; the packaging script selects explicitly.
-// AWOK_DUAL_C5_MINI selects Mini. Without that define, these are Touch pins.
-// Mini display mapping recovered from the bundled Mini firmware and confirmed
-// working on hardware.
+// Explicit board profiles; reject mismatched silicon before touching GPIOs.
+#if (defined(AWOK_DUAL_C5_TOUCH) + defined(AWOK_DUAL_C5_MINI) + \
+     defined(AWOK_DUAL_ESP32_TOUCH_V1) + defined(AWOK_DUAL_ESP32_TOUCH_V2) + \
+     defined(AWOK_DUAL_ESP32_TOUCH_V3) + \
+     defined(AWOK_DUAL_ESP32_MINI_V1) + defined(AWOK_DUAL_ESP32_MINI_V2) + \
+     defined(AWOK_DUAL_ESP32_MINI_V3)) != 1
+#error "Select exactly one AWOK board profile"
+#endif
+#if defined(AWOK_DUAL_C5_MINI) || defined(AWOK_DUAL_ESP32_MINI_V1) || \
+    defined(AWOK_DUAL_ESP32_MINI_V2) || defined(AWOK_DUAL_ESP32_MINI_V3)
+#define AWOK_MINI_DISPLAY
+#endif
+#if defined(AWOK_DUAL_ESP32_TOUCH_V1) || defined(AWOK_DUAL_ESP32_TOUCH_V2) || \
+    defined(AWOK_DUAL_ESP32_TOUCH_V3) || defined(AWOK_DUAL_ESP32_MINI_V1) || \
+    defined(AWOK_DUAL_ESP32_MINI_V2) || defined(AWOK_DUAL_ESP32_MINI_V3)
+#define AWOK_CLASSIC_ESP32
+#if !defined(CONFIG_IDF_TARGET_ESP32)
+#error "Original AWOK Dual boards require ESP32 Dev Module (not C5/S2/S3)"
+#endif
+#else
+#if !defined(CONFIG_IDF_TARGET_ESP32C5)
+#error "AWOK C5 profiles require ESP32C5 Dev Module"
+#endif
+#endif
+
 namespace AwokPins {
+#ifdef AWOK_CLASSIC_ESP32
+// Original Dual Touch white-port profiles: Marauder v6 (v1), v6.1 (v2/v3).
+// See docs/dual-esp32-touch.md for upstream pin sources and validation status.
+constexpr int kSpiSck = 18;
+constexpr int kSpiMiso = 19;
+constexpr int kSpiMosi = 23;
+constexpr int kDisplayCs = 17;
+constexpr int kDisplayDc = 16;
+constexpr int kDisplayReset = 5;
+constexpr int kBacklight = 32;
+#ifdef AWOK_MINI_DISPLAY
+constexpr bool kBacklightOn = false;
+constexpr int kTouchCs = -1;
+constexpr int kButtonLeft = 13;
+constexpr int kButtonCenter = 34;
+constexpr int kButtonUp = 36;
+constexpr int kButtonRight = 39;
+constexpr int kButtonDown = 35;
+#if defined(AWOK_DUAL_ESP32_MINI_V1)
+constexpr char kBoardLabel[] = "Dual ESP32 Mini v1";
+#elif defined(AWOK_DUAL_ESP32_MINI_V2)
+constexpr char kBoardLabel[] = "Dual ESP32 Mini v2";
+#else
+constexpr char kBoardLabel[] = "Dual ESP32 Mini v3";
+#endif
+constexpr int kSdCs = 4;
+constexpr int kGpsUart = 2;
+constexpr int kGpsRx = 21;
+constexpr int kGpsTx = 22;
+constexpr unsigned long kGpsBaud = 9600;  // verified on original Mini v3
+#else
+constexpr bool kBacklightOn = true;
+constexpr int kTouchCs = 21;
+#ifdef AWOK_DUAL_ESP32_TOUCH_V1
+constexpr char kBoardLabel[] = "Dual ESP32 Touch v1";
+constexpr int kSdCs = 12;
+#elif defined(AWOK_DUAL_ESP32_TOUCH_V3)
+constexpr char kBoardLabel[] = "Dual ESP32 Touch v3";
+constexpr int kSdCs = 14;
+#else
+constexpr char kBoardLabel[] = "Dual ESP32 Touch v2";
+constexpr int kSdCs = 14;
+#endif
+constexpr int kGpsUart = 2;
+constexpr int kGpsRx = 4;  // ESP RX <- GPS TX
+constexpr int kGpsTx = 13;
+constexpr unsigned long kGpsBaud = 115200;  // selectable on the GPS screen
+#endif
+constexpr char kChipLabel[] = "ESP32";
+constexpr bool kDualBand = false;
+#else
+constexpr char kChipLabel[] = "ESP32-C5";
+constexpr bool kDualBand = true;
 constexpr int kSpiSck = 6;
 constexpr int kSpiMiso = 2;
 constexpr int kSpiMosi = 7;
@@ -30,25 +104,39 @@ constexpr int kTouchCs = 3;
 #endif
 constexpr int kSdCs = 10;
 
-// GPS on UART1 (matches Marauder v8 / ESP32-C5 mapping). The macro names follow
-// Marauder's convention where kGpsRx is the ESP pin wired to the GPS module's
-// TX line.
-// Battery voltage sense (ADC). Set to the real GPIO if the board exposes a
-// battery divider; -1 disables the reading (Status shows "n/a").
-constexpr int kBatteryAdc = -1;
-constexpr float kBatteryDivider = 2.0f;  // divider ratio if kBatteryAdc is set
-
 constexpr int kGpsUart = 1;
 constexpr int kGpsRx = 14;  // ESP RX <- GPS TX
 constexpr int kGpsTx = 13;  // ESP TX -> GPS RX
 constexpr unsigned long kGpsBaud = 115200;  // confirmed on Touch and Mini
+#endif
+// Disabled until a board-specific voltage divider is verified.
+constexpr int kBatteryAdc = -1;
+constexpr float kBatteryDivider = 2.0f;
+// GPIO34-39 on classic ESP32 are input-only with no internal pull resistors.
+constexpr bool buttonHasInternalPullup(int pin) {
+#ifdef AWOK_CLASSIC_ESP32
+  return pin < 34;
+#else
+  return true;
+#endif
+}
 }  // namespace AwokPins
 
 namespace AwokTouchCalibration {
-// Marauder v8 portrait calibration values for the XPT2046 controller.
+#ifdef AWOK_CLASSIC_ESP32
+// Marauder TFT_DIY {339,3470,237,3438,2}, converted from TFT_eSPI's
+// origin/span + inverted X to XPT2046 setRotation(0) endpoint coordinates.
+// Baseline only: verify all four corners on the physical panel.
+constexpr int kXMin = 4095 - (339 + 3470);
+constexpr int kXMax = 4095 - 339;
+constexpr int kYMin = 237;
+constexpr int kYMax = 237 + 3438;
+#else
+// Confirmed C5 portrait calibration values for the XPT2046 controller.
 constexpr int kXMin = 286;
 constexpr int kXMax = 3495;
 constexpr int kYMin = 437;
 constexpr int kYMax = 3449;
+#endif
 constexpr int kPressureMin = 400;
 }  // namespace AwokTouchCalibration

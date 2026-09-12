@@ -45,7 +45,7 @@ void drawFilesManager() {
                  " KB | pg " + String(filePage + 1) + "/" + String(pages));
   display.setTextSize(1);
   const int start = filePage * kVisibleRows;
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
   display.selectableRows(min(kVisibleRows, fileRowCount - start));
 #endif
   for (int row = 0; row < kVisibleRows; ++row) {

@@ -8,7 +8,7 @@
 // manufacturer id. Heuristic: the tables below are a curated subset and easy to
 // extend; expect some false positives and negatives.
 
-constexpr int kMaxCameras = 128;
+constexpr int kMaxCameras = kResultCapacity;
 constexpr int kCameraHitQueueSlots = 32;
 constexpr uint32_t kCameraHopIntervalMs = 300;
 constexpr uint32_t kCameraRedrawMs = 700;

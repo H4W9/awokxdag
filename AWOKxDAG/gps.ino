@@ -21,6 +21,9 @@ char gpsLastSentence[28] = "(none)";
 uint32_t gpsBaudBaselinePassed = 0;
 
 void initGps() {
+  for (int i = 0; i < kGpsBaudOptionCount; ++i) {
+    if (kGpsBaudOptions[i] == AwokPins::kGpsBaud) gpsBaudIndex = i;
+  }
   gpsCurrentBaud = kGpsBaudOptions[gpsBaudIndex];
   gpsSerial.begin(gpsCurrentBaud, SERIAL_8N1, AwokPins::kGpsRx,
                   AwokPins::kGpsTx);
@@ -150,9 +153,9 @@ bool openWardriveCsv() {
       return false;
     }
     file.println(
-        String("WigleWifi_1.4,appRelease=AWOKxDAG,model=ESP32C5,release=") +
+        String("WigleWifi_1.4,appRelease=AWOKxDAG,model=") + AwokPins::kChipLabel + ",release=" +
         kVersion +
-        ",device=AWOKxDAG,display=ILI9341,board=ESP32C5,brand=AWOK");
+        ",device=AWOKxDAG,display=ILI9341,board=" + AwokPins::kBoardLabel + ",brand=AWOK");
     file.println(
         "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
         "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");

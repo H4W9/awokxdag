@@ -3,10 +3,14 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.2.0
+- **Version:** 1.3.0
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+
+Experimental **original Dual ESP32 Touch v1/v2/v3** profiles are also available (2.4 GHz only).
+
+Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
 
 > ## Authorized use only
 > This firmware transmits and disrupts networks (deauthentication, beacon
@@ -28,6 +32,8 @@ C5, white-USB screen board with an ILI9341 touchscreen).
 - **Channel Map** — 2.4 GHz and detected 5 GHz channel occupancy chart.
 - **BLE Scan** — up to 128 advertisers with Prev/Next paging and tap-to-inspect detail (address
   type, TX power, connectable/scannable, manufacturer data, service UUIDs).
+  Advertised Flipper service UUIDs get an **[F?]** hint and CSV identification field;
+  the hint does not verify device identity.
 - **Clients** — probe-request / station sniffer: client MACs, probed SSIDs,
   associated BSSIDs.
 - **Packet Monitor** — promiscuous all-frame capture to pcap, hopping every
@@ -57,6 +63,48 @@ C5, white-USB screen board with an ILI9341 touchscreen).
   ranked by probe count and distinct devices, revealing the preferred-network
   lists leaking from nearby devices. Passive.
 - **Saved** — up to 10 access points kept in NVS across reboots.
+
+### Network Tools (connected LAN)
+
+Open **Recon → page 3 → Network Tools**. These tools send discovery/service
+queries on the Wi-Fi network you join; they require a normal network connection.
+
+- **Connect / Wi-Fi** — choose an AP from the last scan (or rescan), enter its
+  password with the on-device character picker, then Join. Both Touch and Mini
+  support SSID/password entry. Credentials stay in RAM; the password entry is
+  masked and cleared after a connection attempt. Leaving Network Tools disconnects.
+- **Discover Hosts** — ARP discovery with IP/MAC results and subnet-mask handling.
+  Tap a host to inspect it individually. The top-level service buttons scan all
+  discovered hosts.
+- **TCP Ports** — checks 19 common TCP ports with one nonblocking connection at a
+  time. Results establish an open TCP port, not a verified service or vulnerability.
+- **LAN Cameras** — checks RTSP OPTIONS on 554/8554 and ONVIF device-information
+  responses on HTTP 80/8000/8080/8899. Shows RTSP candidates, ONVIF manufacturer/model
+  when returned, or ONVIF authentication requirements. Complements the existing
+  passive Cameras tool; RTSP alone does not prove a device is a camera.
+- **Printers** — checks raw-print (9100), IPP (631), and LPD (515) ports; labels
+  responses as printer candidates. Does not submit print jobs.
+- **SIP Services** — sends UDP OPTIONS on 5060 and matches responses to the queried
+  host and request. Includes authentication/error responses as service evidence.
+- **UPnP Mappings** (second page) — discovers a compatible gateway using SSDP,
+  reads its IGD service description, and lists existing port mappings. It does
+  not create, delete, or change mappings.
+- **Results / exports** — paginated results with detail inspection, Back/Stop,
+  and Save. Completed and cancelled scans automatically save to SD when available;
+  CSVs retain partial-result flags, network context, and timeout/error counts.
+  Serial **h** exits and disconnects.
+
+Network Tools retain up to 128 hosts and 128 service results on C5, or 32 each on
+original ESP32 boards. Subnets of at most 1,024 usable addresses are scanned in
+full; larger subnets scan only the local /24 intersection and show a partial-scope
+notice. IPv4 /31 and /32 networks are unsupported. ARP observes the local broadcast
+domain; isolation, sleeping devices and packet loss can hide hosts. Timeouts are
+inconclusive. UPnP accepts HTTP URLs using the gateway's literal IPv4 address,
+limits responses to 8 KiB and mappings to 64 (32 on original ESP32), and reports
+unsupported or oversized responses. HTTPS camera endpoints and SIP over TCP/TLS
+are outside this first implementation. The character picker supports printable
+ASCII (SSID up to 32 bytes, WPA password 8–63 characters or empty for open Wi-Fi);
+enterprise authentication and raw 64-digit PSKs are not supported.
 
 ### Attacks (active — authorized targets only)
 - **Deauth** — per-network from a Wi-Fi result: single AP, or multi-select
@@ -103,11 +151,14 @@ C5, white-USB screen board with an ILI9341 touchscreen).
   scan/deauth/client/portal/handshake logs are geotagged with the current fix.
 
 ### Link (two-unit)
-- **Link Mode** — pairs two AWOKxDAG units (any mix of Touch and Mini) over an
-  ESP-NOW back-channel using a display-and-confirm 4-digit code — no typing on
-  either board. Powers **Split Wardrive**: the paired units alternate-deal the
-  dual-band channel list so each scans half the spectrum, halving the per-channel
-  revisit interval (so you cover the band roughly twice as fast). A one-second
+- **Link Mode** — pairs two AWOKxDAG units (any mix of C5 and original 2.4 GHz
+  boards, Touch or Mini) over an ESP-NOW back-channel using a display-and-confirm
+  4-digit code — no typing on either board. Powers **Split Wardrive**: the pair
+  divides the channels so each unit scans a different part of the spectrum and the
+  combined logs cover it all. Two matching units **alternate-deal** their shared
+  plan (two C5s split the full dual-band list; two 2.4 GHz units split 2.4 GHz),
+  while a **mixed C5 + 2.4 GHz pair splits by band** — the C5 takes all of 5 GHz
+  and the 2.4 GHz unit takes all of 2.4 GHz, with no overlap. A one-second
   time-synced rendezvous on channel 1 swaps telemetry, so each screen shows its
   own, the partner's, and the combined AP count, the partner's link RSSI, and a
   partner-lost alert. Each board logs its own WiGLE `wardrive.csv` and uses its
@@ -130,7 +181,11 @@ Home  page 1: Recon | Attacks | Monitor | GPS | Status      (footer: About >)
 
 Recon page 1: Wi-Fi Scan | Channel Map | BLE Scan | Clients | Packet Mon | WPS Scan
       page 2: Hidden SSID | Cameras | Security Audit | BLE Trackers | Harvester | Probe Intel
-      page 3: Saved
+      page 3: Saved | Network Tools
+
+Network Tools page 1: Connect / Wi-Fi | Discover Hosts | TCP Ports | LAN Cameras |
+                      Printers | SIP Services
+              page 2: UPnP Mappings | Last Results
 
 Attacks:      Beacon Flood | Evil Portal | Evil Twin | Probe Lure
               (Deauth / Handshake launch from a scanned Wi-Fi result)
@@ -162,6 +217,8 @@ works without a card, and readable snapshots mirror to:
 | `latest_wifi_scan.csv` | last Wi-Fi scan |
 | `latest_ble_scan.csv` | last BLE scan |
 | `latest_wifi_signal.csv` | signal monitor |
+| `latest_lan_hosts.csv` | Last LAN host scan, including partial-scan status |
+| `latest_network_services.csv` | Last ports/camera/printer/SIP/UPnP scan |
 | `latest_clients.csv` | client sniffer |
 | `latest_deauth_log.csv` | Deauth Watch |
 | `rogue_log.csv` | Rogue Watch |
@@ -218,7 +275,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.2.0/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.3.0/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
@@ -226,6 +283,18 @@ selects, right jumps to actions, and left returns to the top of the screen. At
 boot it shows the same AWOK logo as the Touch board, downscaled to 96 × 128 by
 `scripts/gen_mini_boot.py` (re-run with `--threshold` to retune the 1-bit art).
 Use `dual-c5-touch` with the same script to package the default Touch build.
+
+### Original ESP32 boards (2.4 GHz)
+
+The original **Dual ESP32 Touch v1/v2/v3** and **Dual ESP32 Mini v1/v2/v3**
+profiles target the classic **ESP32 Dev Module** (4 MB flash, `huge_app`
+partition, PSRAM disabled) and add the **Adafruit ST7735 and ST7789 Library** for
+the Mini panels. Package any of them with the same script:
+
+```bash
+python3 scripts/build_firmware.py dual-esp32-touch-v1   # or -v2 / -v3
+python3 scripts/build_firmware.py dual-esp32-mini-v1    # or -v2 / -v3
+```
 
 ## Hardware map (Dual C5 Touch)
 
@@ -260,7 +329,40 @@ with `AWOK_DUAL_C5_MINI` (via `scripts/build_firmware.py dual-c5-mini`). This
 mapping was recovered from the bundled Mini firmware (see the comments in
 `board_pins.h`) and is confirmed working on hardware.
 
+## Hardware map (original ESP32 Touch v1/v2/v3)
+
+| Function | GPIO |
+| --- | ---: |
+| SPI SCK / MISO / MOSI | 18 / 19 / 23 |
+| ILI9341 CS / DC / Reset | 17 / 16 / 5 |
+| Backlight | 32 (active high) |
+| XPT2046 touch CS | 21 |
+| SD card CS | 12 (v1) · 14 (v2, v3) |
+| GPS UART2 RX / TX | 4 / 13 @ 115200 NMEA (selectable) |
+| Battery ADC | unset (`kBatteryAdc = -1`) |
+
+## Hardware map (original ESP32 Mini v1/v2/v3)
+
+| Function | GPIO |
+| --- | ---: |
+| SPI SCK / MISO / MOSI | 18 / 19 / 23 |
+| ST7735 CS / DC / Reset | 17 / 16 / 5 |
+| Backlight | 32 (active low) |
+| Buttons Left / Center / Up / Right / Down | 13 / 34 / 36 / 39 / 35 |
+| SD card CS | 4 |
+| GPS UART2 RX / TX | 21 / 22 @ 9600 NMEA (selectable) |
+| Battery ADC | unset (`kBatteryAdc = -1`) |
+
+These original 2.4 GHz-only ESP32 profiles share the classic display bus and are
+selected with `AWOK_DUAL_ESP32_TOUCH_V<n>` / `AWOK_DUAL_ESP32_MINI_V<n>`. On the
+Mini, GPIO34–39 are **input-only with no internal pull-ups** (the four D-pad pins
+rely on the board's external biasing; Center on GPIO13 uses `INPUT_PULLUP`).
+
 ## Collection capacity
+
+The capacities below describe the C5 profiles. Original ESP32 Touch profiles
+retain 32 results per table and 128 Wardrive deduplication addresses; combined
+views use Wi-Fi only. See the original-board port instructions linked above.
 
 Wi-Fi and BLE scans retain up to **128 results** each. BLE results use ten rows
 per page, with Prev/Next controls and detail inspection on every page.
@@ -296,10 +398,43 @@ Single Arduino sketch split into feature tabs (one translation unit):
 `pktmon`, `cameras`, `wps`, `hidden`, `roguewatch`, `bledetect`, `probelure`,
 `securityaudit`, `tracker`, `harvester`, `probeintel`, `karmawatch`,
 `beaconwatch`, `authflood`, `advancedwatch`, `locator`, `link` (Link Mode +
-Split Wardrive), `auditlog`, `status`, `files`, `input`.
+Split Wardrive), `auditlog`, `status`, `files`, `input`, `networktools`. `network_parse.h` contains
+bounded network-response parsers shared with host tests.
 
 ## Recovery
 
 Flashing replaces the app on the white-port ESP32. Keep an official Marauder
 `_v8.bin` and its C5 bootloader/partition files so factory firmware can be
 restored.
+
+## Credits & license
+
+AWOKxDAG is original firmware, but it stands on prior work and would not exist
+without it. Thanks to:
+
+- **[Evil-M5Project](https://github.com/7h30th3r0n3/Evil-M5Project)** by
+  **7h30th3r0n3** — thanks for the work behind the LAN host/port scanning,
+  CCTV, printer, SIP OPTIONS, UPnP mapping, and Wall of Flippers features used
+  as references for our Network Tools and BLE identification hints. We adapted
+  those ideas to AWOKxDAG's radio lifecycle, bounded scan engine, and Touch/Mini
+  controls. The linked Evil-Cardputer source carries an MIT notice; some sections
+  credit other projects, including Bruce. See [third-party notices](THIRD_PARTY_NOTICES.md).
+- **[ESP32 Marauder](https://github.com/justcallmekoko/ESP32Marauder)** by
+  **justcallmekoko (Justin Hazard)** — the reference for the original ESP32
+  board pin maps, display/SPI setup and touch-calibration constants (see
+  `docs/dual-esp32-touch.md` and `docs/dual-esp32-mini.md` for exact upstream
+  sources), the AWOK white-port board compatibility mapping, and the
+  radio-lifecycle approach that `shutdownWiFi()` / `shutdownBLE()` follow.
+- **[FZEasyMarauderFlash](https://github.com/SkeletonMan03/FZEasyMarauderFlash)**
+  by **SkeletonMan03** — flashing reference used for the original Mini pin
+  sourcing.
+- The libraries this firmware builds on: **Adafruit GFX**, **Adafruit ILI9341**,
+  **Adafruit ST7735 and ST7789**, **Adafruit BusIO**, **NimBLE-Arduino**,
+  **XPT2046_Touchscreen**, and **TinyGPSPlus** — each under its own license.
+
+**License:** AWOKxDAG's own code is released under the **MIT License** (see
+[LICENSE](LICENSE)). Hardware pin numbers and calibration constants are factual
+board-interface values, and the radio-lifecycle behavior was reimplemented rather
+than copied. ESP32 Marauder is licensed **GPL-3.0** and each referenced project
+and library remains under its own license — consult those upstreams for their
+terms before redistributing derived work.

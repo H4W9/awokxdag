@@ -21,16 +21,30 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <string>
+#include "network_parse.h"
+#include <WiFiUdp.h>
+#include <lwip/sockets.h>
+#include <lwip/etharp.h>
+#include <lwip/priv/tcpip_priv.h>
+#include <esp_netif.h>
+#include <esp_netif_net_stack.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
 
 #include "board_pins.h"
-#ifdef AWOK_DUAL_C5_MINI
+#ifdef AWOK_MINI_DISPLAY
 #include "mini_display.h"
 #include "mini_boot_screen_data.h"
 #include "result_memory.h"
 // Set for each dual-radio session after checking the actual internal heap.
 bool radiosCoexist = false;
 #else
+#ifdef AWOK_CLASSIC_ESP32
+bool radiosCoexist = false;
+#else
 constexpr bool radiosCoexist = true;
+#endif
 #include "boot_screen_data.h"  // 240x320 Touch splash; unused on the Mini
 #endif
 
@@ -38,8 +52,11 @@ constexpr int kScreenWidth = 240;
 constexpr int kScreenHeight = 320;
 constexpr int kHeaderHeight = 42;
 constexpr int kFooterTop = 278;
-constexpr int kMaxWifiResults = 128;
-constexpr int kMaxBleResults = 128;
+// Classic ESP32 has a much smaller statically addressable DRAM segment and no
+// verified PSRAM on these display pins. Keep bounded tables within its budget.
+constexpr int kResultCapacity = AwokPins::kDualBand ? 128 : 32;
+constexpr int kMaxWifiResults = kResultCapacity;
+constexpr int kMaxBleResults = kResultCapacity;
 // NimBLE reserves 255 for unlimited retention; keep snapshot scans bounded.
 static_assert(kMaxBleResults > 0 && kMaxBleResults < 255, "Invalid BLE result limit");
 constexpr int kVisibleRows = 10;
@@ -71,19 +88,22 @@ constexpr uint32_t kDeauthAttackRedrawMs = 500;
 // a channel the call fails and the hop simply moves on.
 constexpr uint8_t kDeauthHopChannels[] = {
     1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,
+#ifndef AWOK_CLASSIC_ESP32
     36,  40,  44,  48,  52,  56,  60,  64,  100, 104, 108, 112, 116,
-    120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165};
+    120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165
+#endif
+};
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.2.0";
+constexpr char kVersion[] = "1.3.0";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
 constexpr int kCaptureSlotBytes = 256;
 constexpr int kCaptureQueueSlots = 24;
 constexpr char kClientCsvPath[] = "/awokxdag/latest_clients.csv";
-constexpr int kMaxClients = 128;
+constexpr int kMaxClients = kResultCapacity;
 constexpr int kSnifferQueueSlots = 32;
 constexpr uint32_t kClientHopIntervalMs = 300;
 constexpr uint32_t kClientRedrawMs = 700;
@@ -96,20 +116,20 @@ constexpr char kPortalSsid[] = "Free_WiFi";
 constexpr char kPortalCredsPath[] = "/awokxdag/portal_creds.csv";
 constexpr uint32_t kPortalRedrawMs = 1000;
 constexpr char kWardriveCsvPath[] = "/awokxdag/wardrive.csv";
-constexpr int kMaxWardriveMacs = 512;
+constexpr int kMaxWardriveMacs = AwokPins::kDualBand ? 512 : 128;
 constexpr uint32_t kWardriveRedrawMs = 800;
 constexpr int kBleHitQueueSlots = 24;
 
 // Security Audit: passive beacon-IE posture report (encryption tier, PMF, WPS).
 constexpr char kSecurityAuditCsvPath[] = "/awokxdag/security_audit.csv";
-constexpr int kMaxAudit = 128;
+constexpr int kMaxAudit = kResultCapacity;
 constexpr int kAuditHitQueueSlots = 24;
 constexpr uint32_t kAuditHopIntervalMs = 300;
 constexpr uint32_t kAuditRedrawMs = 700;
 
 // BLE Trackers: passive AirTag/Find My, Tile, Samsung SmartTag detection.
 constexpr char kTrackerCsvPath[] = "/awokxdag/ble_trackers.csv";
-constexpr int kMaxTrackers = 128;
+constexpr int kMaxTrackers = kResultCapacity;
 constexpr int kTrackerHitQueueSlots = 32;
 constexpr uint32_t kTrackerRedrawMs = 700;
 // A tracker seen over a span longer than this (with repeat sightings) while you
@@ -120,14 +140,14 @@ constexpr uint32_t kTrackerMinSightings = 4;
 // Harvester: all-channel passive EAPOL/PMKID collection (no deauth).
 constexpr char kHarvestPcapPath[] = "/awokxdag/harvest.pcap";
 constexpr char kHarvestPmkidPath[] = "/awokxdag/harvest_pmkid.txt";
-constexpr int kMaxHarvestAp = 128;
-constexpr int kMaxHarvestSeen = 128;  // beacons written once per BSSID
+constexpr int kMaxHarvestAp = kResultCapacity;
+constexpr int kMaxHarvestSeen = kResultCapacity;  // beacons written once per BSSID
 constexpr uint32_t kHarvestHopIntervalMs = 300;
 constexpr uint32_t kHarvestRedrawMs = 700;
 
 // Probe Intel: directed probe-request SSID aggregation.
 constexpr char kProbeIntelCsvPath[] = "/awokxdag/probe_intel.csv";
-constexpr int kMaxProbeSsids = 128;
+constexpr int kMaxProbeSsids = kResultCapacity;
 constexpr int kProbeMacsPerSsid = 8;
 constexpr int kProbeHitQueueSlots = 32;
 constexpr uint32_t kProbeHopIntervalMs = 300;
@@ -135,7 +155,7 @@ constexpr uint32_t kProbeRedrawMs = 700;
 
 // Karma Watch: one BSSID answering many SSIDs (WiFi Pineapple / Karma / MANA).
 constexpr char kKarmaLogCsvPath[] = "/awokxdag/karma_log.csv";
-constexpr int kMaxKarmaAps = 128;
+constexpr int kMaxKarmaAps = kResultCapacity;
 constexpr int kKarmaSsidsPerAp = 6;
 constexpr int kKarmaHitQueueSlots = 24;
 constexpr int kKarmaSsidThreshold = 3;  // distinct SSIDs => suspicious
@@ -302,7 +322,14 @@ enum class View {
   kBeaconWatch,
   kAuthFlood,
   kAdvancedWatch,
-  kLinkWardrive
+  kLinkWardrive,
+  kNetworkMenu,
+  kNetworkSetup,
+  kNetworkEdit,
+  kNetworkAps,
+  kNetworkResults,
+  kNetworkHost,
+  kNetworkDetail
 };
 
 // ---- Link Mode (ESP-NOW pairing of two AWOKxDAG units) ------------------
@@ -310,7 +337,12 @@ enum class View {
 // are the single POD LinkPacket below, tagged by `type`. The recv callback runs
 // in the Wi-Fi task and only enqueues into linkPacketQueue; updateLink() parses.
 constexpr uint32_t kLinkMagic = 0x41574B4C;  // "AWKL"
-constexpr uint8_t kLinkProtoVersion = 1;
+// Distinct channel plans cannot alternate-deal the same spectrum. Keep classic
+// pairs isolated from existing C5 protocol-v1 peers until negotiation exists.
+// One value across ALL boards — the wire format is identical, so a band-specific
+// version only made the C5 and 2.4 GHz boards reject each other's frames. Band
+// capability is negotiated in the HELLO flags instead (kLinkFlagDualBand).
+constexpr uint8_t kLinkProtoVersion = 2;
 constexpr uint8_t kLinkChannel = 1;          // rendezvous + pairing channel
 constexpr uint32_t kLinkRendezvousMs = 1000;  // beat period (live feel)
 constexpr uint32_t kLinkWindowMs = 300;       // link-channel dwell per beat
@@ -346,6 +378,14 @@ enum LinkState : uint8_t {
   kLinkReady = 3         // paired; role + session settled
 };
 
+// This unit's Split Wardrive channel set (declared here so functions taking it
+// get valid auto-prototypes). See link.ino linkAssignedPlan.
+enum LinkPlan : uint8_t {
+  kLinkPlan24 = 0,   // 2.4 GHz only
+  kLinkPlan5 = 1,    // 5 GHz only
+  kLinkPlanFull = 2  // 2.4 GHz then 5 GHz
+};
+
 // One ESP-NOW frame. POD, ~40 bytes, copied verbatim over the air.
 struct LinkPacket {
   uint32_t magic = kLinkMagic;
@@ -364,6 +404,19 @@ struct LinkPacket {
 };
 
 constexpr uint8_t kLinkFlagConfirmed = 0x01;
+constexpr uint8_t kLinkFlagDualBand = 0x02;  // sender's radio covers 5 GHz too
+
+// Canonical Split Wardrive channel plan — identical on every board so a mixed
+// dual-band + 2.4-only pair deals from the same list. The 5 GHz block is only
+// used when BOTH units advertise dual-band (see link.ino linkPlanDualBand);
+// defining it on a 2.4-only build is harmless (it is simply never indexed).
+constexpr uint8_t kLink24Channels[] = {1, 2, 3,  4,  5,  6, 7,
+                                       8, 9, 10, 11, 12, 13};
+constexpr int kLink24ChannelCount = static_cast<int>(sizeof(kLink24Channels));
+constexpr uint8_t kLink5Channels[] = {
+    36,  40,  44,  48,  52,  56,  60,  64,  100, 104, 108, 112, 116,
+    120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165};
+constexpr int kLink5ChannelCount = static_cast<int>(sizeof(kLink5Channels));
 
 // A received frame plus the RSSI the radio reported, queued for the main loop.
 struct LinkQueueItem {
@@ -635,6 +688,7 @@ struct BleEntry {
   bool hasTxPower = false;
   bool connectable = false;
   bool scannable = false;
+  bool flipperLike = false;
 };
 
 // Declarations for the three functions with default arguments, so callers in
@@ -653,3 +707,20 @@ void releaseBleMemory();
 
 bool prepareDualRadioView();
 void startDualRadioScan(NimBLEScan* scan);
+
+// Network Tools types precede Arduino-generated function prototypes.
+enum class NetJob { None, Join, Hosts, Ports, Cameras, Printers, Sip, Upnp };
+enum class NetStage { Idle, ArpSend, ArpWait, Probe, Connecting, Sending, Reading, SipWait, SsdpWait };
+struct NetHost { uint32_t ip; uint8_t mac[6]; };
+struct NetResult { uint32_t ip; uint16_t port; char kind[16]; char detail[160]; };
+struct NetArpCall {
+  tcpip_api_call_data call;
+  uint32_t ip; bool send; bool found; uint8_t mac[6];
+};
+
+struct NetSummary {
+  NetJob job = NetJob::None;
+  char status[96] = {}, ssid[33] = {};
+  uint32_t ip = 0, mask = 0, checked = 0, timeouts = 0, refused = 0, errors = 0;
+  bool limited = false, subnetLimited = false, hostsLimited = false;
+};
