@@ -9,8 +9,8 @@
 
 volatile uint32_t authFloodWindow = 0;  // matching frames in the open window
 volatile uint32_t authFloodTotal = 0;
-uint8_t authLastTarget[6] = {0};  // AP under attack (addr1)
-uint8_t authLastSource[6] = {0};  // claimed client (addr2)
+volatile uint8_t authLastTarget[6] = {0};  // AP under attack (addr1)
+volatile uint8_t authLastSource[6] = {0};  // claimed client (addr2)
 uint32_t authFloodRate = 0;       // frames in the last closed window
 uint32_t authFloodPeak = 0;
 uint32_t authFloodAlerts = 0;
@@ -36,8 +36,10 @@ void authFloodCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
 
   ++authFloodWindow;
   ++authFloodTotal;
-  memcpy(authLastTarget, payload + 4, 6);   // addr1 = destination / AP
-  memcpy(authLastSource, payload + 10, 6);  // addr2 = source / client
+  for (int i = 0; i < 6; ++i) {
+    authLastTarget[i] = payload[4 + i];   // addr1 = destination / AP
+    authLastSource[i] = payload[10 + i];  // addr2 = source / client
+  }
 }
 
 void appendAuthFloodLog() {
@@ -109,8 +111,10 @@ void resetAuthFlood() {
   authFloodPeak = 0;
   authFloodAlerts = 0;
   authFloodAlert = false;
-  memset(authLastTarget, 0, 6);
-  memset(authLastSource, 0, 6);
+  for (int i = 0; i < 6; ++i) {
+    authLastTarget[i] = 0;
+    authLastSource[i] = 0;
+  }
   lastAuthFloodWindowMs = millis();
 }
 

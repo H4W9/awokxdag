@@ -301,6 +301,16 @@ void startHandshakeCapture() {
     drawWifiAudit();
     return;
   }
+  if (!confirmActiveTest("Handshake")) {
+    if (currentView == View::kWifiAudit) {
+      auditStatus = "Tap Grab again to confirm.";
+      drawWifiAudit();
+    } else {
+      drawHandshake();
+    }
+    return;
+  }
+  if (currentView == View::kWifiAudit) auditStatus = "";
   deauthAttackActive = false;
   memcpy(handshakeTargetBssid, deauthTargets[0].bssid, 6);
   handshakeChannel = deauthTargets[0].channel;

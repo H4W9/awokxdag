@@ -7,7 +7,7 @@ on:
       version:
         description: "Release version (e.g. 1.0.0)"
         required: true
-        default: "1.3.0"
+        default: "1.3.4"
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
@@ -84,15 +84,30 @@ jobs:
       - name: Compile ${{ matrix.label }} (produces the merged image)
         # -z muldefs lets our ieee80211_raw_frame_sanity_check override win over
         # the one in libnet80211.a (a stock core has this empty; enabling raw
-        # deauth injection). The esp32 platform default carries this flag too.
-        # -D${{ matrix.define }} selects the board profile (pins, display,
-        # radio memory policy) independent of the sketch's
+        # deauth injection). --wrap=esp_wifi_init trims STA RX/TX buffers +
+        # CSI/AMPDU; --wrap=esp_bt_controller_init trims the BLE controller's
+        # duplicate lists. -D${{ matrix.define }} selects the board profile
+        # (pins, display, radio memory policy) independent of the sketch's
         # Arduino IDE default.
+        # AWOKxDAG is BLE Observer-only (scan; no client/server/adv anywhere in
+        # the sketch), so the CONFIG_BT_NIMBLE_ROLE_*_DISABLED flags trim
+        # NimBLE-Arduino's default Central/Peripheral/Broadcaster footprint.
+        # The actual fix for BLE scan failing with HCI "Memory Capacity
+        # Exceeded" (NimBLE rc=519) on the C5 is the time-multiplex
+        # RadioScheduler (only one radio DMA-resident at a time) -- the C5's
+        # ~70 KB DMA pool cannot hold Wi-Fi + the BLE controller together.
+        # (NimBLE buffer-count and MEM_ALLOC_MODE macros are NOT overridable by
+        # -D here: the core's generated sdkconfig.h #defines them
+        # unconditionally and silently wins.)
+        # build.code_debug=1 is Error-level CORE_DEBUG_LEVEL: silent unless
+        # something is wrong, but it's what surfaces NimBLE's own error rc
+        # codes, which are compiled out entirely at the default level 0.
         run: |
           arduino-cli compile \
             --fqbn "${{ matrix.fqbn }}" \
-            --build-property "compiler.c.elf.extra_flags=-Wl,-z,muldefs" \
-            --build-property "compiler.cpp.extra_flags=-D${{ matrix.define }}" \
+            --build-property "compiler.c.elf.extra_flags=-Wl,-z,muldefs -Wl,--wrap=esp_wifi_init -Wl,--wrap=esp_bt_controller_init" \
+            --build-property "compiler.cpp.extra_flags=-D${{ matrix.define }} -DCONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED -DCONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED -DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED" \
+            --build-property "build.code_debug=1" \
             --build-path "build-${{ matrix.variant }}" \
             AWOKxDAG/AWOKxDAG.ino
 

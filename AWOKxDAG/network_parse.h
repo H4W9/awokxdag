@@ -170,14 +170,18 @@ inline bool httpBody(char* data, size_t length, char*& body, size_t& size) {
 }
 // UUIDs are exact semicolon-separated values; names/MACs are not identities.
 inline const char* flipper(const char* uuids) {
+  static const char* const kFull[] = {
+      "00003081-0000-1000-8000-00805f9b34fb",
+      "00003082-0000-1000-8000-00805f9b34fb",
+      "00003083-0000-1000-8000-00805f9b34fb"};
+  static const char* const kShort[] = {"3081", "3082", "3083"};
   const char* p = uuids;
   while (*p) {
     const char* end = strchr(p, ';');
     size_t n = end ? size_t(end - p) : strlen(p);
-    for (int i = 1; i <= 3; ++i) {
-      char full[40]; snprintf(full, sizeof(full), "0000308%d-0000-1000-8000-00805f9b34fb", i);
-      char shortId[5]; snprintf(shortId, sizeof(shortId), "308%d", i);
-      if ((n == 36 && !strncasecmp(p, full, n)) || (n == 4 && !strncasecmp(p, shortId, n)))
+    for (int i = 0; i < 3; ++i) {
+      if ((n == 36 && !strncasecmp(p, kFull[i], n)) ||
+          (n == 4 && !strncasecmp(p, kShort[i], n)))
         return "Flipper-like service";
     }
     if (!end) break;

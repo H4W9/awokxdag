@@ -27,6 +27,9 @@ test('Changing only source Markdown updates pages, release summary and navigatio
     await build(root,out);
     let html = await readFile(path.join(out,'index.html'),'utf8');
     assert.match(html,/release-version">v1.0.0/);
+    assert.match(html,/README v1.0.0/);
+    assert.match(await readFile(path.join(out,'changelog.html'),'utf8'),/CHANGELOG v1.0.0/);
+    assert.match(await readFile(path.join(out,'docs/link-mode.html'),'utf8'),/DOCS v1.0.0/);
     assert.doesNotMatch(html,/release-version">vUnreleased/);
     assert.match(html,/href="https:\/\/espterminator.com\/"/);
     assert.match(await readFile(path.join(out,'docs/link-mode.html'),'utf8'),/href="..\/index.html#features"/);

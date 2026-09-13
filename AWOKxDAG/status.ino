@@ -97,7 +97,7 @@ void drawStatus() {
   display.setCursor(6, y);
   display.print(String("Firmware: AWOKxDAG (") + AwokPins::kChipLabel + ")");
 
-  drawFooter("Home", "Files");
+  drawThreeButtonFooter("Home", "Settings", "Files");
 }
 
 void updateStatus() {
@@ -109,8 +109,10 @@ void updateStatus() {
 
 void handleStatusTouch(int x, int y) {
   if (y < kFooterTop) return;
-  if (x < kScreenWidth / 2) {
+  if (x < 80) {
     drawHome();
+  } else if (x < 160) {
+    drawSettings();
   } else {
     openFilesManager();
   }

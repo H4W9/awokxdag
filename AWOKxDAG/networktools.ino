@@ -308,7 +308,7 @@ err_t netArpOnTcpip(tcpip_api_call_data* base) {
   ip4_addr_t address; address.addr = htonl(query->ip);
   if (query->send) return etharp_request(ni, &address);
   eth_addr* mac = nullptr; const ip4_addr_t* found = nullptr;
-  query->found = etharp_find_addr(ni, &address, &mac, &found) >= 0;
+  query->found = etharp_find_addr(ni, &address, &mac, &found) >= 0 && mac;
   if (query->found) memcpy(query->mac, mac->addr, 6);
   return ERR_OK;
 }
@@ -762,6 +762,7 @@ void handleNetworkTouch(int x, int y) {
 void handleNetworkSerial() {
   // Existing serial shortcuts cannot switch radios out from under a LAN job.
   // Serial h always exits; passwords are entered through the masked device UI.
+  if (Serial.available()) noteActivity();
   while (Serial.available()) {
     const char ch = Serial.read();
     if (ch == 'h' || ch == 'H') { closeNetworkTools(); drawHome(); return; }

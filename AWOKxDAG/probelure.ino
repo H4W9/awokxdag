@@ -132,6 +132,10 @@ void drawProbeLure() {
 }
 
 void startProbeLure() {
+  if (!confirmActiveTest("Probe lure")) {
+    drawAttacksMenu();
+    return;
+  }
   lureSsid = selectedWifi.ssid;
   if (lureSsid.length() == 0) {
     probeLureActive = false;

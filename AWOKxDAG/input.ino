@@ -19,10 +19,37 @@ bool readTouch(int& screenX, int& screenY) {
 }
 
 #ifdef AWOK_MINI_DISPLAY
+bool miniAnyButtonDown() {
+  return digitalRead(AwokPins::kButtonLeft) == LOW ||
+         digitalRead(AwokPins::kButtonCenter) == LOW ||
+         digitalRead(AwokPins::kButtonUp) == LOW ||
+         digitalRead(AwokPins::kButtonRight) == LOW ||
+         digitalRead(AwokPins::kButtonDown) == LOW;
+}
+
 void updateMiniJoystick() {
   static uint32_t nextMove = 0;
   static int lastDirection = 0;
   const uint32_t now = millis();
+  if (backlightDimmed) {
+    if (miniAnyButtonDown()) noteActivity();
+    return;
+  }
+  if (currentView == View::kScreenTest) {
+    if (digitalRead(AwokPins::kButtonLeft) == LOW &&
+        static_cast<int32_t>(now - nextMove) >= 0) {
+      nextMove = now + 300;
+      noteActivity();
+      stopScreenTest();
+    } else if ((digitalRead(AwokPins::kButtonRight) == LOW ||
+                digitalRead(AwokPins::kButtonDown) == LOW) &&
+               static_cast<int32_t>(now - nextMove) >= 0) {
+      nextMove = now + 300;
+      noteActivity();
+      screenTestAdvance();
+    }
+    return;
+  }
   // Holding center never moves selection into another control.
   if (digitalRead(AwokPins::kButtonCenter) == LOW) return;
   const int direction = digitalRead(AwokPins::kButtonLeft) == LOW ? -2 :
@@ -55,8 +82,28 @@ void handleTouch() {
   if (scanInProgress) return;
   int x = 0;
   int y = 0;
-  if (!consumeTouchPress(readTouch(x, y), millis())) return;
+#ifdef AWOK_MINI_DISPLAY
+  const bool pressed = currentView == View::kScreenTest
+                           ? digitalRead(AwokPins::kButtonCenter) == LOW
+                           : readTouch(x, y);
+  if (currentView == View::kScreenTest) {
+    x = 120;
+    y = 8;
+  }
+#else
+  const bool pressed = readTouch(x, y);
+#endif
+  if (backlightDimmed) {
+    if (consumeTouchPress(pressed, millis())) noteActivity();
+    return;
+  }
+  if (!consumeTouchPress(pressed, millis())) return;
+  noteActivity();
   Serial.printf("[touch] x=%d y=%d\n", x, y);
+  if (currentView == View::kScreenTest) {
+    handleScreenTestTouch(x, y);
+    return;
+  }
   if (networkToolsOpen()) {
     handleNetworkTouch(x, y);
     return;
@@ -85,6 +132,10 @@ void handleTouch() {
   }
   if (currentView == View::kStatus) {
     handleStatusTouch(x, y);
+    return;
+  }
+  if (currentView == View::kSettings) {
+    handleSettingsTouch(x, y);
     return;
   }
   if (currentView == View::kFiles) {
@@ -610,45 +661,59 @@ void handleTouch() {
   }
 }
 
+bool toolBlocksSerialShortcuts() {
+  return deauthAttackActive || deauthMonitorActive || handshakeCaptureActive ||
+         clientSnifferActive || beaconFloodActive || evilPortalActive ||
+         wardriveActive || pktmonActive || wpsScanActive || rogueWatchActive ||
+         hiddenRevealActive || cameraActive || bleDetectActive ||
+         probeLureActive || securityAuditActive || trackerScanActive ||
+         harvesterActive || probeIntelActive || karmaWatchActive ||
+         beaconWatchActive || authFloodActive || advancedWatchActive ||
+         locatorActive || linkWardriveActive ||
+         linkState == kLinkDiscovering || linkState == kLinkAwaitConfirm;
+}
+
+void stopActiveTools() {
+  if (deauthAttackActive) stopDeauthAttack();
+  if (deauthMonitorActive) stopDeauthMonitor();
+  if (handshakeCaptureActive) stopHandshakeCapture();
+  if (clientSnifferActive) stopClientSniffer();
+  if (beaconFloodActive) stopBeaconFlood();
+  if (evilPortalActive) stopEvilPortal();
+  if (wardriveActive) stopWardrive();
+  if (pktmonActive) stopPacketMon();
+  if (wpsScanActive) stopWpsScan();
+  if (rogueWatchActive) stopRogueWatch();
+  if (hiddenRevealActive) stopHiddenReveal();
+  if (cameraActive) stopCameraScan();
+  if (bleDetectActive) stopBleDetect();
+  if (probeLureActive) stopProbeLure();
+  if (securityAuditActive) stopSecurityAudit();
+  if (trackerScanActive) stopTrackerScan();
+  if (harvesterActive) stopHarvester();
+  if (probeIntelActive) stopProbeIntel();
+  if (karmaWatchActive) stopKarmaWatch();
+  if (beaconWatchActive) stopBeaconWatch();
+  if (authFloodActive) stopAuthFlood();
+  if (advancedWatchActive) stopAdvancedWatch();
+  if (locatorActive) stopLocator();
+  if (linkWardriveActive) stopLinkWardrive();
+  if (linkState == kLinkDiscovering || linkState == kLinkAwaitConfirm) {
+    linkCancelPairing();
+  }
+}
+
 void handleSerial() {
   if (networkToolsOpen()) {
     handleNetworkSerial();
     return;
   }
   if (!Serial.available() || scanInProgress) return;
+  noteActivity();
   const char command = static_cast<char>(tolower(Serial.read()));
-  if (deauthAttackActive || deauthMonitorActive || handshakeCaptureActive ||
-      clientSnifferActive || beaconFloodActive || evilPortalActive ||
-      wardriveActive || pktmonActive || wpsScanActive || rogueWatchActive ||
-      hiddenRevealActive || cameraActive || bleDetectActive ||
-      probeLureActive || securityAuditActive || trackerScanActive ||
-      harvesterActive || probeIntelActive || karmaWatchActive ||
-      beaconWatchActive || authFloodActive || advancedWatchActive ||
-      linkWardriveActive) {
+  if (toolBlocksSerialShortcuts()) {
     if (command == 'h') {
-      if (deauthAttackActive) stopDeauthAttack();
-      if (deauthMonitorActive) stopDeauthMonitor();
-      if (handshakeCaptureActive) stopHandshakeCapture();
-      if (clientSnifferActive) stopClientSniffer();
-      if (beaconFloodActive) stopBeaconFlood();
-      if (evilPortalActive) stopEvilPortal();
-      if (wardriveActive) stopWardrive();
-      if (pktmonActive) stopPacketMon();
-      if (wpsScanActive) stopWpsScan();
-      if (rogueWatchActive) stopRogueWatch();
-      if (hiddenRevealActive) stopHiddenReveal();
-      if (cameraActive) stopCameraScan();
-      if (bleDetectActive) stopBleDetect();
-      if (probeLureActive) stopProbeLure();
-      if (securityAuditActive) stopSecurityAudit();
-      if (trackerScanActive) stopTrackerScan();
-      if (harvesterActive) stopHarvester();
-      if (probeIntelActive) stopProbeIntel();
-      if (karmaWatchActive) stopKarmaWatch();
-      if (beaconWatchActive) stopBeaconWatch();
-      if (authFloodActive) stopAuthFlood();
-      if (advancedWatchActive) stopAdvancedWatch();
-      if (linkWardriveActive) stopLinkWardrive();
+      stopActiveTools();
       drawHome();
     }
     return;
@@ -661,10 +726,15 @@ void handleSerial() {
   if (command == 'u') {
     cycleGpsBaud();
     if (currentView == View::kGps) drawGps();
+    if (currentView == View::kSettings) drawSettings();
   }
+  if (command == 't') drawSettings();
   if (command == 'r') {
     gpsRawEcho = !gpsRawEcho;
+    setSettingFlag(kSettingNmeaEcho, gpsRawEcho);
+    saveDeviceSettings();
     Serial.printf("\n[gps] raw echo %s\n", gpsRawEcho ? "ON" : "OFF");
+    if (currentView == View::kSettings) drawSettings();
   }
   if (command == 'w') scanWifi();
   if (command == 'c') {

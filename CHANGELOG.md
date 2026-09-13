@@ -5,6 +5,138 @@ All notable changes to AWOKxDAG are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-09-13
+
+### Fixed
+
+- BLE scanning failed every time on Dual C5 Touch in wardrive (and every other
+  Wi-Fi+BLE view) with `NimBLEScan: Error starting scan; rc=519` — invisible
+  until now because NimBLE-Arduino's own error logging is compiled out at the
+  default `CORE_DEBUG_LEVEL=0`. `rc=519` decodes to `BLE_HS_HCI_ERR(7)`,
+  Bluetooth HCI error `0x07` "Memory Capacity Exceeded". Per-capability heap
+  instrumentation traced it to **DMA-capable SRAM exhaustion during Wi-Fi+BLE
+  coexistence**, not the general heap: the C5 has a ~70 KB DMA pool, Wi-Fi's
+  driver takes ~44 KB of it (fixed overhead — shrinking the buffer counts moved
+  it <2 KB), and the BLE controller takes the remaining ~26 KB at init, leaving
+  24 bytes — so scan-enable, which needs its own DMA buffer, is refused. The
+  two radios simply do not fit in DMA at the same time, and neither pool is
+  relocatable: Wi-Fi's is fixed driver/coex memory, and the BLE controller's
+  bulk is the MSYS mbuf pool, which on the C5 is allocated inside the closed
+  controller blob (`CONFIG_BT_LE_MSYS_INIT_IN_CONTROLLER=1`) and cannot be
+  moved to PSRAM or shrunk by config. (This is why the 1.3.2/1.3.3 bring-up
+  reordering and buffer trimming, and an attempted PSRAM offload of the NimBLE
+  host heap, could not fix it — they tuned the wrong pool.)
+- **Fix: dual-radio views now time-multiplex the radios** instead of running
+  them at once. wardrive, Cameras, and Advanced Watch alternate Wi-Fi and BLE
+  windows (~8 s / ~6 s) through a shared `RadioScheduler`; only one radio is
+  DMA-resident per window, each brought up into a clean heap — the same
+  single-radio condition that already works reliably. GPS logs continuously
+  throughout (UART, unaffected), and both Wi-Fi and BLE totals accumulate
+  across windows. Classic ESP32 boards stay a permanent Wi-Fi-only session.
+- Supporting cleanup: NimBLE is compiled Observer-only
+  (`CONFIG_BT_NIMBLE_ROLE_CENTRAL/PERIPHERAL/BROADCASTER_DISABLED`) since the
+  sketch never connects or advertises; the BLE controller's 100-entry hardware
+  duplicate lists drop to 16 (the app dedups scan hits itself);
+  `build.code_debug=1` (Error-level) is set in every build path so the next
+  radio failure prints its real error instead of being silently swallowed.
+
+## [1.3.3] - 2026-09-13
+
+### Fixed
+
+- Dual C5 Touch wardrive no longer turns BLE off when NimBLE fails to start.
+  Arduino's default STA pool is ~49 KB internal (`dynamic_rx/tx` = 32), which
+  left no room for BLE after the display and SD. `wifi_init_wrap.c` is linked
+  with `--wrap=esp_wifi_init` so dynamic RX/TX drop to 8, CSI/AMPDU are off,
+  and static RX is 3. `--wrap=esp_bt_controller_init` drops the C5 controller
+  reservation so NimBLE still fits beside STA. Arduino's SPIRAM cache TX
+  count of 4 is left as-is. Both radios come up after the display and before
+  SD. A failed BLE bring-up retries, then shows a radio error instead of a
+  Wi-Fi-only session.
+
+## [1.3.2] - 2026-09-12
+
+### Added
+
+- **Settings** under Status: compact rows that fit the button (Sleep Off / 15s /
+  30s / 1m / 2m / 5m, Bright 20–100%, GPS baud, boot splash, two-tap confirm
+  for active tests, NMEA echo, screen test). Values live in NVS on a blob
+  separate from saved networks. Baud changes from the GPS screen or serial `u`
+  persist across reboots. Serial `t` opens Settings. Footer **Defaults** restores
+  factory prefs without touching saved networks. A dimmed screen wakes on the
+  first tap or Mini button without firing that control.
+- **Screen test** from Settings: solid colors, SMPTE-style bars, checkerboard,
+  corner orientation marks, backlight PWM sweep, and a touch (corners + center,
+  raw vs mapped) or Mini button probe. Mini writes the ST7735 directly, then
+  blits the same checker through the firmware canvas so panel faults are not
+  confused with MiniLayout bugs.
+
+### Fixed
+
+- Arduino IDE Verify failed with a multiple definition of
+  `ieee80211_raw_frame_sanity_check` against ESP32 core 3.3.x. CI already
+  passed `-Wl,-z,muldefs`; the IDE does not. `scripts/setup_arduino_ide.py`
+  writes that flag into the core's `platform.local.txt`.
+- Wardrive on Dual C5 Touch started BLE first, then `WiFi.mode(STA)` tried to
+  deinit a driver NimBLE already claimed (`wifi_init` 0x3001) and aborted the
+  session. Wi-Fi is brought up first; BLE failure now falls back to Wi-Fi-only
+  logging instead of a radio-error screen. `shutdownWifi()` no longer double
+  deinits after `WiFi.mode(WIFI_OFF)`.
+- Touch Wi-Fi init after the SD mount left only a ~34 KB heap block, so
+  `esp_wifi_init` failed and IDF logged 0x3001 on cleanup. STA now starts
+  right after the display, before SD. Default full brightness uses GPIO
+  instead of LEDC so PWM does not split that block.
+
+### Validation
+
+- Dual C5 Touch and Dual C5 Mini compiled and packaged.
+
+## [1.3.1] - 2026-09-12
+
+### Added
+
+- Board and Link Mode notes that the README already pointed at:
+  [dual-esp32-touch.md](docs/dual-esp32-touch.md),
+  [dual-esp32-mini.md](docs/dual-esp32-mini.md), and
+  [link-mode.md](docs/link-mode.md). The website now emits pages for them.
+- Host-side `NetworkParse` tests under `tests/host/` (IPv4, subnet range, HTTP
+  headers, XML/UPnP blocks, URLs, Content-Length and chunked bodies, Flipper
+  UUID hints, malformed input) run with AddressSanitizer and
+  UndefinedBehaviorSanitizer. `bash tests/host/run.sh` or the **Host tests**
+  workflow.
+
+### Fixed
+
+- Deauth Watch read addr2/addr3 without a 24-byte frame-length check, the same
+  class of bug Packet Monitor already guarded against.
+- Serial **h** left the Locator running and kept Link Mode HELLO broadcasts
+  going after the UI returned Home.
+- Evil Portal CSV concatenated raw form fields, so a comma or quote in a
+  submitted value broke `portal_creds.csv`. Fields are now a single escaped
+  column; Serial logs the client and field count, not the values.
+- README said the Arduino IDE sketch default was Mini; the code selects
+  Dual C5 Touch. Original Mini button prose also swapped Left (GPIO13,
+  `INPUT_PULLUP`) with Center (GPIO34, input-only).
+- `scripts/build_firmware.py` omitted `-Wl,-z,muldefs`, so a local package
+  could lose the raw-frame sanity-check override that CI always links.
+- `scripts/gen_mini_boot.py` opened the source PNG relative to the working
+  directory; it now resolves paths from the script location.
+
+### Changed
+
+- `LinkPacket` is `static_assert`ed at 36 bytes so a C5 / classic ESP32 ABI
+  mismatch cannot silently drop every pairing frame.
+- Channel-count constants use `sizeof array / sizeof element`.
+- Packaging metadata marks original ESP32 profiles experimental and records
+  C5 Touch/Mini as the hardware-tested maps.
+- `.gitignore` covers `.DS_Store` and website build output.
+
+### Validation
+
+- Dual C5 Touch and Dual C5 Mini compiled and packaged. Host parser tests
+  passed under AddressSanitizer and UndefinedBehaviorSanitizer. Website tests
+  passed.
+
 ## [1.3.0] - 2026-09-11
 
 ### Added
@@ -286,7 +418,11 @@ All notable changes to AWOKxDAG are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.3.4...HEAD
+[1.3.4]: https://github.com/dagnazty/awokxdag/compare/v1.3.3...v1.3.4
+[1.3.3]: https://github.com/dagnazty/awokxdag/compare/v1.3.2...v1.3.3
+[1.3.2]: https://github.com/dagnazty/awokxdag/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/dagnazty/awokxdag/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/dagnazty/awokxdag/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dagnazty/awokxdag/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/dagnazty/awokxdag/compare/v1.1.3...v1.1.4

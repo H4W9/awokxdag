@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.3.0
+- **Version:** 1.3.4
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -168,6 +168,16 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 ### Status / utility
 - **Status** — uptime, free heap, chip temp, SD used/total, GPS fix, Wi-Fi MAC,
   battery (set `kBatteryAdc` in `board_pins.h` to enable).
+- **Settings** (Status → Settings, serial `t`) — sleep timeout (off / 15s / 30s /
+  1m / 2m / 5m), brightness, GPS baud, boot splash, two-tap confirm before
+  active tests, NMEA echo, and screen test. Stored in NVS. Footer **Defaults**
+  restores those prefs. A sleeping screen wakes on the first tap or button
+  without triggering an action. Baud from the GPS screen or serial `u` is
+  remembered across reboots.
+- **Screen test** (Settings → Screen test) — full-bleed color bars, checkerboard,
+  rotation marks, backlight sweep, and touch or five-button probe. Mini draws
+  the panel directly, then again through the firmware canvas, so a dead ST7735
+  can be told apart from a MiniLayout bug. Serial `h` aborts to Home.
 - **Capture manager** (Status → Files) — browse `/awokxdag/` files with sizes;
   delete behind a two-tap confirm.
 
@@ -195,14 +205,17 @@ Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch | Karma Watch |
 
 GPS:          status screen -> Baud / Drive / Link
 Link:         unpaired -> Pair / Solo;  paired -> Unpair / Start (Split Wardrive)
+Status:       health -> Home / Settings / Files
+Settings:     Sleep | Bright | GPS | Splash | Active confirm | NMEA | Screen test
+              footer: Back / Defaults
 ```
 
 ## Serial commands (115200 baud)
 
 `w` Wi-Fi scan · `c` channel map · `b` BLE scan · `p` clients · `k` packet
 monitor · `m` deauth watch · `g` GPS screen · `n` Link mode · `u` cycle GPS baud
-· `r` toggle raw NMEA echo · `s` saved · `d` retry SD · `h` home (also stops any
-running tool).
+· `r` toggle raw NMEA echo · `s` saved · `t` settings · `d` retry SD · `h` home
+(also stops any running tool).
 
 ## SD-card output (`/awokxdag/`)
 
@@ -223,6 +236,7 @@ works without a card, and readable snapshots mirror to:
 | `latest_deauth_log.csv` | Deauth Watch |
 | `rogue_log.csv` | Rogue Watch |
 | `<ESSID>_<BSSID>.pcap` | WPA handshake capture; hidden SSIDs use `<BSSID>.pcap` (link type 105) |
+| `latest_handshake_loc.csv` | Sidecar for each handshake capture: target, channel, EAPOL/PMKID flags, GPS |
 | `pmkid.txt` | captured PMKID (hashcat-ready) |
 | `portal_creds.csv` | evil portal / evil twin |
 | `pktmon.pcap` | packet monitor |
@@ -251,7 +265,12 @@ segment.
 
 1. Arduino IDE 2.x, board-manager URL
    `https://espressif.github.io/arduino-esp32/package_esp32_index.json`, install
-   **esp32 by Espressif** 3.3.x.
+   **esp32 by Espressif** 3.3.x. Then run `python3 scripts/setup_arduino_ide.py`
+   (and again after any core update) so Verify gets `-Wl,-z,muldefs` and
+   `-Wl,--wrap=esp_wifi_init -Wl,--wrap=esp_bt_controller_init`. Without muldefs the sketch's
+   `ieee80211_raw_frame_sanity_check` collides with Espressif's copy in
+   `libnet80211.a`. The wrap shrinks Arduino's default STA RX/TX buffers so
+   Dual C5 Touch can keep BLE up beside Wi-Fi.
 2. Libraries: **Adafruit GFX**, **Adafruit ILI9341**, **NimBLE-Arduino**,
    **XPT2046_Touchscreen**, **TinyGPSPlus**.
 3. Open `AWOKxDAG.ino`, select **ESP32C5 Dev Module** with:
@@ -259,8 +278,9 @@ segment.
      PSRAM **Enabled**, USB CDC On Boot **Disabled**.
 4. Upload to the **white USB** port only (hold SCREEN BOOT, apply power, release).
 
-The sketch is currently configured for **Mini** in Arduino IDE. The packaging
-script selects the requested board explicitly. To build the Touch profile:
+The sketch is currently configured for **Touch** in Arduino IDE
+(`AWOK_DUAL_C5_TOUCH`). The packaging script selects the requested board
+explicitly, independent of that default. To package the Touch profile:
 
 ```bash
 python3 scripts/build_firmware.py dual-c5-touch
@@ -275,7 +295,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.3.0/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.3.4/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
@@ -355,14 +375,17 @@ mapping was recovered from the bundled Mini firmware (see the comments in
 
 These original 2.4 GHz-only ESP32 profiles share the classic display bus and are
 selected with `AWOK_DUAL_ESP32_TOUCH_V<n>` / `AWOK_DUAL_ESP32_MINI_V<n>`. On the
-Mini, GPIO34–39 are **input-only with no internal pull-ups** (the four D-pad pins
-rely on the board's external biasing; Center on GPIO13 uses `INPUT_PULLUP`).
+Mini, GPIO34–39 are **input-only with no internal pull-ups** (Center / Up / Right
+/ Down rely on the board's external biasing; Left on GPIO13 uses `INPUT_PULLUP`).
+Pin sources and validation status: [original Touch](docs/dual-esp32-touch.md),
+[original Mini](docs/dual-esp32-mini.md). Link pairing: [Link Mode](docs/link-mode.md).
 
 ## Collection capacity
 
 The capacities below describe the C5 profiles. Original ESP32 Touch profiles
 retain 32 results per table and 128 Wardrive deduplication addresses; combined
-views use Wi-Fi only. See the original-board port instructions linked above.
+views use Wi-Fi only. See [original Touch](docs/dual-esp32-touch.md) and
+[original Mini](docs/dual-esp32-mini.md).
 
 Wi-Fi and BLE scans retain up to **128 results** each. BLE results use ten rows
 per page, with Prev/Next controls and detail inspection on every page.
@@ -396,10 +419,12 @@ Single Arduino sketch split into feature tabs (one translation unit):
 (types/enums/constants) + `board_pins.h`, and per-feature tabs: `gps`,
 `deauth`, `handshake`, `sniffer`, `beacon`, `portal`, `wardrive` (in gps),
 `pktmon`, `cameras`, `wps`, `hidden`, `roguewatch`, `bledetect`, `probelure`,
-`securityaudit`, `tracker`, `harvester`, `probeintel`, `karmawatch`,
+`securityaudit`, `settings`, `screentest`, `tracker`, `harvester`, `probeintel`, `karmawatch`,
 `beaconwatch`, `authflood`, `advancedwatch`, `locator`, `link` (Link Mode +
-Split Wardrive), `auditlog`, `status`, `files`, `input`, `networktools`. `network_parse.h` contains
-bounded network-response parsers shared with host tests.
+Split Wardrive; [docs/link-mode.md](docs/link-mode.md)), `auditlog`, `status`,
+`files`, `input`, `networktools`. `network_parse.h` contains bounded
+network-response parsers shared with the host tests in `tests/host/` (run
+`bash tests/host/run.sh`).
 
 ## Recovery
 
@@ -422,9 +447,10 @@ without it. Thanks to:
 - **[ESP32 Marauder](https://github.com/justcallmekoko/ESP32Marauder)** by
   **justcallmekoko (Justin Hazard)** — the reference for the original ESP32
   board pin maps, display/SPI setup and touch-calibration constants (see
-  `docs/dual-esp32-touch.md` and `docs/dual-esp32-mini.md` for exact upstream
-  sources), the AWOK white-port board compatibility mapping, and the
-  radio-lifecycle approach that `shutdownWiFi()` / `shutdownBLE()` follow.
+  [dual-esp32-touch.md](docs/dual-esp32-touch.md) and
+  [dual-esp32-mini.md](docs/dual-esp32-mini.md) for exact upstream sources),
+  the AWOK white-port board compatibility mapping, and the radio-lifecycle
+  approach that `shutdownWiFi()` / `shutdownBLE()` follow.
 - **[FZEasyMarauderFlash](https://github.com/SkeletonMan03/FZEasyMarauderFlash)**
   by **SkeletonMan03** — flashing reference used for the original Mini pin
   sourcing.

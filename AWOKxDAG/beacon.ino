@@ -99,6 +99,10 @@ void drawBeaconFlood() {
 }
 
 void startBeaconFlood() {
+  if (!confirmActiveTest("Beacon flood")) {
+    drawAttacksMenu();
+    return;
+  }
   beaconFramesSent = 0;
   beaconFloodStartMs = millis();
   lastBeaconBurstMs = 0;

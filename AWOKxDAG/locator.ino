@@ -7,7 +7,6 @@
 
 constexpr uint32_t kLocatorSampleMs = 450;
 
-bool locatorActive = false;
 int32_t locatorRssi = -127;
 int32_t locatorPrevRssi = -127;
 int locatorTrend = 0;  // +1 warmer, -1 colder, 0 hold

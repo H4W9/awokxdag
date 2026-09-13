@@ -4,11 +4,11 @@
     !defined(AWOK_DUAL_ESP32_TOUCH_V3) && \
     !defined(AWOK_DUAL_ESP32_MINI_V1) && !defined(AWOK_DUAL_ESP32_MINI_V2) && \
     !defined(AWOK_DUAL_ESP32_MINI_V3)
-#define AWOK_DUAL_C5_TOUCH
+//#define AWOK_DUAL_C5_TOUCH
 //#define AWOK_DUAL_C5_MINI
 //#define AWOK_DUAL_ESP32_TOUCH_V1
 //#define AWOK_DUAL_ESP32_TOUCH_V2
-//#define AWOK_DUAL_ESP32_TOUCH_V3
+#define AWOK_DUAL_ESP32_TOUCH_V3
 //#define AWOK_DUAL_ESP32_MINI_V1
 //#define AWOK_DUAL_ESP32_MINI_V2
 //#define AWOK_DUAL_ESP32_MINI_V3
@@ -18,7 +18,9 @@
 // The Wi-Fi driver refuses to transmit raw management frames it deems
 // malformed, which includes deauthentication and disassociation frames.
 // Overriding this sanity check lets the authorized deauth test inject them.
-// Returning 0 tells the driver the frame is acceptable.
+// Returning 0 tells the driver the frame is acceptable. Arduino IDE Verify
+// needs -Wl,-z,muldefs so this symbol wins over libnet80211.a — run
+// scripts/setup_arduino_ide.py after installing or updating the ESP32 core.
 extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2,
                                                 int32_t arg3) {
   return 0;
@@ -60,6 +62,10 @@ View auditReturnView = View::kWifi;
 int reconPage = 0;
 int monitorPage = 0;
 int homePage = 0;
+DeviceSettingsRecord deviceSettings = {};
+bool backlightDimmed = false;
+uint32_t lastActivityMs = 0;
+bool lastSettingsWriteOk = true;
 bool scanInProgress = false;
 bool pktmonActive = false;      // packet monitor (state defined in pktmon.ino)
 bool wpsScanActive = false;     // WPS scan (state defined in wps.ino)
@@ -76,6 +82,7 @@ bool karmaWatchActive = false;     // Karma/Pineapple watch (karmawatch.ino)
 bool beaconWatchActive = false;    // beacon-flood watch (state in beaconwatch.ino)
 bool authFloodActive = false;      // auth/assoc flood watch (authflood.ino)
 bool advancedWatchActive = false;  // combined Wi-Fi/BLE anomaly watch
+bool locatorActive = false;        // RSSI fox-hunt (state in locator.ino)
 // SD export status for the new recon tabs (read by input.ino, which is
 // concatenated before those tabs, so the flags must live in the main sketch).
 bool lastAuditCsvOk = false;
@@ -103,8 +110,8 @@ volatile uint32_t deauthEventsSinceDraw = 0;
 volatile int lastDeauthRssi = 0;
 volatile uint8_t lastDeauthChannel = 0;
 volatile bool haveDeauthHit = false;
-uint8_t lastDeauthSource[6] = {0};
-uint8_t lastDeauthBssid[6] = {0};
+volatile uint8_t lastDeauthSource[6] = {0};
+volatile uint8_t lastDeauthBssid[6] = {0};
 bool deauthMonitorActive = false;
 int deauthHopIndex = 0;
 uint32_t lastDeauthHopMs = 0;
@@ -778,6 +785,7 @@ void drawAboutPage() {
 }
 
 void drawHome() {
+  if (currentView == View::kScreenTest) finishScreenTest();
   if (networkToolsOpen()) closeNetworkTools();
   signalMonitorActive = false;
   currentView = View::kHome;
@@ -1650,6 +1658,7 @@ void drawAttacksMenu() {
   display.print("Evil Twin/Probe Lure use the last-");
   display.setCursor(18, 228);
   display.print("scanned SSID. Deauth: under an AP.");
+  drawConfirmBanner();
   drawFooter("Home", "Home");
 }
 
@@ -1678,11 +1687,19 @@ void sortBle() {
 }
 
 void logMemory(const char* stage) {
+  // Report DMA-capable free too: on the C5, Wi-Fi + the BLE controller draw
+  // from the same ~70 KB DMA pool, and DMA exhaustion (not the general heap)
+  // is what starves a BLE scan when both are resident. See the time-multiplex
+  // RadioScheduler, which keeps only one radio DMA-resident at a time.
   const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-  Serial.printf("[memory] %s: internal free=%u largest=%u; PSRAM total=%u free=%u\n",
-                stage, unsigned(heap_caps_get_free_size(caps)),
-                unsigned(heap_caps_get_largest_free_block(caps)),
-                unsigned(ESP.getPsramSize()), unsigned(ESP.getFreePsram()));
+  Serial.printf(
+      "[memory] %s: internal free=%u largest=%u; dma free=%u largest=%u; "
+      "PSRAM free=%u\n",
+      stage, unsigned(heap_caps_get_free_size(caps)),
+      unsigned(heap_caps_get_largest_free_block(caps)),
+      unsigned(heap_caps_get_free_size(MALLOC_CAP_DMA)),
+      unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_DMA)),
+      unsigned(ESP.getFreePsram()));
 }
 
 void showRadioError(const char* message) {
@@ -1707,6 +1724,8 @@ bool ensureWifiStation(bool releaseBle) {
   if (releaseBle) releaseBleMemory();
   if (WiFi.getMode() == WIFI_STA) return true;
   logMemory("before Wi-Fi init");
+  // A failed esp_wifi_init logs 0x3001 on its deinit cleanup (driver never
+  // came up). Retrying immediately shrinks the largest heap block further.
   if (WiFi.mode(WIFI_STA)) {
     logMemory("after Wi-Fi init");
     return true;
@@ -1716,26 +1735,27 @@ bool ensureWifiStation(bool releaseBle) {
   return false;
 }
 
-// Fully tear Wi-Fi down so its ~49 KB is freed and the next bring-up starts
-// from a clean state. WiFi.mode(WIFI_OFF) alone leaves the driver half
-// initialized, so a later WiFi.mode(WIFI_STA) fails with ESP_ERR_WIFI_NOT_INIT
-// (0x3001). Mirrors ESP32 Marauder's shutdownWiFi().
+// Tear Wi-Fi down through the Arduino wrapper only. WiFi.mode(WIFI_OFF)
+// already stops and deinits the driver; a second esp_wifi_deinit() logs
+// ESP_ERR_WIFI_NOT_INIT (0x3001) and desyncs Arduino from the IDF driver.
 void shutdownWifi() {
   esp_wifi_set_promiscuous(false);
+  WiFi.scanDelete();
   WiFi.disconnect(false, false);
-  WiFi.mode(WIFI_OFF);
-  esp_wifi_stop();
-  esp_wifi_deinit();
+  if (WiFi.getMode() != WIFI_MODE_NULL) {
+    WiFi.mode(WIFI_OFF);
+  }
 }
 
 bool ensureBleReady(bool needsWifi) {
-  // BLE-only tools release Wi-Fi; dual-radio views check memory first.
+  // BLE-only tools release Wi-Fi; dual-radio views keep STA and retry BLE
+  // themselves instead of jumping to a radio-error screen.
   if (!needsWifi) shutdownWifi();
   if (NimBLEDevice::isInitialized()) return true;
   logMemory("before BLE init");
   if (!NimBLEDevice::init("")) {
     logMemory("BLE init failed");
-    showRadioError("BLE initialization failed");
+    if (!needsWifi) showRadioError("BLE initialization failed");
     return false;
   }
   NimBLEDevice::setPower(3);
@@ -1762,51 +1782,124 @@ void releaseBleMemory() {
   logMemory("after BLE shutdown");
 }
 
-// Called only when entering a dual-radio tool, before callbacks are enabled.
-bool prepareDualRadioView() {
-#if defined(AWOK_DUAL_C5_MINI) || defined(AWOK_CLASSIC_ESP32)
-  // A previous Wi-Fi scan can leave STA resident. Release it before admitting
-  // BLE, which needs a contiguous controller allocation.
-  shutdownWifi();
-  releaseBleMemory();
-#ifdef AWOK_CLASSIC_ESP32
-  // Original boards have no verified PSRAM; serialize radios during bring-up.
-  radiosCoexist = false;
-#else
-  const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-  radiosCoexist = miniHasDualRadioBudget(
-      resultTableExternalBytes, heap_caps_get_free_size(caps),
-      heap_caps_get_largest_free_block(caps));
-#endif
-  logMemory("dual-radio admission");
-  if (radiosCoexist) {
-    if (ensureBleReady(true) && ensureWifiStation(false)) return true;
-    // Failed bring-up is not an active session. Release any initialized stack
-    // before retrying Wi-Fi alone; the view will show BLE off.
-    shutdownWifi();
-    releaseBleMemory();
-    radiosCoexist = false;
-  }
-  Serial.println("[radio] Wi-Fi only: dual-radio memory/init check failed");
-  const bool ready = ensureWifiStation();
-#else
-  if (!ensureBleReady(true)) return false;
-  const bool ready = ensureWifiStation(false);
-#endif
-  if (!ready) showRadioError("Wi-Fi initialization failed");
-  return ready;
+// --- Time-multiplexed dual-radio scheduler -------------------------------
+// The C5's ~70 KB DMA-capable SRAM cannot hold Wi-Fi (~44 KB) and the BLE
+// controller (~26 KB) at once, so a scan started while both are resident
+// fails with HCI 0x07 "Memory Capacity Exceeded" (NimBLE rc=519). Neither
+// pool is relocatable (Wi-Fi's DMA is fixed driver/coex overhead; the BLE
+// controller's bulk is the MSYS pool, allocated inside the closed C5
+// controller blob). Each radio works fine ALONE, so dual-radio views
+// alternate: only one radio is DMA-resident per window, each coming up into
+// a clean heap. GPS keeps logging throughout (UART, unaffected).
+
+// Start a fresh Wi-Fi window: STA is resident, (re)configure the view's
+// capture/scan via its enterWifi hook.
+static void radioEnterWifiPhase(RadioScheduler& s) {
+  s.phase = RadioPhase::kWifi;
+  s.phaseStartMs = millis();
+  s.wifiScanDone = false;
+  if (s.enterWifi) s.enterWifi();
 }
 
-void startDualRadioScan(NimBLEScan* scan) {
-#if defined(AWOK_DUAL_C5_MINI) || defined(AWOK_CLASSIC_ESP32)
-  if (!scan->start(0, false, true)) {
-    Serial.println("[radio] BLE scan start failed; continuing Wi-Fi only");
-    releaseBleMemory();
-    radiosCoexist = false;
+// Bring BLE up (Wi-Fi already torn down) and start the view's scan. Returns
+// false if BLE init or scan-enable fails, leaving BLE released.
+static bool radioEnterBlePhase(RadioScheduler& s) {
+  // ensureBleReady(true): init BLE only, no Wi-Fi teardown (already done) and
+  // no radio-error screen on a transient per-window failure.
+  if (!ensureBleReady(true)) {
+    Serial.println("[radio] BLE init failed; staying on Wi-Fi this cycle");
+    return false;
   }
+  NimBLEScan* scan = NimBLEDevice::getScan();
+  configureBleScan(scan, s.bleCallbacks, s.bleActiveScan, s.bleInterval,
+                   s.bleWindow, 0);
+  logMemory("BLE window start");
+  if (!scan->start(0, false, true)) {
+    Serial.println("[radio] BLE scan start failed; releasing BLE this cycle");
+    scan->stop();
+    scan->clearResults();
+    releaseBleMemory();
+    return false;
+  }
+  s.phase = RadioPhase::kBle;
+  s.phaseStartMs = millis();
+  Serial.println("[radio] phase -> BLE");
+  return true;
+}
+
+static void radioExitBlePhase() {
+  NimBLEScan* scan = NimBLEDevice::getScan();
+  scan->stop();
+  scan->clearResults();
+  releaseBleMemory();  // frees the ~26 KB DMA back for Wi-Fi
+}
+
+// Enter a dual-radio view. Starts in the Wi-Fi window; on classic ESP32 (no
+// usable BLE budget) it stays Wi-Fi-only and never switches.
+bool radioSchedulerBegin(RadioScheduler& s) {
+#if defined(AWOK_CLASSIC_ESP32)
+  s.bleAvailable = false;
 #else
-  scan->start(0, false, true);
+  s.bleAvailable = true;
 #endif
+  radiosCoexist = s.bleAvailable;  // drives "(Wi-Fi only)" UI + BLE counters
+  releaseBleMemory();              // clear any BLE resident from a prior view
+  if (!ensureWifiStation(false)) {
+    showRadioError("Wi-Fi initialization failed");
+    return false;
+  }
+  s.active = true;
+  radioEnterWifiPhase(s);
+  return true;
+}
+
+// Called every update pass; swaps radios when the current window elapses.
+void radioSchedulerTick(RadioScheduler& s) {
+  if (!s.active || !s.bleAvailable) return;  // Wi-Fi-only: nothing to switch
+  const uint32_t now = millis();
+  const uint32_t elapsed = now - s.phaseStartMs;
+  if (s.phase == RadioPhase::kWifi) {
+    // Leave Wi-Fi once its scan is done (discrete-scan views) or the cap hits.
+    if (elapsed < s.wifiWindowMs && !s.wifiScanDone) return;
+  } else if (elapsed < s.bleWindowMs) {
+    return;
+  }
+
+  if (s.phase == RadioPhase::kWifi) {
+    if (s.exitWifi) s.exitWifi();
+    shutdownWifi();  // frees the ~44 KB DMA the BLE controller needs
+    if (!radioEnterBlePhase(s)) {
+      // BLE unavailable this cycle: fall straight back into a Wi-Fi window.
+      if (!ensureWifiStation(false)) {
+        showRadioError("Wi-Fi initialization failed");
+        s.active = false;
+        return;
+      }
+      radioEnterWifiPhase(s);
+    }
+  } else {
+    radioExitBlePhase();
+    if (!ensureWifiStation(false)) {
+      showRadioError("Wi-Fi initialization failed");
+      s.active = false;
+      return;
+    }
+    radioEnterWifiPhase(s);
+    Serial.println("[radio] phase -> Wi-Fi");
+  }
+}
+
+// Leave a dual-radio view: stop the active radio and restore the resident-STA
+// invariant the rest of the firmware relies on.
+void radioSchedulerEnd(RadioScheduler& s) {
+  if (!s.active) return;
+  s.active = false;
+  if (s.phase == RadioPhase::kBle) {
+    radioExitBlePhase();
+    ensureWifiStation(false);  // bring STA back after the BLE window
+  } else if (s.exitWifi) {
+    s.exitWifi();
+  }
 }
 
 bool lastWifiScanOk = false;
@@ -1998,10 +2091,24 @@ void setup() {
                 AwokPins::kDualBand ? "2.4/5 GHz" : "2.4 GHz", kResultCapacity);
   logMemory("boot");
   Serial.println(
-      "Commands: w=Wi-Fi, c=channels, b=BLE, p=clients, g=gps, "
-      "m=deauth watch, s=saved, d=SD retry, h=home");
+      "Commands: w=Wi-Fi, c=channels, b=BLE, p=clients, k=packet mon, "
+      "m=deauth watch, g=gps, n=link, u=GPS baud, r=raw NMEA, "
+      "s=saved, t=settings, d=SD retry, h=home");
   initializeDisplayAndTouch();
   logMemory("after display init");
+  loadDeviceSettings();
+  noteActivity();
+  setBacklightLit(true);
+#ifndef AWOK_MINI_DISPLAY
+  // SD + NVS + UI Strings fragment the largest internal block. STA used to
+  // need a ~40 KB contiguous chunk; after the SD mount it is often ~34 KB
+  // and esp_wifi_init fails (IDF then logs 0x3001 on cleanup). Bring Wi-Fi
+  // up while the heap is still one large piece. BLE is NOT started here: the
+  // radios time-share the DMA pool, so NimBLE is brought up only inside a BLE
+  // window (RadioScheduler), with Wi-Fi torn down first -- keeping the boot
+  // controller resident would strand the DMA and crash on the first teardown.
+  ensureWifiStation(false);
+#endif
 #ifdef AWOK_MINI_DISPLAY
   resultTablesReady = wifiEntries.initialize(resultTableExternalBytes) &&
       bleEntries.initialize(resultTableExternalBytes) &&
@@ -2017,8 +2124,10 @@ void setup() {
     return;
   }
 #endif
-  drawBootScreen();  // Mini: splash() pushes to the panel itself (no present())
-  delay(kBootScreenMs);
+  if (!settingFlag(kSettingSkipSplash)) {
+    drawBootScreen();  // Mini: splash() pushes to the panel itself
+    delay(kBootScreenMs);
+  }
   initializeSdCard();
   initGps();
   initializeFirmwareAudit();
@@ -2032,8 +2141,7 @@ void setup() {
 #ifdef AWOK_MINI_DISPLAY
   display.present();
 #endif
-  // Radios are brought up lazily; dual-radio views check their memory budget.
-  logMemory("ready; BLE deferred until needed");
+  logMemory("ready");
 }
 
 void loop() {
@@ -2046,6 +2154,8 @@ void loop() {
 #endif
   handleTouch();
   handleSerial();
+  updateBacklightSleep();
+  updateScreenTest();
   updateWifiSignalMonitor();
   updateDeauthMonitor();
   updateDeauthAttack();
@@ -2080,7 +2190,7 @@ void loop() {
     drawGps();
   }
 #ifdef AWOK_MINI_DISPLAY
-  display.present();
+  if (currentView != View::kScreenTest) display.present();
 #endif
   delay(10);
 }

@@ -882,8 +882,25 @@ void resetAdvancedWatch() {
   lastAdvancedWindowMs = millis();
 }
 
+// Wi-Fi window hooks: (re)arm promiscuous capture on the current hop channel,
+// and drop promiscuous before Wi-Fi is released for the BLE window.
+static void advancedEnterWifi() {
+  WiFi.disconnect(false, false);
+  esp_wifi_set_promiscuous(false);
+  wifi_promiscuous_filter_t filter = {};
+  filter.filter_mask =
+      WIFI_PROMIS_FILTER_MASK_MGMT | WIFI_PROMIS_FILTER_MASK_DATA;
+  esp_wifi_set_promiscuous_filter(&filter);
+  esp_wifi_set_promiscuous_rx_cb(&advancedWatchCallback);
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(kDeauthHopChannels[advancedHopIndex],
+                       WIFI_SECOND_CHAN_NONE);
+}
+static void advancedExitWifi() { esp_wifi_set_promiscuous(false); }
+
+RadioScheduler advancedSched;
+
 void startAdvancedWatch() {
-  if (!prepareDualRadioView()) return;
   resetAdvancedWatch();
   advancedHopIndex = 0;
   lastAdvancedHopMs = millis();
@@ -904,25 +921,15 @@ void startAdvancedWatch() {
     }
   }
 
-  WiFi.disconnect(false, false);
-  esp_wifi_set_promiscuous(false);
-  wifi_promiscuous_filter_t filter = {};
-  filter.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT |
-                       WIFI_PROMIS_FILTER_MASK_DATA;
-  esp_wifi_set_promiscuous_filter(&filter);
-  esp_wifi_set_promiscuous_rx_cb(&advancedWatchCallback);
-  esp_wifi_set_promiscuous(true);
-  esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
+  advancedSched = RadioScheduler();
+  advancedSched.enterWifi = advancedEnterWifi;
+  advancedSched.exitWifi = advancedExitWifi;
+  advancedSched.bleCallbacks = &advancedBleCallbacks;  // passive scan
+  if (!radioSchedulerBegin(advancedSched)) return;
 
-  if (radiosCoexist) {
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    configureBleScan(scan, &advancedBleCallbacks, false, 160, 80, 0);
-    startDualRadioScan(scan);
-    if (radiosCoexist) Serial.println("[advanced] Wi-Fi + BLE watch started");
-  } else {
-    Serial.println("[advanced] Wi-Fi-only watch started (BLE unavailable)");
-  }
-
+  Serial.println(radiosCoexist
+                     ? "[advanced] Wi-Fi + BLE watch started (time-shared)"
+                     : "[advanced] Wi-Fi-only watch started");
   advancedWatchActive = true;
   recordFirmwareAudit("monitor", "advanced_watch_start", "success",
                       advancedLogReady ? "sd_log=ready" : "sd_log=unavailable");
@@ -931,15 +938,7 @@ void startAdvancedWatch() {
 
 void stopAdvancedWatch() {
   advancedWatchActive = false;
-  esp_wifi_set_promiscuous(false);
-  if (radiosCoexist) {
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    scan->stop();
-    scan->clearResults();
-    releaseBleMemory();
-  }
-  // Keep Wi-Fi STA resident; promiscuous is already off. Powering Wi-Fi down
-  // here breaks the next radio bring-up (0x3001 / heap fragmentation).
+  radioSchedulerEnd(advancedSched);
   recordFirmwareAudit("monitor", "advanced_watch_stop", "success",
                       "alerts=" + String(advancedAlertTotal));
   Serial.printf("[advanced] stopped; %lu alert(s)\n",
@@ -948,6 +947,7 @@ void stopAdvancedWatch() {
 
 void updateAdvancedWatch() {
   if (!advancedWatchActive || currentView != View::kAdvancedWatch) return;
+  radioSchedulerTick(advancedSched);
   while (advancedTail != advancedHead) {
     mergeAdvancedHit(advancedQueue[advancedTail]);
     advancedTail = (advancedTail + 1) % kAdvancedHitQueueSlots;
@@ -961,7 +961,9 @@ void updateAdvancedWatch() {
     lastAdvancedWindowMs = now;
     closeAdvancedWindow();
   }
-  if (now - lastAdvancedHopMs >= kAdvancedHopIntervalMs) {
+  // Channel-hop only during the Wi-Fi window (Wi-Fi is down otherwise).
+  if (advancedSched.phase == RadioPhase::kWifi &&
+      now - lastAdvancedHopMs >= kAdvancedHopIntervalMs) {
     lastAdvancedHopMs = now;
     advancedHopIndex = (advancedHopIndex + 1) % kDeauthHopChannelCount;
     esp_wifi_set_channel(kDeauthHopChannels[advancedHopIndex],

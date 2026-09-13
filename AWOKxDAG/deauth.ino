@@ -1,10 +1,20 @@
 // AWOKxDAG — deauth detection + multi-target attack (compiled as part of the sketch; see awok_common.h)
 
+void copyMac(uint8_t* dest, const volatile uint8_t* src) {
+  for (int i = 0; i < 6; ++i) dest[i] = src[i];
+}
+
 String macToString(const uint8_t* mac) {
   char buffer[18];
   snprintf(buffer, sizeof(buffer), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0],
            mac[1], mac[2], mac[3], mac[4], mac[5]);
   return String(buffer);
+}
+
+String macToString(const volatile uint8_t* mac) {
+  uint8_t snapshot[6];
+  copyMac(snapshot, mac);
+  return macToString(snapshot);
 }
 
 bool startDeauthLog() {
@@ -48,6 +58,8 @@ void deauthPromiscuousCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
   const wifi_promiscuous_pkt_t* packet =
       static_cast<const wifi_promiscuous_pkt_t*>(buf);
   const uint8_t* payload = packet->payload;
+  const int length = packet->rx_ctrl.sig_len;
+  if (length < 24) return;
   const uint8_t subtype = payload[0] & 0xF0;
   if (subtype != 0xC0 && subtype != 0xA0) return;  // 0xC0 deauth, 0xA0 disassoc
   if (subtype == 0xC0) {
@@ -183,10 +195,8 @@ void updateDeauthMonitor() {
     if (deauthEventsSinceDraw > 0 && deauthLogReady && haveDeauthHit) {
       uint8_t source[6];
       uint8_t bssid[6];
-      for (int i = 0; i < 6; ++i) {
-        source[i] = lastDeauthSource[i];
-        bssid[i] = lastDeauthBssid[i];
-      }
+      copyMac(source, lastDeauthSource);
+      copyMac(bssid, lastDeauthBssid);
       appendDeauthLog(now, deauthEventsSinceDraw, source, bssid,
                       lastDeauthChannel, lastDeauthRssi);
     }
@@ -365,6 +375,7 @@ void drawDeauthAttack() {
   display.print("selected AP. Only run against a");
   display.setCursor(6, 230);
   display.print("network you may lawfully test.");
+  drawConfirmBanner();
   drawFooter("Back", deauthAttackActive ? "Stop" : "Start");
 }
 
@@ -385,6 +396,10 @@ void openDeauthAttackSingle() {
 
 void startDeauthAttack() {
   if (deauthTargetCount == 0) {
+    drawDeauthAttack();
+    return;
+  }
+  if (!confirmActiveTest("Deauth")) {
     drawDeauthAttack();
     return;
   }

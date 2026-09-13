@@ -20,26 +20,36 @@ char gpsLastSentence[28] = "(none)";
 // *current* baud is producing valid sentences.
 uint32_t gpsBaudBaselinePassed = 0;
 
-void initGps() {
+void applyGpsBaud(unsigned long baud, bool persist) {
+  int index = 0;
   for (int i = 0; i < kGpsBaudOptionCount; ++i) {
-    if (kGpsBaudOptions[i] == AwokPins::kGpsBaud) gpsBaudIndex = i;
+    if (kGpsBaudOptions[i] == baud) {
+      index = i;
+      break;
+    }
   }
+  gpsBaudIndex = index;
   gpsCurrentBaud = kGpsBaudOptions[gpsBaudIndex];
+  deviceSettings.gpsBaud = gpsCurrentBaud;
+  if (gpsStarted) gpsSerial.end();
   gpsSerial.begin(gpsCurrentBaud, SERIAL_8N1, AwokPins::kGpsRx,
                   AwokPins::kGpsTx);
   gpsStarted = true;
+  gpsBaudBaselinePassed = gps.passedChecksum();
   Serial.printf("[gps] UART%d rx=%d tx=%d @ %lu baud\n", AwokPins::kGpsUart,
                 AwokPins::kGpsRx, AwokPins::kGpsTx, gpsCurrentBaud);
+  if (persist) saveDeviceSettings();
+}
+
+void initGps() {
+  const unsigned long baud =
+      gpsBaudIsKnown(deviceSettings.gpsBaud) ? deviceSettings.gpsBaud
+                                             : AwokPins::kGpsBaud;
+  applyGpsBaud(baud, false);
 }
 
 void cycleGpsBaud() {
-  gpsBaudIndex = (gpsBaudIndex + 1) % kGpsBaudOptionCount;
-  gpsCurrentBaud = kGpsBaudOptions[gpsBaudIndex];
-  gpsSerial.end();
-  gpsSerial.begin(gpsCurrentBaud, SERIAL_8N1, AwokPins::kGpsRx,
-                  AwokPins::kGpsTx);
-  gpsBaudBaselinePassed = gps.passedChecksum();
-  Serial.printf("[gps] baud -> %lu\n", gpsCurrentBaud);
+  applyGpsBaud(kGpsBaudOptions[(gpsBaudIndex + 1) % kGpsBaudOptionCount], true);
 }
 
 void updateGps() {
@@ -244,6 +254,9 @@ class WardriveBleCallbacks : public NimBLEScanCallbacks {
 
 WardriveBleCallbacks wardriveBleCallbacks;
 
+// Time-multiplex scheduler for wardrive; drawWardrive reads its phase.
+RadioScheduler wardriveSched;
+
 void drawGps() {
   currentView = View::kGps;
   display.fillScreen(kBackground);
@@ -319,9 +332,11 @@ void drawWardrive() {
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setCursor(6, 92);
   if (radiosCoexist) {
-    display.printf("Wi-Fi: %lu   BLE: %lu",
+    const bool bleNow = wardriveSched.phase == RadioPhase::kBle;
+    display.printf("Wi-Fi: %lu   BLE: %lu   [%s]",
                    static_cast<unsigned long>(wardriveNetworks),
-                   static_cast<unsigned long>(wardriveBleCount));
+                   static_cast<unsigned long>(wardriveBleCount),
+                   bleNow ? "BLE" : "WiFi");
   } else {
     display.printf("Wi-Fi: %lu   BLE: off",
                    static_cast<unsigned long>(wardriveNetworks));
@@ -345,18 +360,30 @@ void drawWardrive() {
   display.setCursor(6, 176);
   display.print(wardriveCsvReady ? "SD: wardrive.csv (WiGLE)"
                                  : "SD unavailable; not logging");
-  if (!radiosCoexist) {
-    display.setTextColor(kMuted, kBackground);
+  display.setTextColor(kMuted, kBackground);
+  if (radiosCoexist) {
     display.setCursor(6, 196);
-    display.print("BLE off: memory/startup check;");
+    display.print("Wi-Fi and BLE alternate windows");
+    display.setCursor(6, 208);
+    display.print("(one radio at a time on C5).");
+  } else {
+    display.setCursor(6, 196);
+    display.print("BLE unavailable on this board;");
     display.setCursor(6, 208);
     display.print("logging Wi-Fi APs only.");
   }
   drawFooter("Back", "Home");
 }
 
+// Wi-Fi window hooks for the dual-radio scheduler: kick an async passive AP
+// scan, and tear the scan down before Wi-Fi is released for the BLE window.
+static void wardriveEnterWifi() {
+  WiFi.disconnect(false, false);
+  WiFi.scanNetworks(true, true, false, 120);
+}
+static void wardriveExitWifi() { WiFi.scanDelete(); }
+
 void startWardrive() {
-  if (!prepareDualRadioView()) return;
   wardriveNetworks = 0;
   wardriveBleCount = 0;
   wardriveScans = 0;
@@ -367,34 +394,28 @@ void startWardrive() {
   lastWardriveDrawMs = 0;
   signalMonitorActive = false;
 
-  WiFi.disconnect(false, false);
   wardriveCsvReady = openWardriveCsv();
 
-  if (radiosCoexist) {
-    // Continuous passive BLE scan alongside the Wi-Fi scans.
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    configureBleScan(scan, &wardriveBleCallbacks, false, 160, 80, 0);
-    startDualRadioScan(scan);
-    if (radiosCoexist) Serial.println("[wardrive] started (Wi-Fi + BLE)");
-  } else {
-    Serial.println("[wardrive] started (Wi-Fi only; BLE unavailable)");
-  }
+  wardriveSched = RadioScheduler();
+  wardriveSched.enterWifi = wardriveEnterWifi;
+  wardriveSched.exitWifi = wardriveExitWifi;
+  wardriveSched.bleCallbacks = &wardriveBleCallbacks;  // passive scan
+  // Wi-Fi window ends when the scan completes; cap high so a slow dual-band
+  // sweep is never cut off mid-scan (which would log zero APs).
+  wardriveSched.wifiWindowMs = 20000;
+  wardriveSched.bleWindowMs = 6000;
+  if (!radioSchedulerBegin(wardriveSched)) return;
 
+  Serial.println(radiosCoexist
+                     ? "[wardrive] started (Wi-Fi + BLE, time-shared)"
+                     : "[wardrive] started (Wi-Fi only)");
   wardriveActive = true;
   drawWardrive();
 }
 
 void stopWardrive() {
   wardriveActive = false;
-  if (radiosCoexist) {
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    scan->stop();
-    scan->clearResults();
-    releaseBleMemory();
-  }
-  WiFi.scanDelete();
-  // Keep Wi-Fi STA resident; powering it down here breaks the next radio
-  // bring-up (0x3001 / heap fragmentation).
+  radioSchedulerEnd(wardriveSched);
   Serial.printf("[wardrive] stopped; %lu Wi-Fi, %lu BLE\n",
                 static_cast<unsigned long>(wardriveNetworks),
                 static_cast<unsigned long>(wardriveBleCount));
@@ -402,7 +423,10 @@ void stopWardrive() {
 
 void updateWardrive() {
   if (!wardriveActive) return;
-  // Drain BLE advertisements: log each new address once, when a fix is present.
+  radioSchedulerTick(wardriveSched);
+
+  // Drain BLE advertisements (the queue only fills during a BLE window): log
+  // each new address once, when a fix is present.
   while (bleHitTail != bleHitHead) {
     const BleHit& hit = bleHitQueue[bleHitTail];
     uint8_t mac[6];
@@ -414,27 +438,35 @@ void updateWardrive() {
     }
     bleHitTail = (bleHitTail + 1) % kBleHitQueueSlots;
   }
-  const int result = WiFi.scanComplete();
-  if (result == WIFI_SCAN_RUNNING) {
-    // scan in progress: nothing to do this pass
-  } else if (result >= 0) {
-    for (int i = 0; i < result; ++i) {
-      uint8_t* bssid = WiFi.BSSID(i);
-      if (!bssid) continue;
-      if (gpsHasFix() && !wardriveMacSeen(bssid)) {
-        wardriveAddMac(bssid);
-        appendWardriveRow(WiFi.BSSIDstr(i), WiFi.SSID(i),
-                          WiFi.encryptionType(i), WiFi.channel(i),
-                          WiFi.RSSI(i));
-        ++wardriveNetworks;
+
+  // Service the Wi-Fi AP scan only during the Wi-Fi window and only until it
+  // completes; the scheduler then ends the window (a dual-band scan can take
+  // longer than a fixed slice, so ending on completion is what actually lets
+  // APs get logged). Wi-Fi is torn down during BLE windows, so scanComplete()
+  // must not be polled then.
+  if (wardriveSched.phase == RadioPhase::kWifi && !wardriveSched.wifiScanDone) {
+    const int result = WiFi.scanComplete();
+    if (result == WIFI_SCAN_RUNNING) {
+      // scan in progress: nothing to do this pass
+    } else if (result >= 0) {
+      for (int i = 0; i < result; ++i) {
+        uint8_t* bssid = WiFi.BSSID(i);
+        if (!bssid) continue;
+        if (gpsHasFix() && !wardriveMacSeen(bssid)) {
+          wardriveAddMac(bssid);
+          appendWardriveRow(WiFi.BSSIDstr(i), WiFi.SSID(i),
+                            WiFi.encryptionType(i), WiFi.channel(i),
+                            WiFi.RSSI(i));
+          ++wardriveNetworks;
+        }
       }
+      WiFi.scanDelete();
+      ++wardriveScans;
+      wardriveSched.wifiScanDone = true;  // end the Wi-Fi window; switch to BLE
+    } else {
+      // not started / failed: kick off a scan
+      WiFi.scanNetworks(true, true, false, 120);
     }
-    WiFi.scanDelete();
-    ++wardriveScans;
-    WiFi.scanNetworks(true, true, false, 120);
-  } else {
-    // not started / failed: kick off a scan
-    WiFi.scanNetworks(true, true, false, 120);
   }
   if (currentView == View::kWardrive &&
       millis() - lastWardriveDrawMs >= kWardriveRedrawMs) {

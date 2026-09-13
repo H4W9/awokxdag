@@ -39,11 +39,3 @@ class MiniResultTable {
  private:
   T* entries_ = nullptr;
 };
-
-// These are admission estimates, not a guarantee under arbitrary RF load.
-// Budget the observed ~49 KiB Wi-Fi + ~33 KiB BLE plus 28 KiB of headroom.
-inline bool miniHasDualRadioBudget(size_t externalBytes, size_t freeInternal,
-                                  size_t largestInternal) {
-  return externalBytes >= 32 * 1024 && freeInternal >= 110 * 1024 &&
-         largestInternal >= 36 * 1024;
-}

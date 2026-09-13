@@ -232,8 +232,25 @@ void drawCameraScan() {
   drawFooter("Home", "Reset");
 }
 
+// Wi-Fi window hooks: (re)arm promiscuous capture on the current hop channel,
+// and drop out of promiscuous before Wi-Fi is released for the BLE window.
+static void cameraEnterWifi() {
+  WiFi.disconnect(false, false);
+  esp_wifi_set_promiscuous(false);
+  wifi_promiscuous_filter_t filter = {};
+  filter.filter_mask =
+      WIFI_PROMIS_FILTER_MASK_MGMT | WIFI_PROMIS_FILTER_MASK_DATA;
+  esp_wifi_set_promiscuous_filter(&filter);
+  esp_wifi_set_promiscuous_rx_cb(&cameraWifiCallback);
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(kDeauthHopChannels[cameraHopIndex],
+                       WIFI_SECOND_CHAN_NONE);
+}
+static void cameraExitWifi() { esp_wifi_set_promiscuous(false); }
+
+RadioScheduler cameraSched;
+
 void startCameraScan() {
-  if (!prepareDualRadioView()) return;
   cameraCount = 0;
   cameraHitHead = 0;
   cameraHitTail = 0;
@@ -245,45 +262,29 @@ void startCameraScan() {
   cameraStartMs = millis();
   signalMonitorActive = false;
 
-  WiFi.disconnect(false, false);
-  esp_wifi_set_promiscuous(false);
-  wifi_promiscuous_filter_t filter = {};
-  filter.filter_mask =
-      WIFI_PROMIS_FILTER_MASK_MGMT | WIFI_PROMIS_FILTER_MASK_DATA;
-  esp_wifi_set_promiscuous_filter(&filter);
-  esp_wifi_set_promiscuous_rx_cb(&cameraWifiCallback);
-  esp_wifi_set_promiscuous(true);
-  esp_wifi_set_channel(kDeauthHopChannels[0], WIFI_SECOND_CHAN_NONE);
+  cameraSched = RadioScheduler();
+  cameraSched.enterWifi = cameraEnterWifi;
+  cameraSched.exitWifi = cameraExitWifi;
+  cameraSched.bleCallbacks = &cameraBleCallbacks;
+  cameraSched.bleActiveScan = true;  // active scan to pull device names
+  if (!radioSchedulerBegin(cameraSched)) return;
 
-  if (radiosCoexist) {
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    configureBleScan(scan, &cameraBleCallbacks, true, 160, 80, 0);
-    startDualRadioScan(scan);
-    if (radiosCoexist) Serial.println("[cameras] continuous Wi-Fi + BLE scan started");
-  } else {
-    Serial.println("[cameras] Wi-Fi-only scan started (BLE unavailable)");
-  }
-
+  Serial.println(radiosCoexist
+                     ? "[cameras] Wi-Fi + BLE scan started (time-shared)"
+                     : "[cameras] Wi-Fi-only scan started");
   cameraActive = true;
   drawCameraScan();
 }
 
 void stopCameraScan() {
   cameraActive = false;
-  esp_wifi_set_promiscuous(false);
-  if (radiosCoexist) {
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    scan->stop();
-    scan->clearResults();
-    releaseBleMemory();
-  }
-  // Keep Wi-Fi STA resident; promiscuous is already off. Powering Wi-Fi down
-  // here breaks the next radio bring-up (0x3001 / heap fragmentation).
+  radioSchedulerEnd(cameraSched);
   Serial.printf("[cameras] stopped; %d suspected\n", cameraCount);
 }
 
 void updateCameraScan() {
   if (!cameraActive || currentView != View::kCameraScan) return;
+  radioSchedulerTick(cameraSched);
   while (cameraHitTail != cameraHitHead) {
     mergeCameraWifiHit(cameraHitQueue[cameraHitTail]);
     cameraHitTail = (cameraHitTail + 1) % kCameraHitQueueSlots;
@@ -293,7 +294,9 @@ void updateCameraScan() {
     bleHitTail = (bleHitTail + 1) % kBleHitQueueSlots;
   }
   const uint32_t now = millis();
-  if (now - lastCameraHopMs >= kCameraHopIntervalMs) {
+  // Channel-hop only during the Wi-Fi window (Wi-Fi is down otherwise).
+  if (cameraSched.phase == RadioPhase::kWifi &&
+      now - lastCameraHopMs >= kCameraHopIntervalMs) {
     lastCameraHopMs = now;
     cameraHopIndex = (cameraHopIndex + 1) % kDeauthHopChannelCount;
     esp_wifi_set_channel(kDeauthHopChannels[cameraHopIndex],

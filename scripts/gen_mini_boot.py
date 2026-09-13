@@ -13,9 +13,11 @@ Usage:
   python3 scripts/gen_mini_boot.py [--threshold N] [--out HEADER] [--preview PNG]
 """
 import argparse
+from pathlib import Path
 from PIL import Image
 
-SRC = "assets/boot_screen_source.png"
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "assets" / "boot_screen_source.png"
 FIT_W, FIT_H = 96, 128  # logo box; centered on the 128x128 panel by the firmware
 
 
@@ -64,7 +66,7 @@ def write_preview(bits: Image.Image, path: str, scale: int = 3):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--threshold", type=int, default=96)
-    ap.add_argument("--out", default="AWOKxDAG/mini_boot_screen_data.h")
+    ap.add_argument("--out", default=str(ROOT / "AWOKxDAG" / "mini_boot_screen_data.h"))
     ap.add_argument("--preview", default="")
     args = ap.parse_args()
     bits = build(args.threshold)

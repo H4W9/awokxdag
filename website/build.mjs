@@ -86,6 +86,7 @@ export async function build(root = path.resolve(here, '..'), out = path.join(her
     const values = {
       NAME:escape(name), TITLE:escape(title), DESCRIPTION:escape(description), VERSION:escape(version), PREFIX:prefix,
       PAGE_TITLE:escape(home ? `${name} — Firmware guide` : `${title} — ${name}`),
+      DOCUMENT_LABEL:escape(home ? 'README' : changes ? 'CHANGELOG' : 'DOCS'),
       REPOSITORY:repository, HOME_CURRENT:home ? 'aria-current="page"' : '', CHANGELOG_CURRENT:changes ? 'aria-current="page"' : '',
       INTRO:home ? escape(description) : changes ? 'Release notes, improvements, and fixes.' : 'Technical documentation',
       EYEBROW:home ? 'FIRMWARE / DOCUMENTATION' : changes ? 'FIRMWARE / RELEASE HISTORY' : 'FIRMWARE / TECHNICAL NOTES',

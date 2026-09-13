@@ -28,7 +28,7 @@
 namespace AwokPins {
 #ifdef AWOK_CLASSIC_ESP32
 // Original Dual Touch white-port profiles: Marauder v6 (v1), v6.1 (v2/v3).
-// See docs/dual-esp32-touch.md for upstream pin sources and validation status.
+// Pin sources and validation status: docs/dual-esp32-touch.md (Mini: docs/dual-esp32-mini.md).
 constexpr int kSpiSck = 18;
 constexpr int kSpiMiso = 19;
 constexpr int kSpiMosi = 23;

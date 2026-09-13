@@ -37,13 +37,15 @@
 #include "mini_display.h"
 #include "mini_boot_screen_data.h"
 #include "result_memory.h"
-// Set for each dual-radio session after checking the actual internal heap.
+// True when BLE participates in a dual-radio session (it time-shares the radio
+// with Wi-Fi via RadioScheduler; it is never resident at the same time).
+// False keeps a view Wi-Fi-only. Set by radioSchedulerBegin.
 bool radiosCoexist = false;
 #else
 #ifdef AWOK_CLASSIC_ESP32
 bool radiosCoexist = false;
 #else
-constexpr bool radiosCoexist = true;
+bool radiosCoexist = true;
 #endif
 #include "boot_screen_data.h"  // 240x320 Touch splash; unused on the Mini
 #endif
@@ -94,9 +96,9 @@ constexpr uint8_t kDeauthHopChannels[] = {
 #endif
 };
 constexpr int kDeauthHopChannelCount =
-    static_cast<int>(sizeof(kDeauthHopChannels));
+    static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.3.0";
+constexpr char kVersion[] = "1.3.4";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -111,7 +113,8 @@ constexpr uint32_t kBeaconBurstIntervalMs = 20;
 constexpr uint32_t kBeaconRedrawMs = 500;
 constexpr int kBeaconsPerBurst = 5;
 constexpr uint8_t kBeaconChannels[] = {1, 6, 11};
-constexpr int kBeaconChannelCount = static_cast<int>(sizeof(kBeaconChannels));
+constexpr int kBeaconChannelCount =
+    static_cast<int>(sizeof(kBeaconChannels) / sizeof(kBeaconChannels[0]));
 constexpr char kPortalSsid[] = "Free_WiFi";
 constexpr char kPortalCredsPath[] = "/awokxdag/portal_creds.csv";
 constexpr uint32_t kPortalRedrawMs = 1000;
@@ -308,6 +311,8 @@ enum class View {
   kLocator,
   kWpsScan,
   kStatus,
+  kSettings,
+  kScreenTest,
   kFiles,
   kBleSpamWatch,
   kProbeLure,
@@ -386,7 +391,7 @@ enum LinkPlan : uint8_t {
   kLinkPlanFull = 2  // 2.4 GHz then 5 GHz
 };
 
-// One ESP-NOW frame. POD, ~40 bytes, copied verbatim over the air.
+// One ESP-NOW frame. POD, 36 bytes on every supported ABI, copied verbatim.
 struct LinkPacket {
   uint32_t magic = kLinkMagic;
   uint8_t version = kLinkProtoVersion;
@@ -402,6 +407,10 @@ struct LinkPacket {
   uint8_t channel = 0;        // TELEM: sender's current assigned channel
   uint8_t srcMac[6] = {0};    // sender MAC (also in recv info; handy in queue)
 };
+// 35 payload bytes plus 1 tail pad on both Xtensa ESP32 and RISC-V C5. Do not
+// pack this: changing the on-air size would break pairing with 1.3.0 units.
+static_assert(sizeof(LinkPacket) == 36,
+              "LinkPacket must stay 36 bytes on every board ABI");
 
 constexpr uint8_t kLinkFlagConfirmed = 0x01;
 constexpr uint8_t kLinkFlagDualBand = 0x02;  // sender's radio covers 5 GHz too
@@ -412,11 +421,13 @@ constexpr uint8_t kLinkFlagDualBand = 0x02;  // sender's radio covers 5 GHz too
 // defining it on a 2.4-only build is harmless (it is simply never indexed).
 constexpr uint8_t kLink24Channels[] = {1, 2, 3,  4,  5,  6, 7,
                                        8, 9, 10, 11, 12, 13};
-constexpr int kLink24ChannelCount = static_cast<int>(sizeof(kLink24Channels));
+constexpr int kLink24ChannelCount =
+    static_cast<int>(sizeof(kLink24Channels) / sizeof(kLink24Channels[0]));
 constexpr uint8_t kLink5Channels[] = {
     36,  40,  44,  48,  52,  56,  60,  64,  100, 104, 108, 112, 116,
     120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165};
-constexpr int kLink5ChannelCount = static_cast<int>(sizeof(kLink5Channels));
+constexpr int kLink5ChannelCount =
+    static_cast<int>(sizeof(kLink5Channels) / sizeof(kLink5Channels[0]));
 
 // A received frame plus the RSSI the radio reported, queued for the main loop.
 struct LinkQueueItem {
@@ -526,6 +537,22 @@ struct SavedNetworkSnapshot {
 static_assert(sizeof(SavedNetworkRecord) == 60, "NVS record layout changed");
 static_assert(sizeof(SavedNetworkSnapshot) == 608, "NVS snapshot layout changed");
 
+// Device preferences (GPS baud, backlight). Separate NVS blob from saved
+// networks so a failed settings write cannot clobber the AP list.
+struct DeviceSettingsRecord {
+  uint32_t version;
+  uint32_t gpsBaud;
+  uint32_t backlightTimeoutMs;  // 0 = always on
+  uint8_t brightnessPercent;    // 20–100
+  uint8_t flags;                // kSetting*
+  uint8_t reserved[6];
+};
+static_assert(sizeof(DeviceSettingsRecord) == 20, "NVS settings layout changed");
+constexpr uint32_t kDeviceSettingsVersion = 1;
+constexpr uint8_t kSettingConfirmAttacks = 0x01;
+constexpr uint8_t kSettingSkipSplash = 0x02;
+constexpr uint8_t kSettingNmeaEcho = 0x04;
+
 struct DeauthTarget {
   uint8_t bssid[6] = {0};
   uint8_t channel = 0;
@@ -572,6 +599,30 @@ struct BleHit {
   char addr[18];
   int8_t rssi;
   char name[24];
+};
+
+// Time-multiplexed dual-radio scheduling. The C5 cannot keep Wi-Fi and the
+// BLE controller DMA-resident at once, so dual-radio views alternate windows;
+// each view fills a RadioScheduler and drives it from its update loop.
+enum class RadioPhase : uint8_t { kWifi, kBle };
+
+struct RadioScheduler {
+  bool active = false;
+  bool bleAvailable = false;    // false => permanent Wi-Fi-only session
+  RadioPhase phase = RadioPhase::kWifi;
+  uint32_t phaseStartMs = 0;
+  uint32_t wifiWindowMs = 8000;   // Wi-Fi window length / safety cap
+  uint32_t bleWindowMs = 6000;
+  // Views that do a discrete Wi-Fi scan (wardrive) set this true when the scan
+  // completes so the Wi-Fi window ends as soon as there are results, instead
+  // of being cut off mid-scan. Promiscuous views leave it false (timer only).
+  bool wifiScanDone = false;
+  void (*enterWifi)() = nullptr;  // STA resident; (re)configure Wi-Fi capture
+  void (*exitWifi)() = nullptr;   // stop Wi-Fi capture before STA teardown
+  NimBLEScanCallbacks* bleCallbacks = nullptr;
+  bool bleActiveScan = false;
+  uint16_t bleInterval = 160;
+  uint16_t bleWindow = 80;
 };
 
 // Security Audit encryption tiers (worst -> best), used for scoring/coloring.
@@ -691,9 +742,11 @@ struct BleEntry {
   bool flipperLike = false;
 };
 
-// Declarations for the three functions with default arguments, so callers in
-// the feature tabs can use the short forms. Definitions (in the main sketch)
-// omit the defaults.
+// Declarations so feature tabs can use the short forms. Definitions that take
+// default arguments omit those defaults in the .ino body.
+void copyMac(uint8_t* dest, const volatile uint8_t* src);
+String macToString(const uint8_t* mac);
+String macToString(const volatile uint8_t* mac);
 String bytesToHex(const std::string& data, size_t maximumBytes = 16);
 void drawButton(int x, int y, int w, int h, const String& label,
                 uint16_t outline = kAccent);
@@ -705,8 +758,12 @@ bool ensureWifiStation(bool releaseBle = true);
 bool ensureBleReady(bool needsWifi);
 void releaseBleMemory();
 
-bool prepareDualRadioView();
-void startDualRadioScan(NimBLEScan* scan);
+void configureBleScan(NimBLEScan* scan, NimBLEScanCallbacks* callbacks,
+                      bool active, uint16_t interval, uint16_t window,
+                      uint8_t maxResults);
+bool radioSchedulerBegin(RadioScheduler& s);
+void radioSchedulerTick(RadioScheduler& s);
+void radioSchedulerEnd(RadioScheduler& s);
 
 // Network Tools types precede Arduino-generated function prototypes.
 enum class NetJob { None, Join, Hosts, Ports, Cameras, Printers, Sip, Upnp };

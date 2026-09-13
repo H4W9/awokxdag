@@ -109,8 +109,57 @@ class AwokMiniDisplay : public Adafruit_GFX {
     if (jump) layout.jump(direction > 0); else layout.move(direction);
     redraw_ = true;
   }
+  // Direct panel drawing for the screen test. Bypasses MiniLayout so a bad UI
+  // path cannot be mistaken for a dead ST7735. present() is a no-op until
+  // diagnosticEnd().
+  bool inDiagnostic() const { return diagnostic_; }
+  void diagnosticEnd() {
+    diagnostic_ = false;
+    dirty_ = redraw_ = true;
+  }
+  void diagnosticFill(uint16_t color) {
+    diagnostic_ = true;
+    panel_.fillScreen(color);
+  }
+  void diagnosticRect(int x, int y, int w, int h, uint16_t color, bool fill) {
+    diagnostic_ = true;
+    if (fill) panel_.fillRect(x, y, w, h, color);
+    else panel_.drawRect(x, y, w, h, color);
+  }
+  void diagnosticHLine(int x, int y, int w, uint16_t color) {
+    diagnostic_ = true;
+    panel_.drawFastHLine(x, y, w, color);
+  }
+  void diagnosticVLine(int x, int y, int h, uint16_t color) {
+    diagnostic_ = true;
+    panel_.drawFastVLine(x, y, h, color);
+  }
+  void diagnosticText(int x, int y, uint16_t color, const char* text,
+                      uint16_t bg = 0x0000) {
+    diagnostic_ = true;
+    panel_.setTextWrap(false);
+    panel_.setTextSize(1);
+    panel_.setTextColor(color, bg);
+    panel_.setCursor(x, y);
+    panel_.print(text);
+  }
+  void diagnosticChecker(uint16_t a, uint16_t b, int cell) {
+    diagnostic_ = true;
+    for (int y = 0; y < 128; y += cell)
+      for (int x = 0; x < 128; x += cell)
+        panel_.fillRect(x, y, cell, cell,
+                        ((x / cell) + (y / cell)) & 1 ? a : b);
+  }
+  void diagnosticFirmwareChecker(uint16_t a, uint16_t b, int cell) {
+    diagnostic_ = true;
+    if (!canvas_) return;
+    for (int y = 0; y < 128; ++y)
+      for (int x = 0; x < 128; ++x)
+        canvas_->drawPixel(x, y, ((x / cell) + (y / cell)) & 1 ? a : b);
+    blitCanvas();
+  }
   void present(bool = true) {
-    if (!canvas_ || (!dirty_ && !redraw_)) return;
+    if (diagnostic_ || !canvas_ || (!dirty_ && !redraw_)) return;
     if (dirty_) layout.build();
     canvas_->fillScreen(ST7735_BLACK);
     canvas_->setTextSize(1);
@@ -194,4 +243,5 @@ class AwokMiniDisplay : public Adafruit_GFX {
   Adafruit_ST7735 panel_;
   MiniCanvas* canvas_ = nullptr;
   bool dirty_ = true, redraw_ = false;
+  bool diagnostic_ = false;
 };
