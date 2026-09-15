@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AxD Remote</title>
+<style>
+  :root { color-scheme: dark; --bg:#0d1013; --panel:#161b22; --line:#263041;
+          --fg:#e6edf3; --muted:#8b98a5; --accent:#4aa3ff; --good:#3fb950;
+          --bad:#f85149; --warn:#d29922; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         padding:16px; padding-bottom:40px; }
+  h1 { font-size:20px; margin:0 0 2px; letter-spacing:.5px; }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:12px; padding:14px; margin-bottom:14px; }
+  .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--bad);
+         flex:0 0 auto; }
+  .dot.on { background:var(--good); }
+  button { font:600 15px system-ui; color:var(--fg); background:#1f2733;
+           border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+           cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  button:active { background:#2b3644; }
+  button.primary { background:var(--accent); border-color:var(--accent);
+                   color:#04121f; }
+  button.stop { background:#33191a; border-color:#5c2b2c; color:#ffb4ad; }
+  button:disabled { opacity:.4; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .status { font-variant-numeric:tabular-nums; }
+  .k { color:var(--muted); font-size:12px; }
+  .v { font-size:22px; font-weight:700; }
+  .stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; text-align:center; }
+  #log { font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+         white-space:pre-wrap; word-break:break-word; color:var(--muted);
+         max-height:170px; overflow:auto; }
+  .banner { background:#33191a; border:1px solid #5c2b2c; color:#ffb4ad;
+            border-radius:10px; padding:10px 12px; font-size:13px;
+            margin-bottom:14px; }
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+  <h1>AxD&nbsp;Remote</h1>
+  <div class="sub">BLE control · orange bridge chip</div>
+
+  <div id="nobt" class="banner" hidden>
+    This browser has no Web Bluetooth. On iPhone use <b>Bluefy</b>; on Android/desktop
+    use <b>Chrome/Edge</b>. The page must be served over <b>https</b>.
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span id="dot" class="dot"></span>
+      <span id="state" class="status">Disconnected</span>
+      <span style="flex:1"></span>
+      <button id="connect" class="primary">Connect</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="stats">
+      <div><div class="k">Wi-Fi</div><div id="wifi" class="v">–</div></div>
+      <div><div class="k">BLE</div><div id="ble" class="v">–</div></div>
+      <div><div class="k">Tool</div><div id="tool" class="v" style="font-size:15px">–</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid" id="cmds">
+      <button data-op="1">Wi-Fi Scan</button>
+      <button data-op="2">BLE Scan</button>
+      <button data-op="3">Channel Map</button>
+      <button data-op="4">Packet Monitor</button>
+      <button data-op="5">Deauth Watch</button>
+      <button data-op="6">Clients</button>
+      <button data-op="7">Wardrive Start</button>
+      <button data-op="8">Wardrive Stop</button>
+      <button data-op="9">GPS Status</button>
+      <button data-op="255" class="stop">Stop / Home</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="k" style="margin-bottom:6px">Log</div>
+    <div id="log"></div>
+  </div>
+
+<script>
+"use strict";
+// Must match the bridge firmware GATT UUIDs (Gate 0 probe uses these too).
+const SVC    = "a0d10000-1234-4a3c-8b21-000000000001";
+const CMD    = "a0d10000-1234-4a3c-8b21-000000000002"; // write
+const STATUS = "a0d10000-1234-4a3c-8b21-000000000003"; // notify/read
+
+const $ = (id) => document.getElementById(id);
+const log = (m) => { const d=$("log"); d.textContent += (new Date().toLocaleTimeString()+"  "+m+"\n"); d.scrollTop=d.scrollHeight; };
+let device=null, cmdCh=null, statusCh=null;
+
+function setConnected(on){
+  $("dot").classList.toggle("on", on);
+  $("state").textContent = on ? "Connected" : "Disconnected";
+  $("connect").textContent = on ? "Disconnect" : "Connect";
+  document.querySelectorAll("#cmds button").forEach(b => b.disabled = !on);
+}
+setConnected(false);
+
+if (!navigator.bluetooth) $("nobt").hidden = false;
+
+function parseStatus(dv){
+  // Firmware sends a small status blob: [wifi:u32][ble:u32][toolId:u8].
+  try {
+    if (dv.byteLength >= 8){
+      $("wifi").textContent = dv.getUint32(0, true);
+      $("ble").textContent  = dv.getUint32(4, true);
+    }
+    if (dv.byteLength >= 9) $("tool").textContent = "#"+dv.getUint8(8);
+  } catch(e){ /* text status */
+    $("tool").textContent = new TextDecoder().decode(dv);
+  }
+}
+
+async function connect(){
+  if (!navigator.bluetooth){ log("no Web Bluetooth in this browser"); return; }
+  try {
+    log("requesting device…");
+    device = await navigator.bluetooth.requestDevice({
+      filters:[{ services:[SVC] }, { namePrefix:"AxD" }],
+      optionalServices:[SVC]
+    });
+    device.addEventListener("gattserverdisconnected", onDisc);
+    log("connecting to "+(device.name||"device")+"…");
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC);
+    cmdCh = await svc.getCharacteristic(CMD);
+    statusCh = await svc.getCharacteristic(STATUS);
+    statusCh.addEventListener("characteristicvaluechanged", e => parseStatus(e.target.value));
+    await statusCh.startNotifications();
+    try { parseStatus(await statusCh.readValue()); } catch(e){}
+    setConnected(true);
+    log("connected.");
+  } catch(e){ log("connect failed: "+e.message); }
+}
+
+function onDisc(){ setConnected(false); log("disconnected."); }
+
+async function disconnect(){ if (device?.gatt?.connected) device.gatt.disconnect(); }
+
+async function sendOp(op){
+  if (!cmdCh){ log("not connected"); return; }
+  try { await cmdCh.writeValue(new Uint8Array([op])); log("sent op "+op); }
+  catch(e){ log("send failed: "+e.message); }
+}
+
+$("connect").addEventListener("click", () => (device?.gatt?.connected ? disconnect() : connect()));
+document.querySelectorAll("#cmds button").forEach(b =>
+  b.addEventListener("click", () => sendOp(Number(b.dataset.op))));
+</script>
+</body>
+</html>
