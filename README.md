@@ -276,7 +276,11 @@ segment.
 3. Open `AWOKxDAG.ino`, select **ESP32C5 Dev Module** with:
    - Flash Size **8 MB**, Partition Scheme **8M with spiffs (3MB APP)**,
      PSRAM **Enabled**, USB CDC On Boot **Disabled**.
-4. Upload to the **white USB** port only (hold SCREEN BOOT, apply power, release).
+4. Plug the USB cable into the port whose ESP32-C5 you want to flash (the AWOK
+   Dual C5 has a white and an orange port, one chip each). The connected port
+   enumerates as `/dev/ttyUSB*` (Linux), `/dev/cu.usbserial-*` (macOS), or
+   `COM*` (Windows). It auto-resets into download mode; if a board does not,
+   hold SCREEN BOOT while applying power, then release.
 
 The sketch is currently configured for **Touch** in Arduino IDE
 (`AWOK_DUAL_C5_TOUCH`). The packaging script selects the requested board
@@ -285,6 +289,22 @@ explicitly, independent of that default. To package the Touch profile:
 ```bash
 python3 scripts/build_firmware.py dual-c5-touch
 ```
+
+### Flash from the terminal (no IDE)
+
+`scripts/flash_firmware.py` writes a packaged image to the board over the
+CP2102 USB port with esptool — no Arduino IDE needed. It builds the image
+first if it is missing.
+
+```bash
+python3 scripts/flash_firmware.py dual-c5-touch            # autodetect the port
+python3 scripts/flash_firmware.py dual-c5-touch --port /dev/ttyUSB0
+python3 scripts/flash_firmware.py dual-c5-touch --build    # (re)build, then flash
+```
+
+The port is autodetected when only one is present; pass `--port` if several
+serial devices are attached. Any board profile `build_firmware.py` accepts
+works here too.
 
 ### Dual C5 Mini
 
@@ -428,9 +448,9 @@ network-response parsers shared with the host tests in `tests/host/` (run
 
 ## Recovery
 
-Flashing replaces the app on the white-port ESP32. Keep an official Marauder
-`_v8.bin` and its C5 bootloader/partition files so factory firmware can be
-restored.
+Flashing replaces the app on whichever ESP32-C5 the USB cable is plugged into. Keep an official
+Marauder `_v8.bin` and its C5 bootloader/partition files so factory firmware
+can be restored.
 
 ## Credits & license
 

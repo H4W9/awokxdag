@@ -21,6 +21,20 @@ All notable changes to AxD are documented here. This project follows
   before a blocking operation (boot splash, "Scanning..."). Boards without
   PSRAM (classic ESP32 Touch, experimental) fall back to direct-to-panel
   drawing, exactly as before.
+- Terminal flashing: `scripts/flash_firmware.py` writes a packaged image to a
+  board over the CP2102 USB port (/dev/ttyUSB*) with esptool, so no Arduino IDE is
+  needed to program a board. It autodetects the serial port, accepts `--port`
+  and `--build`, and works for every profile `build_firmware.py` builds.
+
+### Changed
+
+- Rebranded the product name to **AxD** (pronounced "axed"): device screens
+  (Home / About / Status / screen test / link-mode prose), the boot banner, the
+  WiGLE CSV brand fields, the RTSP user-agent, and the README/docs title. Code
+  identifiers, the sketch folder/filename, board macros, the SD path
+  (`/awokxdag`), and release-artifact names are unchanged.
+- Status screen shows **Power: USB** instead of the developer-facing
+  "Battery: n/a (set kBatteryAdc)" when no battery-sense ADC is configured.
 
 ### Fixed
 
