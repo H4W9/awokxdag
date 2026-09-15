@@ -2150,9 +2150,8 @@ void setup() {
   if (sdReady) lastSavedSdWriteOk = exportSavedNetworksToSd();
   drawHome();
   display.present();  // both boards buffer now; blit the first frame
-#if !defined(AWOK_MINI_DISPLAY)
-  remoteBegin();  // listen for the orange bridge chip so a phone can drive us
-#endif
+  remoteBegin();  // Touch and Mini alike: listen for the orange bridge chip so
+                  // a phone can drive this screen chip over ESP-NOW.
   logMemory("ready");
 }
 

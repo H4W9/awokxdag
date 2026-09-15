@@ -309,11 +309,11 @@ works here too.
 ### Phone control over BLE (two-chip bridge)
 
 The Dual C5 has two ESP32-C5 chips. Flash the **screen** chip (white port) with
-the normal `dual-c5-touch` firmware and the **headless** chip (orange port) with
-the bridge:
+its normal firmware — `dual-c5-touch` **or** `dual-c5-mini`, both listen for the
+bridge — and the **headless** chip (orange port) with the bridge:
 
 ```bash
-python3 scripts/flash_firmware.py dual-c5-touch    # cable in the white port
+python3 scripts/flash_firmware.py dual-c5-touch    # (or dual-c5-mini) white port
 python3 scripts/flash_firmware.py dual-c5-bridge   # cable in the orange port
 ```
 

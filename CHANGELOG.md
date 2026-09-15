@@ -12,7 +12,8 @@ All notable changes to AxD are documented here. This project follows
 - **Phone control over BLE (two-chip bridge).** The AWOK Dual C5 has two
   ESP32-C5 chips; the orange (headless) chip now runs a dedicated bridge
   firmware (`AxDBridge/AxDBridge.ino`) that a phone connects to over BLE
-  (Bluefy on iOS, Chrome on Android) and drives the white (screen) chip. The
+  (Bluefy on iOS, Chrome on Android) and drives the white (screen) chip — Touch
+  or Mini, both listen for the bridge. The
   phone writes a command opcode to a GATT characteristic; the bridge forwards it
   over ESP-NOW to the screen chip, which runs the matching tool — the same
   entry points as the on-device serial shortcuts (Wi-Fi/BLE scan, channel map,
