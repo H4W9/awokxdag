@@ -7,7 +7,7 @@ on:
       version:
         description: "Release version (e.g. 1.0.0)"
         required: true
-        default: "1.3.5"
+        default: "1.4.0"
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
@@ -55,6 +55,9 @@ jobs:
             define: AWOK_DUAL_ESP32_MINI_V3
             label: "Dual ESP32 Mini v3"
             fqbn: "esp32:esp32:esp32:FlashSize=4M,PartitionScheme=huge_app,PSRAM=disabled"
+          - variant: bridge
+            label: "Dual C5 Bridge (headless BLE<->ESP-NOW)"
+            board: dual-c5-bridge
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -82,6 +85,7 @@ jobs:
             "TinyGPSPlus"
 
       - name: Compile ${{ matrix.label }} (produces the merged image)
+        if: ${{ !matrix.board }}
         # -z muldefs lets our ieee80211_raw_frame_sanity_check override win over
         # the one in libnet80211.a (a stock core has this empty; enabling raw
         # deauth injection). --wrap=esp_wifi_init trims STA RX/TX buffers +
@@ -111,7 +115,15 @@ jobs:
             --build-path "build-${{ matrix.variant }}" \
             AWOKxDAG/AWOKxDAG.ino
 
+      - name: Compile ${{ matrix.label }} (bridge; separate sketch)
+        if: ${{ matrix.board }}
+        # The headless bridge is a different sketch with its own flags (NimBLE
+        # Peripheral role on, no linker wraps, shared header include);
+        # build_firmware.py already encodes all of that.
+        run: python3 scripts/build_firmware.py ${{ matrix.board }}
+
       - name: Stage ${{ matrix.label }} artifacts
+        if: ${{ !matrix.board }}
         run: |
           mkdir -p release
           b="build-${{ matrix.variant }}"
@@ -121,6 +133,17 @@ jobs:
           cp "$b/AWOKxDAG.ino.bootloader.bin" "release/awokxdag-$v-bootloader.bin"
           cp "$b/AWOKxDAG.ino.partitions.bin" "release/awokxdag-$v-partitions.bin"
           cp "$b/boot_app0.bin"               "release/awokxdag-$v-boot_app0.bin"
+          ls -la release
+
+      - name: Stage ${{ matrix.label }} artifacts (bridge)
+        if: ${{ matrix.board }}
+        run: |
+          mkdir -p release
+          v="${{ matrix.variant }}"
+          d=$(ls -d build/${{ matrix.board }}-*/ | head -1)
+          for s in merged app bootloader partitions boot_app0; do
+            cp "$d"/awokxdag-*-${{ matrix.board }}-$s.bin "release/awokxdag-$v-$s.bin"
+          done
           ls -la release
 
       - name: Upload ${{ matrix.label }} artifacts

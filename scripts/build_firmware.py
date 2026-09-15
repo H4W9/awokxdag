@@ -46,13 +46,19 @@ PROFILES = {
     "dual-esp32-mini-v3": (CLASSIC_FQBN, "AWOK_DUAL_ESP32_MINI_V3"),
 }
 
+# The orange bridge is a separate headless sketch (BLE GATT + ESP-NOW), not a
+# board profile of the main firmware: no display define, NimBLE Peripheral role
+# (so no Observer-only trim), no linker wraps, and it needs the AWOKxDAG include
+# dir for the shared link_protocol.h.
+BRIDGE = "dual-c5-bridge"
+ALL_TARGETS = tuple(PROFILES) + (BRIDGE,)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("board", choices=tuple(PROFILES))
+    parser.add_argument("board", choices=ALL_TARGETS)
     parser.add_argument("--build-path", type=Path)
     args = parser.parse_args()
-    fqbn, define = PROFILES[args.board]
     source = (ROOT / "AWOKxDAG/awok_common.h").read_text()
     version = re.search(r'kVersion\[\]\s*=\s*"([^"]+)"', source)
     if not version:
@@ -60,31 +66,41 @@ def main():
     version = version.group(1)
     work = (args.build_path or ROOT / "build" / (args.board + "-objects")).resolve()
     output = ROOT / "build" / f"{args.board}-{version}"
+
+    if args.board == BRIDGE:
+        fqbn = C5_FQBN
+        sketch = ROOT / "AxDBridge/AxDBridge.ino"
+        celf_flags = ""
+        cpp_flags = f"-I{ROOT / 'AWOKxDAG'}"
+    else:
+        fqbn, define = PROFILES[args.board]
+        sketch = ROOT / "AWOKxDAG/AWOKxDAG.ino"
+        celf_flags = LINKER_WRAP_FLAGS
+        cpp_flags = f"-D{define} {NIMBLE_OBSERVER_ONLY_FLAGS}"
+    stem = sketch.name  # e.g. AWOKxDAG.ino or AxDBridge.ino
+
     command = ["arduino-cli", "compile", "--fqbn", fqbn, "--warnings", "all",
                "--build-path", str(work)]
-    # Same override as CI: the ieee80211_raw_frame_sanity_check symbol in this
-    # sketch must win over libnet80211.a so authorized deauth injection works.
-    command += ["--build-property", f"compiler.c.elf.extra_flags={LINKER_WRAP_FLAGS}"]
-    command += [
-        "--build-property",
-        f"compiler.cpp.extra_flags=-D{define} {NIMBLE_OBSERVER_ONLY_FLAGS}",
-    ]
+    # Main firmware: the ieee80211_raw_frame_sanity_check symbol must win over
+    # libnet80211.a (linker wraps). The bridge needs none of that.
+    command += ["--build-property", f"compiler.c.elf.extra_flags={celf_flags}"]
+    command += ["--build-property", f"compiler.cpp.extra_flags={cpp_flags}"]
     # Error-level CORE_DEBUG_LEVEL: silent unless something is actually
     # wrong, but it's what surfaces NimBLE's own "Error starting scan"
     # rc codes -- those are compiled out entirely at the default level 0.
     command += ["--build-property", "build.code_debug=1"]
-    command += [str(ROOT / "AWOKxDAG/AWOKxDAG.ino")]
+    command += [str(sketch)]
     subprocess.run(command, check=True)
     output.mkdir(parents=True, exist_ok=True)
     prefix = f"awokxdag-{version}-{args.board}"
     files = []
     for source_name, suffix in (
-        ("AWOKxDAG.ino.merged.bin", "merged.bin"),
-        ("AWOKxDAG.ino.bin", "app.bin"),
-        ("AWOKxDAG.ino.bootloader.bin", "bootloader.bin"),
-        ("AWOKxDAG.ino.partitions.bin", "partitions.bin"),
+        (f"{stem}.merged.bin", "merged.bin"),
+        (f"{stem}.bin", "app.bin"),
+        (f"{stem}.bootloader.bin", "bootloader.bin"),
+        (f"{stem}.partitions.bin", "partitions.bin"),
         ("boot_app0.bin", "boot_app0.bin"),
-        ("AWOKxDAG.ino.elf", "elf"),
+        (f"{stem}.elf", "elf"),
     ):
         target = output / f"{prefix}-{suffix}"
         shutil.copy2(work / source_name, target)

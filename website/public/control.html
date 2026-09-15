@@ -69,17 +69,63 @@
   </div>
 
   <div class="card">
-    <div class="grid" id="cmds">
+    <button data-op="255" class="stop" style="width:100%">Stop / Home</button>
+  </div>
+
+  <div class="card">
+    <div class="k" style="margin-bottom:8px">Recon</div>
+    <div class="grid" id="cmds-recon">
       <button data-op="1">Wi-Fi Scan</button>
       <button data-op="2">BLE Scan</button>
       <button data-op="3">Channel Map</button>
       <button data-op="4">Packet Monitor</button>
-      <button data-op="5">Deauth Watch</button>
       <button data-op="6">Clients</button>
+      <button data-op="10">WPS Scan</button>
+      <button data-op="11">Hidden SSID</button>
+      <button data-op="12">Cameras</button>
+      <button data-op="13">Security Audit</button>
+      <button data-op="14">BLE Trackers</button>
+      <button data-op="15">Harvester</button>
+      <button data-op="16">Probe Intel</button>
+      <button data-op="17">Saved</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="k" style="margin-bottom:8px">GPS &amp; wardrive</div>
+    <div class="grid" id="cmds-gps">
       <button data-op="7">Wardrive Start</button>
       <button data-op="8">Wardrive Stop</button>
       <button data-op="9">GPS Status</button>
-      <button data-op="255" class="stop">Stop / Home</button>
+      <button data-op="40">Locator</button>
+      <button data-op="41">Status</button>
+      <button data-op="42">Files</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="k" style="margin-bottom:8px">Monitor</div>
+    <div class="grid" id="cmds-monitor">
+      <button data-op="5">Deauth Watch</button>
+      <button data-op="30">Rogue Watch</button>
+      <button data-op="31">BLE Spam Watch</button>
+      <button data-op="32">Karma Watch</button>
+      <button data-op="33">Beacon Watch</button>
+      <button data-op="34">Advanced Watch</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="k" style="margin-bottom:6px; color:var(--bad)">
+      Attacks — authorized targets only</div>
+    <div class="k" style="margin-bottom:8px">
+      Evil Twin / Probe Lure act on the network last selected on the device.</div>
+    <div class="grid" id="cmds-attack">
+      <button data-op="20" class="stop">Beacon Flood</button>
+      <button data-op="21" class="stop">Evil Portal</button>
+      <button data-op="22" class="stop">Evil Twin</button>
+      <button data-op="23" class="stop">Probe Lure</button>
+      <button data-op="24" class="stop">Auth Flood</button>
     </div>
   </div>
 
@@ -103,7 +149,7 @@ function setConnected(on){
   $("dot").classList.toggle("on", on);
   $("state").textContent = on ? "Connected" : "Disconnected";
   $("connect").textContent = on ? "Disconnect" : "Connect";
-  document.querySelectorAll("#cmds button").forEach(b => b.disabled = !on);
+  document.querySelectorAll("button[data-op]").forEach(b => b.disabled = !on);
 }
 setConnected(false);
 
@@ -155,7 +201,7 @@ async function sendOp(op){
 }
 
 $("connect").addEventListener("click", () => (device?.gatt?.connected ? disconnect() : connect()));
-document.querySelectorAll("#cmds button").forEach(b =>
+document.querySelectorAll("button[data-op]").forEach(b =>
   b.addEventListener("click", () => sendOp(Number(b.dataset.op))));
 </script>
 </body>

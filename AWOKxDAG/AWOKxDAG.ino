@@ -210,6 +210,7 @@ volatile int bleHitTail = 0;
 // defined here (Arduino auto-prototypes functions but not variables, and
 // link.ino is concatenated after input.ino which references stop guards).
 bool linkEspNowReady = false;      // esp_now_init() succeeded this session
+bool remoteActive = false;         // bridge (BLE phone) control listening
 LinkState linkState = kLinkOff;
 bool linkRoleMaster = true;        // lower MAC wins; set at pairing
 bool linkConfirmedLocal = false;   // this unit pressed Confirm
@@ -2149,6 +2150,9 @@ void setup() {
   if (sdReady) lastSavedSdWriteOk = exportSavedNetworksToSd();
   drawHome();
   display.present();  // both boards buffer now; blit the first frame
+#if !defined(AWOK_MINI_DISPLAY)
+  remoteBegin();  // listen for the orange bridge chip so a phone can drive us
+#endif
   logMemory("ready");
 }
 

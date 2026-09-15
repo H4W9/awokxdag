@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.3.5
+- **Version:** 1.4.0
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -306,6 +306,30 @@ The port is autodetected when only one is present; pass `--port` if several
 serial devices are attached. Any board profile `build_firmware.py` accepts
 works here too.
 
+### Phone control over BLE (two-chip bridge)
+
+The Dual C5 has two ESP32-C5 chips. Flash the **screen** chip (white port) with
+the normal `dual-c5-touch` firmware and the **headless** chip (orange port) with
+the bridge:
+
+```bash
+python3 scripts/flash_firmware.py dual-c5-touch    # cable in the white port
+python3 scripts/flash_firmware.py dual-c5-bridge   # cable in the orange port
+```
+
+The bridge advertises as **`AxD-Bridge`** over BLE. Open the control page —
+`https://dagnazty.github.io/awokxdag/control.html` (or the local
+`website/public/control.html`) — in **Bluefy** on iOS or **Chrome** on Android
+(Safari has no Web Bluetooth), tap **Connect**, and drive the screen chip: Wi-Fi
+/ BLE scan, channel map, packet monitor, deauth watch, clients, wardrive
+start/stop, GPS, and Stop/Home. Live counts stream back to the phone.
+
+The split keeps BLE (bridge) and Wi-Fi (screen) on separate chips, so the phone
+link is never dropped by the screen chip's channel hopping; the bridge sweeps
+every channel when sending a command so it reaches the screen chip even while a
+tool is hopping. The two chips talk over ESP-NOW; the shared wire format is
+`AWOKxDAG/link_protocol.h`.
+
 ### Dual C5 Mini
 
 Install **Adafruit ST7735 and ST7789 Library** in addition to the libraries above,
@@ -315,7 +339,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.3.5/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.4.0/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center

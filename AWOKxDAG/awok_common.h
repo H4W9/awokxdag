@@ -99,7 +99,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.3.5";
+constexpr char kVersion[] = "1.4.0";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -338,44 +338,19 @@ enum class View {
   kNetworkDetail
 };
 
-// ---- Link Mode (ESP-NOW pairing of two AWOKxDAG units) ------------------
+// ---- Link Mode (ESP-NOW pairing of two AxD units) -----------------------
 // See docs/link-mode.md. v1 = shared core + Split Wardrive. All ESP-NOW frames
-// are the single POD LinkPacket below, tagged by `type`. The recv callback runs
-// in the Wi-Fi task and only enqueues into linkPacketQueue; updateLink() parses.
-constexpr uint32_t kLinkMagic = 0x41574B4C;  // "AWKL"
-// Distinct channel plans cannot alternate-deal the same spectrum. Keep classic
-// pairs isolated from existing C5 protocol-v1 peers until negotiation exists.
-// One value across ALL boards — the wire format is identical, so a band-specific
-// version only made the C5 and 2.4 GHz boards reject each other's frames. Band
-// capability is negotiated in the HELLO flags instead (kLinkFlagDualBand).
-constexpr uint8_t kLinkProtoVersion = 2;
-constexpr uint8_t kLinkChannel = 1;          // rendezvous + pairing channel
+// are the single POD LinkPacket, tagged by `type`. The recv callback runs in the
+// Wi-Fi task and only enqueues into linkPacketQueue; updateLink() parses.
+// The wire format (LinkPacket, magic, keys, msg types, command opcodes) lives in
+// link_protocol.h so the headless bridge chip shares it verbatim.
+#include "link_protocol.h"
 constexpr uint32_t kLinkRendezvousMs = 1000;  // beat period (live feel)
 constexpr uint32_t kLinkWindowMs = 300;       // link-channel dwell per beat
 constexpr uint32_t kLinkHelloIntervalMs = 250;
 constexpr uint32_t kLinkPeerTimeoutMs = 4000;  // partner-lost threshold
 constexpr uint32_t kLinkWardriveDwellMs = 200;  // per-channel async scan dwell
 constexpr uint32_t kLinkWardriveRedrawMs = 700;
-constexpr int kLinkPacketQueueSlots = 16;
-constexpr uint8_t kLinkBroadcastAddr[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-
-// ESP-NOW encryption keys for the post-pairing unicast link. Broadcast discovery
-// (HELLO) stays in the clear because ESP-NOW cannot encrypt broadcast; once
-// paired, SYNC/TELEM move to an encrypted unicast peer. NOTE: these keys ship in
-// the firmware binary, so encryption stops casual sniffing but is NOT secret from
-// anyone who has the build. The per-pair LMK also mixes in the confirm code (from
-// both MACs) for key separation between pairs, not as an added secret.
-constexpr uint8_t kLinkPmk[16] = {0x9E, 0x1C, 0x74, 0xB3, 0x2A, 0xF5, 0x60, 0xD8,
-                                  0x4B, 0x07, 0xC9, 0x3E, 0xA1, 0x52, 0x8F, 0x66};
-constexpr uint8_t kLinkLmkBase[16] = {0x51, 0xE4, 0x0B, 0x9A, 0x7D, 0x38, 0xC2,
-                                      0x6F, 0x14, 0xBE, 0x05, 0xA7, 0x3C, 0xD0,
-                                      0x89, 0x22};
-
-enum LinkMsgType : uint8_t {
-  kLinkMsgHello = 1,  // identity + confirm code + confirmed flag
-  kLinkMsgSync = 2,   // master millis for clock sync
-  kLinkMsgTelem = 3   // running counts + channel + session id
-};
 
 enum LinkState : uint8_t {
   kLinkOff = 0,         // ESP-NOW down / not on the Link screen
@@ -392,43 +367,9 @@ enum LinkPlan : uint8_t {
   kLinkPlanFull = 2  // 2.4 GHz then 5 GHz
 };
 
-// One ESP-NOW frame. POD, 36 bytes on every supported ABI, copied verbatim.
-struct LinkPacket {
-  uint32_t magic = kLinkMagic;
-  uint8_t version = kLinkProtoVersion;
-  uint8_t type = 0;      // LinkMsgType
-  uint8_t flags = 0;     // bit0 = confirmed
-  uint8_t role = 0;      // sender's computed role: 0 master, 1 slave
-  uint16_t code = 0;     // 4-digit confirm code
-  uint16_t reserved = 0;
-  uint32_t sessionId = 0;
-  uint32_t masterMillis = 0;  // SYNC: master clock
-  uint32_t networks = 0;      // TELEM: sender Wi-Fi count
-  uint32_t bleCount = 0;      // TELEM: sender BLE count
-  uint8_t channel = 0;        // TELEM: sender's current assigned channel
-  uint8_t srcMac[6] = {0};    // sender MAC (also in recv info; handy in queue)
-};
-// 35 payload bytes plus 1 tail pad on both Xtensa ESP32 and RISC-V C5. Do not
-// pack this: changing the on-air size would break pairing with 1.3.0 units.
-static_assert(sizeof(LinkPacket) == 36,
-              "LinkPacket must stay 36 bytes on every board ABI");
-
-constexpr uint8_t kLinkFlagConfirmed = 0x01;
-constexpr uint8_t kLinkFlagDualBand = 0x02;  // sender's radio covers 5 GHz too
-
-// Canonical Split Wardrive channel plan — identical on every board so a mixed
-// dual-band + 2.4-only pair deals from the same list. The 5 GHz block is only
-// used when BOTH units advertise dual-band (see link.ino linkPlanDualBand);
-// defining it on a 2.4-only build is harmless (it is simply never indexed).
-constexpr uint8_t kLink24Channels[] = {1, 2, 3,  4,  5,  6, 7,
-                                       8, 9, 10, 11, 12, 13};
-constexpr int kLink24ChannelCount =
-    static_cast<int>(sizeof(kLink24Channels) / sizeof(kLink24Channels[0]));
-constexpr uint8_t kLink5Channels[] = {
-    36,  40,  44,  48,  52,  56,  60,  64,  100, 104, 108, 112, 116,
-    120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165};
-constexpr int kLink5ChannelCount =
-    static_cast<int>(sizeof(kLink5Channels) / sizeof(kLink5Channels[0]));
+// LinkPacket, kLinkFlagConfirmed, kLinkFlagDualBand, and the kLink24/5 channel
+// plans: see link_protocol.h (shared with the bridge, which sweeps them to
+// deliver commands to whatever channel the screen chip is hopping on).
 
 // A received frame plus the RSSI the radio reported, queued for the main loop.
 struct LinkQueueItem {

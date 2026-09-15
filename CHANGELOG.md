@@ -5,6 +5,34 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-15
+
+### Added
+
+- **Phone control over BLE (two-chip bridge).** The AWOK Dual C5 has two
+  ESP32-C5 chips; the orange (headless) chip now runs a dedicated bridge
+  firmware (`AxDBridge/AxDBridge.ino`) that a phone connects to over BLE
+  (Bluefy on iOS, Chrome on Android) and drives the white (screen) chip. The
+  phone writes a command opcode to a GATT characteristic; the bridge forwards it
+  over ESP-NOW to the screen chip, which runs the matching tool — the same
+  entry points as the on-device serial shortcuts (Wi-Fi/BLE scan, channel map,
+  packet monitor, deauth watch, clients, wardrive start/stop, GPS, stop/home).
+  Live Wi-Fi/BLE counts and current view stream back to the phone as BLE
+  notifications. A single-page Web Bluetooth control app ships at
+  `website/public/control.html` (served from GitHub Pages at `/control.html`).
+- Splitting BLE (bridge) and Wi-Fi (screen) across the two chips means the phone
+  link is never dropped by the screen chip's channel hopping. Validated on
+  hardware: with a phone connected while ESP-NOW is up, the bridge chip holds
+  ~106 KB of free DMA (BLE + ESP-NOW coexist comfortably on one C5 because the
+  bridge has no display/SD/GPS).
+- Because the screen chip hops across every channel while a tool runs, the
+  bridge **sweeps the whole channel plan** when sending a command (repeating a
+  few times, tagged with a sequence number so the screen acts once) — so Stop
+  and every other command land even mid-tool, not just from idle result views.
+- `scripts/build_firmware.py dual-c5-bridge` and `scripts/flash_firmware.py
+  dual-c5-bridge` build/flash the bridge; the shared ESP-NOW wire format lives
+  in `AWOKxDAG/link_protocol.h`, included by both firmwares so it can't drift.
+
 ## [1.3.5] - 2026-09-15
 
 ### Added
@@ -458,7 +486,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.3.5...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/dagnazty/awokxdag/compare/v1.3.5...v1.4.0
 [1.3.5]: https://github.com/dagnazty/awokxdag/compare/v1.3.4...v1.3.5
 [1.3.4]: https://github.com/dagnazty/awokxdag/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/dagnazty/awokxdag/compare/v1.3.2...v1.3.3

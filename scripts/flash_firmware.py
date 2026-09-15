@@ -30,9 +30,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # Chip family per board profile (mirrors build_firmware.py's FQBNs).
-C5 = ("dual-c5-touch", "dual-c5-mini")
+C5 = ("dual-c5-touch", "dual-c5-mini", "dual-c5-bridge")
 CHIP = {b: ("esp32c5" if b in C5 else "esp32") for b in (
-    "dual-c5-touch", "dual-c5-mini",
+    "dual-c5-touch", "dual-c5-mini", "dual-c5-bridge",
     "dual-esp32-touch-v1", "dual-esp32-touch-v2", "dual-esp32-touch-v3",
     "dual-esp32-mini-v1", "dual-esp32-mini-v2", "dual-esp32-mini-v3",
 )}

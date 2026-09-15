@@ -215,6 +215,19 @@ void linkHandlePacket(const LinkQueueItem& item) {
     return;
   }
 
+  // Remote-control command from the bridge chip. Accepted whenever remote is
+  // active, independent of unit pairing (the bridge is not a paired peer). The
+  // bridge burst-repeats each command (so it lands even while we are off on a
+  // hopping tool's channel); p.code is the command sequence, so we act once.
+  if (p.type == kLinkMsgCommand) {
+    static uint16_t lastCmdSeq = 0;
+    if (remoteActive && p.code != lastCmdSeq) {
+      lastCmdSeq = p.code;
+      linkDispatchCommand(static_cast<uint8_t>(p.reserved & 0xFF));
+    }
+    return;
+  }
+
   if (linkState != kLinkReady || memcmp(p.srcMac, linkPeerMac, 6) != 0) return;
 
   if (p.type == kLinkMsgSync) {
@@ -238,6 +251,77 @@ void linkDrainPackets() {
     linkPacketTail = (linkPacketTail + 1) % kLinkPacketQueueSlots;
     linkHandlePacket(item);
   }
+}
+
+// ---- Remote control (phone -> orange bridge -> here over ESP-NOW) --------
+// The bridge chip relays BLE command opcodes as kLinkMsgCommand frames; we run
+// the matching tool -- the same entry points the serial shortcuts use. Status
+// (counts + current view) is broadcast back so the bridge can notify the phone.
+
+void linkDispatchCommand(uint8_t op) {
+  Serial.printf("[remote] command op=%u\n", op);
+  switch (op) {
+    // Recon
+    case kAxdCmdWifiScan: scanWifi(); break;
+    case kAxdCmdBleScan: scanBle(); break;
+    case kAxdCmdChannelMap:
+      if (wifiCount) drawChannelMap(); else scanWifiForChannelMap();
+      break;
+    case kAxdCmdPacketMon: startPacketMon(); break;
+    case kAxdCmdClients: startClientSniffer(); break;
+    case kAxdCmdWpsScan: startWpsScan(); break;
+    case kAxdCmdHiddenSsid: startHiddenReveal(); break;
+    case kAxdCmdCameras: startCameraScan(); break;
+    case kAxdCmdSecurityAudit: startSecurityAudit(); break;
+    case kAxdCmdTrackers: startTrackerScan(); break;
+    case kAxdCmdHarvester: startHarvester(); break;
+    case kAxdCmdProbeIntel: startProbeIntel(); break;
+    case kAxdCmdSaved: drawSavedNetworks(); break;
+    // Attacks (target-specific ones act on the on-device last selection)
+    case kAxdCmdBeaconFlood: startBeaconFlood(); break;
+    case kAxdCmdEvilPortal: startEvilPortal(); break;
+    case kAxdCmdEvilTwin: startEvilTwin(); break;
+    case kAxdCmdProbeLure: startProbeLure(); break;
+    case kAxdCmdAuthFlood: startAuthFlood(); break;
+    // Monitor
+    case kAxdCmdDeauthWatch: startDeauthMonitor(); break;
+    case kAxdCmdRogueWatch: startRogueWatch(); break;
+    case kAxdCmdBleSpamWatch: startBleDetect(); break;
+    case kAxdCmdKarmaWatch: startKarmaWatch(); break;
+    case kAxdCmdBeaconWatch: startBeaconWatch(); break;
+    case kAxdCmdAdvancedWatch: startAdvancedWatch(); break;
+    // GPS / wardrive / misc
+    case kAxdCmdWardriveStart: startWardrive(); break;
+    case kAxdCmdWardriveStop: stopWardrive(); drawHome(); break;
+    case kAxdCmdGps: drawGps(); break;
+    case kAxdCmdLocator: startLocator(); break;
+    case kAxdCmdStatus: drawStatus(); break;
+    case kAxdCmdFiles: openFilesManager(); break;
+    case kAxdCmdStopHome: stopActiveTools(); drawHome(); break;
+    default: break;
+  }
+}
+
+void linkBroadcastStatus() {
+  if (!linkEspNowReady) return;
+  LinkPacket p;
+  linkFillCommon(p, kLinkMsgTelem);
+  p.networks = wardriveActive ? wardriveNetworks : wifiCount;
+  p.bleCount = wardriveActive ? wardriveBleCount : bleCount;
+  p.channel = static_cast<uint8_t>(currentView);  // "tool id" for the phone UI
+  esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&p), sizeof(p));
+}
+
+// Always-on from boot: keep ESP-NOW listening so the phone can drive this chip
+// via the bridge. Parks on the rendezvous channel; re-homed there when idle.
+void remoteBegin() {
+  if (!linkEnsureEspNow()) {
+    Serial.println("[remote] esp-now init failed; bridge control unavailable");
+    return;
+  }
+  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+  remoteActive = true;
+  Serial.printf("[remote] bridge control active on ch %u\n", kLinkChannel);
 }
 
 void linkStartDiscovery() {
@@ -482,9 +566,30 @@ void updateLinkWardrive(uint32_t now) {
 }
 
 void updateLink() {
-  if (linkState == kLinkOff && !linkWardriveActive) return;
+  if (linkState == kLinkOff && !linkWardriveActive && !remoteActive) return;
   linkDrainPackets();
   const uint32_t now = millis();
+
+  // Remote-control housekeeping: drain commands (done above), keep ESP-NOW alive,
+  // re-home to the rendezvous channel when idle so the bridge can reach us, and
+  // stream status back to the phone about once a second.
+  if (remoteActive && linkState == kLinkOff && !linkWardriveActive) {
+    static uint32_t lastRemoteStatusMs = 0;
+    // Whenever no radio-owning tool is running (Home, or a finished scan's
+    // results view), keep ESP-NOW up and homed on the rendezvous channel so the
+    // phone can always reach us -- including to leave a view a BLE tool left us
+    // in after it shut Wi-Fi down. Active hopping tools manage the radio
+    // themselves; we only re-home between them.
+    if (!toolBlocksSerialShortcuts() && !scanInProgress) {
+      if (WiFi.getMode() != WIFI_STA) linkEnsureEspNow();  // a BLE tool tore it down
+      esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+    }
+    if (now - lastRemoteStatusMs >= 1000) {
+      lastRemoteStatusMs = now;
+      linkBroadcastStatus();
+    }
+    return;
+  }
 
   // Pairing chatter: broadcast HELLO on the link channel while we look for /
   // confirm a peer (no scanning happens during pairing, so the link is solid).
