@@ -1,9 +1,35 @@
 # Changelog
 
-All notable changes to AWOKxDAG are documented here. This project follows
+All notable changes to AxD are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [1.3.5] - 2026-09-15
+
+### Added
+
+- Flicker-free Touch UI. Live views (Status, Packet Monitor, Client Sniffer,
+  Probe Lure, Wardrive, Cameras, and the rest) redraw on 0.5-1 s timers, and
+  each starts by clearing the whole screen; drawing straight to the ILI9341
+  made that clear-then-repaint visible as a flash every refresh. The Touch now
+  renders into a ~150 KB off-screen back buffer in PSRAM (`touch_display.h`,
+  `AwokTouchDisplay`) and blits it to the panel once per frame, dirty-gated, so
+  a refresh appears atomically. Every existing `display.*` call is unchanged
+  (the wrapper is a drop-in `Adafruit_GFX`); a single `present()` at the end of
+  `loop()` pushes the frame, with explicit pushes where a screen is drawn right
+  before a blocking operation (boot splash, "Scanning..."). Boards without
+  PSRAM (classic ESP32 Touch, experimental) fall back to direct-to-panel
+  drawing, exactly as before.
+
+### Fixed
+
+- Added a 0.75 s settle gap between Wi-Fi and BLE when the wardrive/cameras/
+  advanced-watch scheduler switches radios. The controller/driver deinit
+  returns before the hardware and its DMA are fully released; bringing the
+  other radio up immediately overlapped that teardown and could re-trigger the
+  "Memory Capacity Exceeded" fault. The scheduler now waits for one radio to
+  fully release before the other claims the DMA.
 
 ## [1.3.4] - 2026-09-13
 
@@ -418,7 +444,8 @@ All notable changes to AWOKxDAG are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.3.4...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.3.5...HEAD
+[1.3.5]: https://github.com/dagnazty/awokxdag/compare/v1.3.4...v1.3.5
 [1.3.4]: https://github.com/dagnazty/awokxdag/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/dagnazty/awokxdag/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/dagnazty/awokxdag/compare/v1.3.1...v1.3.2

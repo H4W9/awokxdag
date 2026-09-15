@@ -30,13 +30,13 @@ void drawStatus() {
 
   display.setTextColor(kMuted, kBackground);
   display.setCursor(6, y);
-  display.print("Battery: ");
+  display.print("Power: ");
   display.setTextColor(ILI9341_WHITE, kBackground);
   if (AwokPins::kBatteryAdc >= 0) {
     const int mv = analogReadMilliVolts(AwokPins::kBatteryAdc);
     display.printf("%.2f V", mv * AwokPins::kBatteryDivider / 1000.0f);
   } else {
-    display.print("n/a (set kBatteryAdc)");
+    display.print("USB");
   }
   y += step;
 
@@ -95,7 +95,7 @@ void drawStatus() {
 
   display.setTextColor(kMuted, kBackground);
   display.setCursor(6, y);
-  display.print(String("Firmware: AWOKxDAG (") + AwokPins::kChipLabel + ")");
+  display.print(String("Firmware: AxD (") + AwokPins::kChipLabel + ")");
 
   drawThreeButtonFooter("Home", "Settings", "Files");
 }

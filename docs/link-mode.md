@@ -1,6 +1,6 @@
 # Link Mode
 
-Two AWOKxDAG units pair over ESP-NOW and can run **Split Wardrive**: they
+Two AxD units pair over ESP-NOW and can run **Split Wardrive**: they
 divide the channel list so each board scans a different part of the spectrum.
 
 Reached from **GPS → Link**, or serial `n`. Wi-Fi-only in this release; BLE is

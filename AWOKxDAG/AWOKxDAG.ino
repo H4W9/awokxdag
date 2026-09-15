@@ -29,7 +29,7 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2,
 #ifdef AWOK_MINI_DISPLAY
 AwokMiniDisplay display;
 #else
-Adafruit_ILI9341 display(&SPI, AwokPins::kDisplayDc, AwokPins::kDisplayCs,
+AwokTouchDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
                          AwokPins::kDisplayReset);
 XPT2046_Touchscreen touch(AwokPins::kTouchCs);
 #endif
@@ -743,11 +743,11 @@ void drawFiveButtonFooter(const String& a, const String& b, const String& c,
 
 void drawAboutPage() {
   display.fillScreen(kBackground);
-  drawHeader("ABOUT", "AWOKxDAG");
+  drawHeader("ABOUT", "AxD");
   display.setTextSize(2);
   display.setTextColor(kAccent, kBackground);
   display.setCursor(6, 52);
-  display.print("AWOKxDAG");
+  display.print("AxD");
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setCursor(6, 80);
@@ -794,8 +794,8 @@ void drawHome() {
     return;
   }
   display.fillScreen(kBackground);
-  drawHeader("AWOKxDAG", sdReady ? "SD ready | pentest toolkit"
-                                 : "SD missing | pentest toolkit");
+  drawHeader("AxD", sdReady ? "SD ready | pentest toolkit"
+                            : "SD missing | pentest toolkit");
   drawButton(20, 44, 200, 40, "Recon");
   drawButton(20, 88, 200, 40, "Attacks", kBad);
   drawButton(20, 132, 200, 40, "Monitor");
@@ -820,6 +820,7 @@ void drawBootScreen() {
   display.fillScreen(ILI9341_WHITE);
   display.drawXBitmap(0, 0, kBootScreenBitmap, kBootScreenWidth,
                       kBootScreenHeight, ILI9341_BLACK);
+  display.present();  // setup() blocks on delay() next; show the splash now
 #endif
 }
 
@@ -830,9 +831,9 @@ void drawScanning(const String& kind) {
   display.setTextSize(2);
   display.setCursor(43, 135);
   display.print("Scanning...");
-#ifdef AWOK_MINI_DISPLAY
+  // Show it now: the caller blocks on a synchronous scan before returning to
+  // loop(), so the end-of-loop present() would be too late.
   display.present(false);
-#endif
 }
 
 void drawWifiResults() {
@@ -1792,6 +1793,13 @@ void releaseBleMemory() {
 // alternate: only one radio is DMA-resident per window, each coming up into
 // a clean heap. GPS keeps logging throughout (UART, unaffected).
 
+// Settle gap after tearing one radio down before bringing the other up. The
+// controller/driver deinit returns before the hardware and its DMA are fully
+// released; bringing the other radio up too soon overlaps that teardown and
+// re-triggers the "Memory Capacity Exceeded" fault. Wait for the dust to
+// settle first.
+static const uint32_t kRadioSettleMs = 750;
+
 // Start a fresh Wi-Fi window: STA is resident, (re)configure the view's
 // capture/scan via its enterWifi hook.
 static void radioEnterWifiPhase(RadioScheduler& s) {
@@ -1868,6 +1876,7 @@ void radioSchedulerTick(RadioScheduler& s) {
   if (s.phase == RadioPhase::kWifi) {
     if (s.exitWifi) s.exitWifi();
     shutdownWifi();  // frees the ~44 KB DMA the BLE controller needs
+    delay(kRadioSettleMs);  // let Wi-Fi fully release before BLE claims the DMA
     if (!radioEnterBlePhase(s)) {
       // BLE unavailable this cycle: fall straight back into a Wi-Fi window.
       if (!ensureWifiStation(false)) {
@@ -1879,6 +1888,7 @@ void radioSchedulerTick(RadioScheduler& s) {
     }
   } else {
     radioExitBlePhase();
+    delay(kRadioSettleMs);  // let BLE fully release before Wi-Fi claims the DMA
     if (!ensureWifiStation(false)) {
       showRadioError("Wi-Fi initialization failed");
       s.active = false;
@@ -2085,7 +2095,7 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println();
-  Serial.println("AWOKxDAG starting");
+  Serial.println("AxD starting");
   Serial.println(AwokPins::kBoardLabel);
   Serial.printf("[board] %s, %s, result capacity=%d\n", AwokPins::kChipLabel,
                 AwokPins::kDualBand ? "2.4/5 GHz" : "2.4 GHz", kResultCapacity);
@@ -2138,9 +2148,7 @@ void setup() {
   loadSavedNetworks();
   if (sdReady) lastSavedSdWriteOk = exportSavedNetworksToSd();
   drawHome();
-#ifdef AWOK_MINI_DISPLAY
-  display.present();
-#endif
+  display.present();  // both boards buffer now; blit the first frame
   logMemory("ready");
 }
 
@@ -2190,7 +2198,10 @@ void loop() {
     drawGps();
   }
 #ifdef AWOK_MINI_DISPLAY
+  // Mini screen test writes the ST7735 directly, so skip the canvas blit there.
   if (currentView != View::kScreenTest) display.present();
+#else
+  display.present();  // dirty-gated: only blits when a view actually redrew
 #endif
   delay(10);
 }

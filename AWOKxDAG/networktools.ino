@@ -511,7 +511,7 @@ void netBeginProbe() {
   }
   String request;
   if (netJob == NetJob::Cameras) {
-    if (port == 554 || port == 8554) request = "OPTIONS rtsp://" + netIpText(ip) + ":" + String(port) + "/ RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: AWOKxDAG\r\n\r\n";
+    if (port == 554 || port == 8554) request = "OPTIONS rtsp://" + netIpText(ip) + ":" + String(port) + "/ RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: AxD\r\n\r\n";
     else {
       NetworkParse::Url url; url.ip = ip; url.port = port;
       strcpy(url.path, "/onvif/device_service");

@@ -163,9 +163,9 @@ bool openWardriveCsv() {
       return false;
     }
     file.println(
-        String("WigleWifi_1.4,appRelease=AWOKxDAG,model=") + AwokPins::kChipLabel + ",release=" +
+        String("WigleWifi_1.4,appRelease=AxD,model=") + AwokPins::kChipLabel + ",release=" +
         kVersion +
-        ",device=AWOKxDAG,display=ILI9341,board=" + AwokPins::kBoardLabel + ",brand=AWOK");
+        ",device=AxD,display=ILI9341,board=" + AwokPins::kBoardLabel + ",brand=AxD");
     file.println(
         "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
         "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");

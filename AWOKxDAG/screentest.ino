@@ -114,7 +114,7 @@ void screenTestDrawOrient() {
   screenTestText(kTestW - 14, 2, kTestGreen, "TR");
   screenTestText(2, kTestH - 10, kTestGreen, "BL");
   screenTestText(kTestW - 14, kTestH - 10, kTestGreen, "BR");
-  screenTestText(kTestW / 2 - 24, kTestH / 2 - 8, kTestWhite, "AWOKxDAG");
+  screenTestText(kTestW / 2 - 24, kTestH / 2 - 8, kTestWhite, "AxD");
   screenTestText(kTestW / 2 - 18, kTestH / 2 + 4, kTestCyan, kVersion);
   screenTestText(4, kTestH / 2 + 20, kTestYellow, "TL must be top-left");
 }

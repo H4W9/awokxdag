@@ -1,9 +1,9 @@
-# AWOKxDAG
+# AxD
 
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.3.4
+- **Version:** 1.3.5
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -151,7 +151,7 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   scan/deauth/client/portal/handshake logs are geotagged with the current fix.
 
 ### Link (two-unit)
-- **Link Mode** — pairs two AWOKxDAG units (any mix of C5 and original 2.4 GHz
+- **Link Mode** — pairs two AxD units (any mix of C5 and original 2.4 GHz
   boards, Touch or Mini) over an ESP-NOW back-channel using a display-and-confirm
   4-digit code — no typing on either board. Powers **Split Wardrive**: the pair
   divides the channels so each unit scans a different part of the spectrum and the
@@ -295,7 +295,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.3.4/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.3.5/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
@@ -434,14 +434,14 @@ restored.
 
 ## Credits & license
 
-AWOKxDAG is original firmware, but it stands on prior work and would not exist
+AxD is original firmware, but it stands on prior work and would not exist
 without it. Thanks to:
 
 - **[Evil-M5Project](https://github.com/7h30th3r0n3/Evil-M5Project)** by
   **7h30th3r0n3** — thanks for the work behind the LAN host/port scanning,
   CCTV, printer, SIP OPTIONS, UPnP mapping, and Wall of Flippers features used
   as references for our Network Tools and BLE identification hints. We adapted
-  those ideas to AWOKxDAG's radio lifecycle, bounded scan engine, and Touch/Mini
+  those ideas to AxD's radio lifecycle, bounded scan engine, and Touch/Mini
   controls. The linked Evil-Cardputer source carries an MIT notice; some sections
   credit other projects, including Bruce. See [third-party notices](THIRD_PARTY_NOTICES.md).
 - **[ESP32 Marauder](https://github.com/justcallmekoko/ESP32Marauder)** by
@@ -458,7 +458,7 @@ without it. Thanks to:
   **Adafruit ST7735 and ST7789**, **Adafruit BusIO**, **NimBLE-Arduino**,
   **XPT2046_Touchscreen**, and **TinyGPSPlus** — each under its own license.
 
-**License:** AWOKxDAG's own code is released under the **MIT License** (see
+**License:** AxD's own code is released under the **MIT License** (see
 [LICENSE](LICENSE)). Hardware pin numbers and calibration constants are factual
 board-interface values, and the radio-lifecycle behavior was reimplemented rather
 than copied. ESP32 Marauder is licensed **GPL-3.0** and each referenced project

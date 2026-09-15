@@ -650,7 +650,7 @@ void drawLinkWardrive() {
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setCursor(6, 86);
-  display.print("Pair with a second AWOKxDAG to");
+  display.print("Pair with a second AxD to");
   display.setCursor(6, 98);
   display.print("split-channel wardrive together.");
   display.setTextColor(kMuted, kBackground);

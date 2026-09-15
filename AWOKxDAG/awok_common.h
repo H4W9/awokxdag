@@ -47,6 +47,7 @@ bool radiosCoexist = false;
 #else
 bool radiosCoexist = true;
 #endif
+#include "touch_display.h"     // buffered ILI9341 wrapper (kills refresh flicker)
 #include "boot_screen_data.h"  // 240x320 Touch splash; unused on the Mini
 #endif
 
@@ -98,7 +99,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.3.4";
+constexpr char kVersion[] = "1.3.5";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
