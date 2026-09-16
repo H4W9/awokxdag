@@ -23,10 +23,11 @@ constexpr uint8_t kLinkLmkBase[16] = {0x51, 0xE4, 0x0B, 0x9A, 0x7D, 0x38, 0xC2,
                                       0x89, 0x22};
 
 enum LinkMsgType : uint8_t {
-  kLinkMsgHello = 1,    // identity + confirm code + confirmed flag
-  kLinkMsgSync = 2,     // master millis for clock sync
-  kLinkMsgTelem = 3,    // running counts + channel + session id (also status back)
-  kLinkMsgCommand = 4,  // bridge -> screen: run a tool (opcode in `reserved`)
+  kLinkMsgHello = 1,       // identity + confirm code + confirmed flag
+  kLinkMsgSync = 2,        // master millis for clock sync
+  kLinkMsgTelem = 3,       // running counts + channel + session id (status back)
+  kLinkMsgCommand = 4,     // bridge -> screen: run a tool (opcode in `reserved`)
+  kLinkMsgWifiResult = 5,  // screen -> bridge: one scanned AP (AxdWifiResult)
 };
 
 // One ESP-NOW frame. POD, 36 bytes on every supported ABI, copied verbatim.
@@ -54,6 +55,23 @@ static_assert(sizeof(LinkPacket) == 36,
 
 constexpr uint8_t kLinkFlagConfirmed = 0x01;
 constexpr uint8_t kLinkFlagDualBand = 0x02;  // sender's radio covers 5 GHz too
+
+// One scanned Wi-Fi AP, streamed screen -> bridge -> phone so the phone can show
+// a list and pick a target. Shares the magic/version/type prefix with LinkPacket
+// so the bridge can tell frames apart by type; it is a different size (~50 B),
+// which is fine over ESP-NOW (250 B max). The phone selects by `index`.
+struct AxdWifiResult {
+  uint32_t magic = kLinkMagic;
+  uint8_t version = kLinkProtoVersion;
+  uint8_t type = kLinkMsgWifiResult;
+  uint8_t index = 0;    // position in the screen chip's wifiEntries[]
+  uint8_t count = 0;    // total APs in the list
+  uint8_t bssid[6] = {0};
+  int8_t rssi = -127;
+  uint8_t channel = 0;
+  uint8_t auth = 0;     // wifi_auth_mode_t
+  char ssid[33] = {0};  // null-terminated (empty = hidden)
+};
 
 // Canonical channel plan — identical on every board (Split Wardrive deals from
 // it, and the bridge sweeps it to deliver commands to whatever channel the
@@ -108,5 +126,13 @@ enum AxdCommand : uint8_t {
   kAxdCmdLocator = 40,
   kAxdCmdStatus = 41,
   kAxdCmdFiles = 42,
+  // Network selection + per-target actions (act on the screen chip's
+  // selectedWifi). SelectWifi carries the list index in the command arg
+  // (reserved high byte).
+  kAxdCmdListWifi = 50,     // stream the current Wi-Fi list to the phone
+  kAxdCmdSelectWifi = 51,   // arg = index into wifiEntries[]
+  kAxdCmdDeauthSel = 52,    // deauth the selected AP
+  kAxdCmdGrabSel = 53,      // handshake/PMKID grab on the selected AP
+  kAxdCmdTrackSel = 54,     // RSSI-track the selected AP
   kAxdCmdStopHome = 255,
 };

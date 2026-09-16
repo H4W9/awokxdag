@@ -1955,6 +1955,7 @@ void scanWifi() {
   scanInProgress = false;
   lastWifiScanOk = true;
   drawWifiResults();
+  if (remoteActive) linkStreamWifiResults();  // push the list to the phone
 }
 
 void scanWifiForChannelMap() {

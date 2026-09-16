@@ -17,11 +17,13 @@
 #include <NimBLEDevice.h>
 #include "link_protocol.h"
 
-static const char* kSvcUuid    = "a0d10000-1234-4a3c-8b21-000000000001";
-static const char* kCmdUuid    = "a0d10000-1234-4a3c-8b21-000000000002";  // write
-static const char* kStatusUuid = "a0d10000-1234-4a3c-8b21-000000000003";  // notify
+static const char* kSvcUuid     = "a0d10000-1234-4a3c-8b21-000000000001";
+static const char* kCmdUuid     = "a0d10000-1234-4a3c-8b21-000000000002";  // write
+static const char* kStatusUuid  = "a0d10000-1234-4a3c-8b21-000000000003";  // notify
+static const char* kResultsUuid = "a0d10000-1234-4a3c-8b21-000000000004";  // notify
 
 static NimBLECharacteristic* g_status = nullptr;
+static NimBLECharacteristic* g_results = nullptr;
 static volatile bool g_connected = false;
 static uint8_t g_selfMac[6] = {0};
 
@@ -77,17 +79,40 @@ static void bridgeQueueCommand(uint8_t opcode, uint8_t arg) {
 // Screen chip -> bridge: relay telemetry to the phone as a status notification.
 // Blob layout matches control.html parseStatus(): [wifi u32][ble u32][tool u8].
 static void onEspNowRecv(const esp_now_recv_info_t*, const uint8_t* data, int len) {
-  if (len != static_cast<int>(sizeof(LinkPacket))) return;
-  LinkPacket p;
-  memcpy(&p, data, sizeof(p));
-  if (p.magic != kLinkMagic || p.version != kLinkProtoVersion) return;
-  if (p.type != kLinkMsgTelem || !g_status || !g_connected) return;
-  uint8_t blob[9];
-  memcpy(blob + 0, &p.networks, 4);
-  memcpy(blob + 4, &p.bleCount, 4);
-  blob[8] = p.channel;
-  g_status->setValue(blob, sizeof(blob));
-  g_status->notify();
+  if (len < 6 || !g_connected) return;
+  uint32_t magic;
+  memcpy(&magic, data, 4);
+  if (magic != kLinkMagic) return;
+  const uint8_t type = data[5];  // magic(4) version(1) type(1) — shared prefix
+
+  if (type == kLinkMsgTelem && len == static_cast<int>(sizeof(LinkPacket))) {
+    LinkPacket p;
+    memcpy(&p, data, sizeof(p));
+    if (!g_status) return;
+    uint8_t blob[9];
+    memcpy(blob + 0, &p.networks, 4);
+    memcpy(blob + 4, &p.bleCount, 4);
+    blob[8] = p.channel;
+    g_status->setValue(blob, sizeof(blob));
+    g_status->notify();
+  } else if (type == kLinkMsgWifiResult &&
+             len == static_cast<int>(sizeof(AxdWifiResult))) {
+    AxdWifiResult r;
+    memcpy(&r, data, sizeof(r));
+    if (!g_results) return;
+    // Compact blob for the phone: index,count,rssi,channel,auth,bssid[6],ssid.
+    uint8_t blob[11 + 32];
+    blob[0] = r.index;
+    blob[1] = r.count;
+    blob[2] = static_cast<uint8_t>(r.rssi);
+    blob[3] = r.channel;
+    blob[4] = r.auth;
+    memcpy(blob + 5, r.bssid, 6);
+    size_t sl = strnlen(r.ssid, 32);
+    memcpy(blob + 11, r.ssid, sl);
+    g_results->setValue(blob, 11 + sl);
+    g_results->notify();
+  }
 }
 
 class CmdCallbacks : public NimBLECharacteristicCallbacks {
@@ -145,6 +170,8 @@ void setup() {
   g_status = svc->createCharacteristic(
       kStatusUuid, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
   g_status->setValue("ready");
+  g_results = svc->createCharacteristic(
+      kResultsUuid, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
   svc->start();
 
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();

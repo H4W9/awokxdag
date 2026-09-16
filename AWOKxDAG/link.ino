@@ -223,7 +223,8 @@ void linkHandlePacket(const LinkQueueItem& item) {
     static uint16_t lastCmdSeq = 0;
     if (remoteActive && p.code != lastCmdSeq) {
       lastCmdSeq = p.code;
-      linkDispatchCommand(static_cast<uint8_t>(p.reserved & 0xFF));
+      linkDispatchCommand(static_cast<uint8_t>(p.reserved & 0xFF),
+                          static_cast<uint8_t>(p.reserved >> 8));
     }
     return;
   }
@@ -258,8 +259,30 @@ void linkDrainPackets() {
 // the matching tool -- the same entry points the serial shortcuts use. Status
 // (counts + current view) is broadcast back so the bridge can notify the phone.
 
-void linkDispatchCommand(uint8_t op) {
-  Serial.printf("[remote] command op=%u\n", op);
+// Stream the current Wi-Fi scan list to the phone (screen -> bridge -> BLE), one
+// AxdWifiResult per AP. Sent while homed on the rendezvous channel, where the
+// bridge listens.
+void linkStreamWifiResults() {
+  if (!linkEspNowReady) return;
+  const int n = wifiCount;
+  for (int i = 0; i < n; ++i) {
+    AxdWifiResult r;
+    r.index = static_cast<uint8_t>(i);
+    r.count = static_cast<uint8_t>(n);
+    uint8_t mac[6];
+    if (parseBssid(wifiEntries[i].bssid, mac)) memcpy(r.bssid, mac, 6);
+    r.rssi = static_cast<int8_t>(wifiEntries[i].rssi);
+    r.channel = static_cast<uint8_t>(wifiEntries[i].channel);
+    r.auth = static_cast<uint8_t>(wifiEntries[i].auth);
+    strncpy(r.ssid, wifiEntries[i].ssid.c_str(), sizeof(r.ssid) - 1);
+    esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&r), sizeof(r));
+    delay(6);  // pace so the bridge/BLE stack keeps up
+  }
+  Serial.printf("[remote] streamed %d Wi-Fi result(s)\n", n);
+}
+
+void linkDispatchCommand(uint8_t op, uint8_t arg) {
+  Serial.printf("[remote] command op=%u arg=%u\n", op, arg);
   switch (op) {
     // Recon
     case kAxdCmdWifiScan: scanWifi(); break;
@@ -297,6 +320,20 @@ void linkDispatchCommand(uint8_t op) {
     case kAxdCmdLocator: startLocator(); break;
     case kAxdCmdStatus: drawStatus(); break;
     case kAxdCmdFiles: openFilesManager(); break;
+    // Network selection + per-target actions
+    case kAxdCmdListWifi: linkStreamWifiResults(); break;
+    case kAxdCmdSelectWifi:
+      if (arg < wifiCount) openWifiAudit(wifiEntries[arg], View::kWifi);
+      break;
+    case kAxdCmdDeauthSel:
+      if (selectedWifi.bssid.length()) { openDeauthAttackSingle(); startDeauthAttack(); }
+      break;
+    case kAxdCmdGrabSel:
+      if (selectedWifi.bssid.length()) startHandshakeCapture();
+      break;
+    case kAxdCmdTrackSel:
+      if (selectedWifi.bssid.length()) beginWifiSignalMonitor();
+      break;
     case kAxdCmdStopHome: stopActiveTools(); drawHome(); break;
     default: break;
   }

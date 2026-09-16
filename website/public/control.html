@@ -39,6 +39,16 @@
   .banner { background:#33191a; border:1px solid #5c2b2c; color:#ffb4ad;
             border-radius:10px; padding:10px 12px; font-size:13px;
             margin-bottom:14px; }
+  .net { display:flex; gap:8px; align-items:center; padding:8px 10px;
+         border:1px solid var(--line); border-radius:8px; margin-bottom:6px;
+         cursor:pointer; }
+  .net.sel { border-color:var(--accent); background:#12283f; }
+  .net .nm { flex:1; min-width:0; }
+  .net .ss { font-weight:600; overflow:hidden; text-overflow:ellipsis;
+             white-space:nowrap; }
+  .net .mb { color:var(--muted); font-size:11px;
+             font-variant-numeric:tabular-nums; }
+  .net .rs { color:var(--muted); font-size:12px; white-space:nowrap; }
   [hidden]{ display:none !important; }
 </style>
 </head>
@@ -65,6 +75,24 @@
       <div><div class="k">Wi-Fi</div><div id="wifi" class="v">–</div></div>
       <div><div class="k">BLE</div><div id="ble" class="v">–</div></div>
       <div><div class="k">Tool</div><div id="tool" class="v" style="font-size:15px">–</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:8px">
+      <span class="k" style="flex:1">Networks — tap a Wi-Fi Scan result to select</span>
+      <button data-op="1">Scan</button>
+      <button data-op="50">Refresh</button>
+    </div>
+    <div id="netlist"><div class="k">Run a Wi-Fi Scan to list networks.</div></div>
+    <div class="k" style="margin:10px 0 6px; color:var(--bad)">
+      Selected-target actions — authorized targets only</div>
+    <div class="grid" id="cmds-target">
+      <button data-op="52" class="stop">Deauth</button>
+      <button data-op="53" class="stop">Grab Handshake</button>
+      <button data-op="54">Track</button>
+      <button data-op="22" class="stop">Evil Twin</button>
+      <button data-op="23" class="stop">Probe Lure</button>
     </div>
   </div>
 
@@ -137,20 +165,69 @@
 <script>
 "use strict";
 // Must match the bridge firmware GATT UUIDs (Gate 0 probe uses these too).
-const SVC    = "a0d10000-1234-4a3c-8b21-000000000001";
-const CMD    = "a0d10000-1234-4a3c-8b21-000000000002"; // write
-const STATUS = "a0d10000-1234-4a3c-8b21-000000000003"; // notify/read
+const SVC     = "a0d10000-1234-4a3c-8b21-000000000001";
+const CMD     = "a0d10000-1234-4a3c-8b21-000000000002"; // write
+const STATUS  = "a0d10000-1234-4a3c-8b21-000000000003"; // notify/read
+const RESULTS = "a0d10000-1234-4a3c-8b21-000000000004"; // notify (Wi-Fi list)
+const OP_SELECT_WIFI = 51;
+const TARGET_OPS = [52,53,54,22,23];  // need a selected network
 
 const $ = (id) => document.getElementById(id);
 const log = (m) => { const d=$("log"); d.textContent += (new Date().toLocaleTimeString()+"  "+m+"\n"); d.scrollTop=d.scrollHeight; };
-let device=null, cmdCh=null, statusCh=null;
+let device=null, cmdCh=null, statusCh=null, resultsCh=null;
+let nets=new Map(), selIndex=null;
 
 function setConnected(on){
   $("dot").classList.toggle("on", on);
   $("state").textContent = on ? "Connected" : "Disconnected";
   $("connect").textContent = on ? "Disconnect" : "Connect";
   document.querySelectorAll("button[data-op]").forEach(b => b.disabled = !on);
+  if (on) refreshTargetButtons();
+  if (!on){ nets.clear(); selIndex=null; renderNets(); }
 }
+
+function refreshTargetButtons(){
+  const ready = selIndex !== null;
+  TARGET_OPS.forEach(op => {
+    const b = document.querySelector('#cmds-target button[data-op="'+op+'"]');
+    if (b) b.disabled = !(device?.gatt?.connected) || !ready;
+  });
+}
+
+const AUTH = ["open","WEP","WPA","WPA2","WPA2E","WPA3","WPA2/3","WAPI","OWE"];
+function parseResult(dv){
+  if (dv.byteLength < 11) return;
+  const i = dv.getUint8(0), count = dv.getUint8(1);
+  const rssi = dv.getInt8(2), ch = dv.getUint8(3), auth = dv.getUint8(4);
+  let mac=[]; for (let k=0;k<6;k++) mac.push(dv.getUint8(5+k).toString(16).padStart(2,"0"));
+  let ssid=""; for (let k=11;k<dv.byteLength;k++) ssid += String.fromCharCode(dv.getUint8(k));
+  nets.set(i, {i, count, rssi, ch, auth, bssid:mac.join(":"), ssid});
+  renderNets();
+}
+
+function renderNets(){
+  const box = $("netlist");
+  if (nets.size === 0){ box.innerHTML = '<div class="k">Run a Wi-Fi Scan to list networks.</div>'; return; }
+  const rows = [...nets.values()].sort((a,b)=>a.i-b.i);
+  box.innerHTML = "";
+  for (const n of rows){
+    const el = document.createElement("div");
+    el.className = "net" + (n.i===selIndex ? " sel" : "");
+    el.innerHTML = '<div class="nm"><div class="ss">'+(n.ssid||"&lt;hidden&gt;")+
+      '</div><div class="mb">'+n.bssid+'  ch'+n.ch+'  '+(AUTH[n.auth]||n.auth)+'</div></div>'+
+      '<div class="rs">'+n.rssi+' dBm</div>';
+    el.addEventListener("click", () => selectNet(n.i));
+    box.appendChild(el);
+  }
+}
+
+function selectNet(i){
+  selIndex = i;
+  sendOp(OP_SELECT_WIFI, i);
+  renderNets();
+  refreshTargetButtons();
+}
+
 setConnected(false);
 
 if (!navigator.bluetooth) $("nobt").hidden = false;
@@ -185,6 +262,11 @@ async function connect(){
     statusCh.addEventListener("characteristicvaluechanged", e => parseStatus(e.target.value));
     await statusCh.startNotifications();
     try { parseStatus(await statusCh.readValue()); } catch(e){}
+    try {
+      resultsCh = await svc.getCharacteristic(RESULTS);
+      resultsCh.addEventListener("characteristicvaluechanged", e => parseResult(e.target.value));
+      await resultsCh.startNotifications();
+    } catch(e){ log("no results characteristic (old bridge?)"); }
     setConnected(true);
     log("connected.");
   } catch(e){ log("connect failed: "+e.message); }
@@ -194,9 +276,9 @@ function onDisc(){ setConnected(false); log("disconnected."); }
 
 async function disconnect(){ if (device?.gatt?.connected) device.gatt.disconnect(); }
 
-async function sendOp(op){
+async function sendOp(op, arg=0){
   if (!cmdCh){ log("not connected"); return; }
-  try { await cmdCh.writeValue(new Uint8Array([op])); log("sent op "+op); }
+  try { await cmdCh.writeValue(new Uint8Array([op, arg])); log("sent op "+op+(arg?(" arg "+arg):"")); }
   catch(e){ log("send failed: "+e.message); }
 }
 

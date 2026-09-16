@@ -5,6 +5,19 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-15
+
+### Added
+
+- **Network selection + per-target actions from the phone.** A Wi-Fi scan streams
+  the AP list (`AxdWifiResult` frames → a Results GATT characteristic) to the web
+  app, which shows a tappable list (SSID / BSSID / RSSI / channel / auth). Tapping
+  a network selects it on the screen chip (`selectedWifi`), unlocking per-target
+  actions from the phone: **Deauth, Grab Handshake, Track, Evil Twin, Probe
+  Lure** — the same actions the on-device audit screen offers, now remote. Deauth
+  honors the two-tap confirm setting via a repeated tap. Both Touch and Mini
+  screen chips participate.
+
 ## [1.4.0] - 2026-09-15
 
 ### Added
@@ -487,7 +500,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/dagnazty/awokxdag/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/dagnazty/awokxdag/compare/v1.3.5...v1.4.0
 [1.3.5]: https://github.com/dagnazty/awokxdag/compare/v1.3.4...v1.3.5
 [1.3.4]: https://github.com/dagnazty/awokxdag/compare/v1.3.3...v1.3.4
