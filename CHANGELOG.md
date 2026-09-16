@@ -5,6 +5,25 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-09-16
+
+### Fixed
+
+- **Wardrive now captures Wi-Fi + BLE for an unlimited session (was dying with
+  "Radio initialization failed" after ~10 min).** Root cause, traced by
+  instrumenting every allocation: the firmware tore the BLE controller down and
+  back up every Wi-Fi/BLE window, and the ESP32-C5's closed BLE-controller blob
+  leaks ~0.4 KB of DMA on each such init/deinit. Fixed by adopting the
+  ESP32-Marauder model — initialize BLE **once** per session and keep **both
+  radios resident**, alternating only the *scans* (never the controllers). With
+  no per-cycle init/deinit there is nothing to leak. The enabler: the 128-entry
+  result tables (`wifiEntries`, `bleEntries`, clients, trackers, …) were sitting
+  in DMA-capable RAM and consuming ~50 KB, which is what forced the teardown
+  scheme in the first place; `kResultCapacity` on dual-band C5 is now 64, leaving
+  Wi-Fi (~34 KB) and BLE (~33 KB) both resident with ~28 KB DMA to spare
+  (measured). Affects all RadioScheduler tools (wardrive, camera scan, advanced
+  watch). Scan result lists now page at 64 entries instead of 128.
+
 ## [1.4.1] - 2026-09-15
 
 ### Added
@@ -17,6 +36,15 @@ All notable changes to AxD are documented here. This project follows
   Lure** — the same actions the on-device audit screen offers, now remote. Deauth
   honors the two-tap confirm setting via a repeated tap. Both Touch and Mini
   screen chips participate.
+
+### Fixed
+
+- **Remote network list was incomplete.** `linkStreamWifiResults()` broadcast the
+  scanned APs on whatever channel the scan left the radio on, but the bridge only
+  listens on the rendezvous channel, so the phone saw a partial (often empty)
+  list. It now homes to the rendezvous channel before streaming and paces each
+  frame ~30 ms (with the bridge requesting a ~15 ms BLE connection interval) so
+  notifications don't overflow the ATT queue and drop APs.
 
 ## [1.4.0] - 2026-09-15
 
@@ -500,7 +528,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/dagnazty/awokxdag/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/dagnazty/awokxdag/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/dagnazty/awokxdag/compare/v1.3.5...v1.4.0
 [1.3.5]: https://github.com/dagnazty/awokxdag/compare/v1.3.4...v1.3.5

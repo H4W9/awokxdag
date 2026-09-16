@@ -1767,12 +1767,18 @@ bool ensureBleReady(bool needsWifi) {
 
 void releaseBleMemory() {
   // One-radio-at-a-time: fully free the BLE controller so Wi-Fi can reclaim its
-  // block. Mirrors ESP32 Marauder's shutdownBLE(): stop, clear results, let
-  // pending callbacks/timers drain, then a SINGLE deinit().
-  // NimBLEDevice::deinit() == deinit(false) frees controller RAM but KEEPS the
-  // NimBLEScan object. deinit(true) deletes it and runs ble_npl_callout_deinit()
-  // on the scan-response timer after the NimBLE port is already torn down ->
-  // null-ptr load (~0x6c) on loopTask (Guru Meditation, load access fault).
+  // block. Stop, clear results, let pending callbacks/timers drain, then a FULL
+  // deinit(true) -- the whole point is to empty the DMA pool every cycle so the
+  // repeated init/deinit doesn't slowly leak it away (~0.4 KB/cycle) and starve
+  // the radios after ~10 min.
+  // deinit(false) keeps the NimBLEScan object (and, on the C5 SOC controller,
+  // leaves host allocations behind that the next init re-creates); deinit(true)
+  // deletes the scan object too. The old crash that forced deinit(false) --
+  // ble_npl_callout_deinit() on the scan-response timer after the port was torn
+  // down (null-ptr load on loopTask) -- is guarded in NimBLE 2.5.1:
+  // NimBLEScan::onHostDeinit() deinits that timer and clears
+  // m_srTimerInitialized BEFORE the port teardown, so ~NimBLEScan() no longer
+  // touches it. getScan() re-creates the scan object on the next window.
   if (!NimBLEDevice::isInitialized()) return;
   NimBLEScan* scan = NimBLEDevice::getScan();
   if (scan) {
@@ -1780,26 +1786,18 @@ void releaseBleMemory() {
     scan->clearResults();
   }
   delay(100);
-  NimBLEDevice::deinit();
+  NimBLEDevice::deinit(true);
   logMemory("after BLE shutdown");
 }
 
-// --- Time-multiplexed dual-radio scheduler -------------------------------
-// The C5's ~70 KB DMA-capable SRAM cannot hold Wi-Fi (~44 KB) and the BLE
-// controller (~26 KB) at once, so a scan started while both are resident
-// fails with HCI 0x07 "Memory Capacity Exceeded" (NimBLE rc=519). Neither
-// pool is relocatable (Wi-Fi's DMA is fixed driver/coex overhead; the BLE
-// controller's bulk is the MSYS pool, allocated inside the closed C5
-// controller blob). Each radio works fine ALONE, so dual-radio views
-// alternate: only one radio is DMA-resident per window, each coming up into
-// a clean heap. GPS keeps logging throughout (UART, unaffected).
-
-// Settle gap after tearing one radio down before bringing the other up. The
-// controller/driver deinit returns before the hardware and its DMA are fully
-// released; bringing the other radio up too soon overlaps that teardown and
-// re-triggers the "Memory Capacity Exceeded" fault. Wait for the dust to
-// settle first.
-static const uint32_t kRadioSettleMs = 750;
+// --- Dual-radio scheduler (both radios resident, alternate scans) ---------
+// Historically the C5 couldn't hold Wi-Fi and the BLE controller at once, so
+// dual-radio views tore one down each window -- but the closed C5 controller
+// leaks ~0.4 KB DMA per init/deinit, which killed long wardrives. Shrinking the
+// in-RAM result tables (kResultCapacity) freed enough DMA-capable SRAM to keep
+// BOTH radios resident for the whole session (Wi-Fi ~34 KB + BLE ~33 KB, ~28 KB
+// to spare). So we now init BLE once and alternate only the SCANS -- no
+// teardown, no reinit, no leak (the ESP32-Marauder model). GPS logs throughout.
 
 // Start a fresh Wi-Fi window: STA is resident, (re)configure the view's
 // capture/scan via its enterWifi hook.
@@ -1812,105 +1810,78 @@ static void radioEnterWifiPhase(RadioScheduler& s) {
 
 // Bring BLE up (Wi-Fi already torn down) and start the view's scan. Returns
 // false if BLE init or scan-enable fails, leaving BLE released.
-static bool radioEnterBlePhase(RadioScheduler& s) {
-  // ensureBleReady(true): init BLE only, no Wi-Fi teardown (already done) and
-  // no radio-error screen on a transient per-window failure.
-  if (!ensureBleReady(true)) {
-    Serial.println("[radio] BLE init failed; staying on Wi-Fi this cycle");
-    return false;
-  }
-  NimBLEScan* scan = NimBLEDevice::getScan();
-  configureBleScan(scan, s.bleCallbacks, s.bleActiveScan, s.bleInterval,
-                   s.bleWindow, 0);
-  logMemory("BLE window start");
-  if (!scan->start(0, false, true)) {
-    Serial.println("[radio] BLE scan start failed; releasing BLE this cycle");
-    scan->stop();
-    scan->clearResults();
-    releaseBleMemory();
-    return false;
-  }
-  s.phase = RadioPhase::kBle;
-  s.phaseStartMs = millis();
-  Serial.println("[radio] phase -> BLE");
-  return true;
-}
-
-static void radioExitBlePhase() {
-  NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->stop();
-  scan->clearResults();
-  releaseBleMemory();  // frees the ~26 KB DMA back for Wi-Fi
-}
-
-// Enter a dual-radio view. Starts in the Wi-Fi window; on classic ESP32 (no
-// usable BLE budget) it stays Wi-Fi-only and never switches.
+// Enter a dual-radio view. Both radios come up RESIDENT and stay up for the
+// whole session -- only the SCANS alternate. Nothing is deinit-ed per cycle, so
+// the ESP32-C5 BLE controller's ~0.4 KB/cycle init/deinit leak never happens and
+// BLE runs the entire session (the ESP32-Marauder model). The shrunk result
+// tables (kResultCapacity) leave enough DMA for both to coexist (~28 KB free
+// with Wi-Fi + BLE both resident, measured).
 bool radioSchedulerBegin(RadioScheduler& s) {
 #if defined(AWOK_CLASSIC_ESP32)
   s.bleAvailable = false;
 #else
   s.bleAvailable = true;
 #endif
-  radiosCoexist = s.bleAvailable;  // drives "(Wi-Fi only)" UI + BLE counters
-  releaseBleMemory();              // clear any BLE resident from a prior view
   if (!ensureWifiStation(false)) {
     showRadioError("Wi-Fi initialization failed");
     return false;
   }
+  if (s.bleAvailable) {
+    // Bring BLE up ALONGSIDE Wi-Fi (needsWifi=true -> no Wi-Fi teardown) and keep
+    // it resident. If the pool somehow can't seat both, fall back to Wi-Fi-only.
+    if (ensureBleReady(true)) {
+      NimBLEScan* scan = NimBLEDevice::getScan();
+      configureBleScan(scan, s.bleCallbacks, s.bleActiveScan, s.bleInterval,
+                       s.bleWindow, 0);
+    } else {
+      s.bleAvailable = false;
+      Serial.println("[radio] BLE could not coexist; Wi-Fi-only this session");
+    }
+  }
+  radiosCoexist = s.bleAvailable;  // drives "(Wi-Fi only)" UI + BLE counters
   s.active = true;
-  radioEnterWifiPhase(s);
+  radioEnterWifiPhase(s);  // Wi-Fi scans first; BLE controller resident, idle
   return true;
 }
 
-// Called every update pass; swaps radios when the current window elapses.
+// Called every update pass; alternates which radio is SCANNING when the current
+// window elapses. Both controllers stay resident -- no teardown, no reinit, no
+// settle gap, no leak.
 void radioSchedulerTick(RadioScheduler& s) {
-  if (!s.active || !s.bleAvailable) return;  // Wi-Fi-only: nothing to switch
+  if (!s.active || !s.bleAvailable) return;  // Wi-Fi-only: nothing to alternate
   const uint32_t now = millis();
   const uint32_t elapsed = now - s.phaseStartMs;
+  NimBLEScan* scan = NimBLEDevice::getScan();
   if (s.phase == RadioPhase::kWifi) {
-    // Leave Wi-Fi once its scan is done (discrete-scan views) or the cap hits.
     if (elapsed < s.wifiWindowMs && !s.wifiScanDone) return;
-  } else if (elapsed < s.bleWindowMs) {
-    return;
-  }
-
-  if (s.phase == RadioPhase::kWifi) {
+    // Hand airtime to BLE: stop Wi-Fi capture, start the BLE scan. Wi-Fi STA
+    // stays resident (idle).
     if (s.exitWifi) s.exitWifi();
-    shutdownWifi();  // frees the ~44 KB DMA the BLE controller needs
-    delay(kRadioSettleMs);  // let Wi-Fi fully release before BLE claims the DMA
-    if (!radioEnterBlePhase(s)) {
-      // BLE unavailable this cycle: fall straight back into a Wi-Fi window.
-      if (!ensureWifiStation(false)) {
-        showRadioError("Wi-Fi initialization failed");
-        s.active = false;
-        return;
-      }
-      radioEnterWifiPhase(s);
-    }
+    if (scan) { scan->clearResults(); scan->start(0, false, true); }
+    s.phase = RadioPhase::kBle;
+    s.phaseStartMs = now;
+    Serial.println("[radio] scan -> BLE (both resident)");
   } else {
-    radioExitBlePhase();
-    delay(kRadioSettleMs);  // let BLE fully release before Wi-Fi claims the DMA
-    if (!ensureWifiStation(false)) {
-      showRadioError("Wi-Fi initialization failed");
-      s.active = false;
-      return;
-    }
+    if (elapsed < s.bleWindowMs) return;
+    // Hand it back to Wi-Fi: stop the BLE scan (controller stays resident).
+    if (scan) { scan->stop(); scan->clearResults(); }
     radioEnterWifiPhase(s);
-    Serial.println("[radio] phase -> Wi-Fi");
+    Serial.println("[radio] scan -> Wi-Fi (both resident)");
   }
 }
 
-// Leave a dual-radio view: stop the active radio and restore the resident-STA
-// invariant the rest of the firmware relies on.
+// Leave a dual-radio view: stop scanning, free the resident BLE controller ONCE
+// (the only deinit of the session), and restore the resident-STA invariant.
 void radioSchedulerEnd(RadioScheduler& s) {
   if (!s.active) return;
   s.active = false;
-  if (s.phase == RadioPhase::kBle) {
-    radioExitBlePhase();
-    ensureWifiStation(false);  // bring STA back after the BLE window
-  } else if (s.exitWifi) {
-    s.exitWifi();
+  if (s.phase == RadioPhase::kWifi && s.exitWifi) s.exitWifi();
+  if (s.bleAvailable) {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (scan) { scan->stop(); scan->clearResults(); }
+    releaseBleMemory();          // single BLE deinit, at tool exit only
   }
+  ensureWifiStation(false);      // STA resident for the rest of the firmware
 }
 
 bool lastWifiScanOk = false;

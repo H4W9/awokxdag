@@ -264,6 +264,11 @@ void linkDrainPackets() {
 // bridge listens.
 void linkStreamWifiResults() {
   if (!linkEspNowReady) return;
+  // A scan leaves the radio on an arbitrary channel; the bridge only listens on
+  // the rendezvous channel, so home there before streaming or the phone sees a
+  // partial (or empty) list. Safe: this is only called from idle (scan complete
+  // or a ListWifi request), never mid-hop.
+  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
   const int n = wifiCount;
   for (int i = 0; i < n; ++i) {
     AxdWifiResult r;
@@ -276,9 +281,12 @@ void linkStreamWifiResults() {
     r.auth = static_cast<uint8_t>(wifiEntries[i].auth);
     strncpy(r.ssid, wifiEntries[i].ssid.c_str(), sizeof(r.ssid) - 1);
     esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&r), sizeof(r));
-    delay(6);  // pace so the bridge/BLE stack keeps up
+    // Each frame becomes one BLE notification at the bridge; pace slower than the
+    // phone's connection interval so the ATT tx queue never overflows and drops
+    // APs. ~30 ms comfortably clears a 15 ms negotiated interval.
+    delay(30);
   }
-  Serial.printf("[remote] streamed %d Wi-Fi result(s)\n", n);
+  Serial.printf("[remote] streamed %d Wi-Fi result(s) on ch %u\n", n, kLinkChannel);
 }
 
 void linkDispatchCommand(uint8_t op, uint8_t arg) {

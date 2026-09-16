@@ -126,8 +126,11 @@ class CmdCallbacks : public NimBLECharacteristicCallbacks {
 };
 
 class ServerCallbacks : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer*, NimBLEConnInfo&) override {
+  void onConnect(NimBLEServer* s, NimBLEConnInfo& info) override {
     g_connected = true;
+    // Ask for a short connection interval (~15 ms) so the burst of Wi-Fi result
+    // notifications drains without overflowing the ATT tx queue (dropping APs).
+    s->updateConnParams(info.getConnHandle(), 12, 12, 0, 200);
     Serial.println("[bridge] phone connected");
   }
   void onDisconnect(NimBLEServer*, NimBLEConnInfo&, int reason) override {

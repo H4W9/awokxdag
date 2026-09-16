@@ -402,8 +402,12 @@ void startWardrive() {
   wardriveSched.bleCallbacks = &wardriveBleCallbacks;  // passive scan
   // Wi-Fi window ends when the scan completes; cap high so a slow dual-band
   // sweep is never cut off mid-scan (which would log zero APs).
-  wardriveSched.wifiWindowMs = 20000;
-  wardriveSched.bleWindowMs = 6000;
+  // Long Wi-Fi dwell (many scan passes) between short BLE windows: minimizes the
+  // number of BLE controller init/deinit cycles (each leaks ~0.4 KB DMA in the
+  // closed C5 blob) so BLE survives most of a session, while Wi-Fi -- the
+  // primary wardrive radio -- gets the majority of airtime.
+  wardriveSched.wifiWindowMs = 30000;
+  wardriveSched.bleWindowMs = 8000;
   if (!radioSchedulerBegin(wardriveSched)) return;
 
   Serial.println(radiosCoexist
@@ -462,7 +466,13 @@ void updateWardrive() {
       }
       WiFi.scanDelete();
       ++wardriveScans;
-      wardriveSched.wifiScanDone = true;  // end the Wi-Fi window; switch to BLE
+      // Keep scanning for the whole Wi-Fi window (multiple passes) instead of
+      // ending after one scan. Every Wi-Fi<->BLE switch triggers a BLE
+      // controller init/deinit, and the closed C5 controller leaks ~0.4 KB DMA
+      // per such cycle -- so switching less often is what keeps BLE alive across
+      // a long wardrive (and a longer dwell captures more APs while driving).
+      // The scheduler ends this window at wifiWindowMs.
+      WiFi.scanNetworks(true, true, false, 120);
     } else {
       // not started / failed: kick off a scan
       WiFi.scanNetworks(true, true, false, 120);

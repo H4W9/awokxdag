@@ -57,7 +57,7 @@ constexpr int kHeaderHeight = 42;
 constexpr int kFooterTop = 278;
 // Classic ESP32 has a much smaller statically addressable DRAM segment and no
 // verified PSRAM on these display pins. Keep bounded tables within its budget.
-constexpr int kResultCapacity = AwokPins::kDualBand ? 128 : 32;
+constexpr int kResultCapacity = AwokPins::kDualBand ? 64 : 32;
 constexpr int kMaxWifiResults = kResultCapacity;
 constexpr int kMaxBleResults = kResultCapacity;
 // NimBLE reserves 255 for unlimited retention; keep snapshot scans bounded.
@@ -99,7 +99,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.4.1";
+constexpr char kVersion[] = "1.4.2";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
