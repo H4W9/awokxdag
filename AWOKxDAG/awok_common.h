@@ -43,6 +43,7 @@
 bool radiosCoexist = false;
 #elif defined(AWOK_HEADLESS)
 #include "headless_display.h"  // orange bridge chip: no screen, BLE-driven
+#include "result_memory.h"     // PSRAM-backed result tables (frees DMA)
 bool radiosCoexist = true;     // C5: Wi-Fi + BLE run resident together
 // Bridge BLE server hooks (defined in bridge_ble.ino); forward-declared so the
 // main sketch and link.ino can notify the phone regardless of .ino tab order.
@@ -109,7 +110,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.4.3";
+constexpr char kVersion[] = "1.4.4";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;

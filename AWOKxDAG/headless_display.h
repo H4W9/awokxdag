@@ -23,4 +23,7 @@ class AwokHeadlessDisplay : public Adafruit_GFX {
   // setCursor, setTextColor, ...) is provided by Adafruit_GFX on top of this.
   void drawPixel(int16_t, int16_t, uint16_t) override {}
   void fillScreen(uint16_t) override {}
+  // Skip glyph rasterization entirely: print()/printf() would otherwise walk the
+  // font bitmap calling drawPixel() for every pixel, burning CPU for no output.
+  size_t write(uint8_t) override { return 1; }
 };

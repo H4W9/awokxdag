@@ -45,7 +45,7 @@ AwokTouchDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
 XPT2046_Touchscreen touch(AwokPins::kTouchCs);
 #endif
 
-#ifdef AWOK_MINI_DISPLAY
+#if defined(AWOK_MINI_DISPLAY) || defined(AWOK_HEADLESS)
 MiniResultTable<WifiEntry, kMaxWifiResults> wifiEntries;
 MiniResultTable<BleEntry, kMaxBleResults> bleEntries;
 MiniResultTable<ClientEntry, kMaxClients> clientEntries;
@@ -2199,7 +2199,7 @@ void setup() {
   // controller resident would strand the DMA and crash on the first teardown.
   ensureWifiStation(false);
 #endif
-#ifdef AWOK_MINI_DISPLAY
+#if defined(AWOK_MINI_DISPLAY) || defined(AWOK_HEADLESS)
   resultTablesReady = wifiEntries.initialize(resultTableExternalBytes) &&
       bleEntries.initialize(resultTableExternalBytes) &&
       clientEntries.initialize(resultTableExternalBytes) &&
@@ -2240,7 +2240,7 @@ void setup() {
 }
 
 void loop() {
-#ifdef AWOK_MINI_DISPLAY
+#if defined(AWOK_MINI_DISPLAY) || defined(AWOK_HEADLESS)
   if (!resultTablesReady) { delay(50); return; }
 #endif
   updateGps();

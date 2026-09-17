@@ -18,11 +18,20 @@ NimBLECharacteristic* g_bridgeStatus = nullptr;
 NimBLECharacteristic* g_bridgeResults = nullptr;
 volatile bool g_bridgePhoneConnected = false;
 
-// Channel-sweep relay to the white chip (same approach as the old standalone
-// bridge): the screen chip hops while a tool runs, so send the command on every
-// channel, a few passes, tagged with a sequence number the screen de-dups.
-static const uint8_t kBridgeSweeps = 3;
-static const uint32_t kBridgeChanDwellMs = 3;
+// Relay a command to the white chip over ESP-NOW. The screen chip parks on the
+// rendezvous channel when idle and hops across the plan while a tool runs, so:
+//   1) burst on the rendezvous channel first -- an idle screen chip (the common
+//      case: starting a tool, or anything issued from Home/a results view) gets
+//      it instantly with no channel hopping at all;
+//   2) then a short channel sweep as the fallback for a tool that is actively
+//      hopping (e.g. Stop mid-scan).
+// A per-command sequence number lets the screen act on it exactly once despite
+// the burst + sweep repeats. Cutting 3 sweeps -> 2 and the dwell 3 ms -> 2 ms,
+// plus the rendezvous burst, roughly halves the relay's on-air time and radio
+// churn while keeping delivery reliable.
+static const uint8_t kBridgeRvBurst = 4;      // rendezvous-channel sends first
+static const uint8_t kBridgeSweeps = 2;       // fallback full-plan passes
+static const uint32_t kBridgeChanDwellMs = 2; // per-channel dwell in a sweep
 static uint16_t g_bridgeSeq = 0;
 
 static void bridgeRelayToScreen(uint8_t op, uint8_t arg) {
@@ -33,6 +42,12 @@ static void bridgeRelayToScreen(uint8_t op, uint8_t arg) {
   p.code = g_bridgeSeq;
   p.reserved = static_cast<uint16_t>(op) | (static_cast<uint16_t>(arg) << 8);
   memcpy(p.srcMac, linkSelfMac, 6);
+
+  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+  for (uint8_t i = 0; i < kBridgeRvBurst; ++i) {
+    esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&p), sizeof(p));
+    delay(2);
+  }
   for (uint8_t pass = 0; pass < kBridgeSweeps; ++pass) {
     for (int i = 0; i < kLink24ChannelCount; ++i) {
       esp_wifi_set_channel(kLink24Channels[i], WIFI_SECOND_CHAN_NONE);
@@ -45,7 +60,7 @@ static void bridgeRelayToScreen(uint8_t op, uint8_t arg) {
       delay(kBridgeChanDwellMs);
     }
   }
-  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);  // home for telem
 }
 
 // Push one status/result blob to the phone with a source tag prefixed.
@@ -117,6 +132,7 @@ class BridgeServerCallbacks : public NimBLEServerCallbacks {
 void bridgeBleBegin() {
   if (!NimBLEDevice::isInitialized()) NimBLEDevice::init("AxD-Bridge");
   NimBLEDevice::setPower(3);
+  NimBLEDevice::setMTU(247);  // fewer fragments -> faster result/CSV streaming
   NimBLEServer* server = NimBLEDevice::createServer();
   server->setCallbacks(new BridgeServerCallbacks());
   NimBLEService* svc = server->createService(kBridgeSvcUuid);

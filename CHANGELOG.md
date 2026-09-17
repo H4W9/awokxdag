@@ -5,6 +5,26 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-09-17
+
+### Changed
+
+- **Bridge firmware optimized (RAM + BLE).** The bridge's five largest result
+  tables (Wi-Fi, BLE, Clients, Probe Intel, Karma) now allocate in PSRAM via
+  `MiniResultTable` (as the Mini already does), moving ~24 KB out of the DMA
+  pool: free DMA with the GATT server + Wi-Fi both up rose from ~29 KB to
+  **~53 KB** (measured). The headless display's `write()` is a true no-op so
+  `print/printf` no longer rasterize glyphs to a screen that isn't there (CPU
+  saved on every redraw), and the bridge requests a **247-byte BLE MTU** so
+  result/CSV notifications send in fewer fragments.
+- **ESP-NOW relay optimized.** Commands relayed to the white screen chip now
+  **burst on the rendezvous channel first** (an idle screen chip parks there, so
+  starting a tool / any command from Home or a results view lands instantly with
+  no channel hopping), then fall back to a **shorter channel sweep** (2 passes
+  instead of 3, 2 ms dwell instead of 3) only for a tool that is actively
+  hopping. Roughly halves the relay's on-air time and radio churn while keeping
+  Stop-mid-tool delivery reliable (per-command sequence number still de-dups).
+
 ## [1.4.3] - 2026-09-17
 
 ### Added
@@ -583,7 +603,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.4...HEAD
+[1.4.4]: https://github.com/dagnazty/awokxdag/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/dagnazty/awokxdag/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/dagnazty/awokxdag/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/dagnazty/awokxdag/compare/v1.4.0...v1.4.1
