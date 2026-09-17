@@ -49,6 +49,10 @@
   .net .mb { color:var(--muted); font-size:11px;
              font-variant-numeric:tabular-nums; }
   .net .rs { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .seg { display:flex; gap:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .seg button { flex:1; border:0; border-radius:0; background:var(--card);
+                color:var(--muted); font-weight:600; padding:12px; cursor:pointer; }
+  .seg button.on { background:var(--accent); color:#04121f; }
   [hidden]{ display:none !important; }
 </style>
 </head>
@@ -68,6 +72,16 @@
       <span style="flex:1"></span>
       <button id="connect" class="primary">Connect</button>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="k" style="margin-bottom:8px">Target chip — where commands run</div>
+    <div class="seg" id="target-seg">
+      <button data-target="1" class="on">Screen chip</button>
+      <button data-target="0">This bridge</button>
+    </div>
+    <div id="tgt-note" class="k" style="margin-top:8px" hidden>
+      GPS wardrive &amp; Files/SD are screen-chip only on the bridge.</div>
   </div>
 
   <div class="card">
@@ -171,6 +185,9 @@ const STATUS  = "a0d10000-1234-4a3c-8b21-000000000003"; // notify/read
 const RESULTS = "a0d10000-1234-4a3c-8b21-000000000004"; // notify (Wi-Fi list)
 const OP_SELECT_WIFI = 51;
 const TARGET_OPS = [52,53,54,22,23];  // need a selected network
+const TGT_BRIDGE = 0, TGT_SCREEN = 1;
+let target = TGT_SCREEN;  // which chip runs the command
+const GPSSD_OPS = [7,8,9,42];  // wardrive/GPS/files -- screen-chip only for now
 
 const $ = (id) => document.getElementById(id);
 const log = (m) => { const d=$("log"); d.textContent += (new Date().toLocaleTimeString()+"  "+m+"\n"); d.scrollTop=d.scrollHeight; };
@@ -182,7 +199,7 @@ function setConnected(on){
   $("state").textContent = on ? "Connected" : "Disconnected";
   $("connect").textContent = on ? "Disconnect" : "Connect";
   document.querySelectorAll("button[data-op]").forEach(b => b.disabled = !on);
-  if (on) refreshTargetButtons();
+  if (on) { refreshTargetButtons(); applyTargetGating(); }
   if (!on){ nets.clear(); selIndex=null; renderNets(); }
 }
 
@@ -196,11 +213,11 @@ function refreshTargetButtons(){
 
 const AUTH = ["open","WEP","WPA","WPA2","WPA2E","WPA3","WPA2/3","WAPI","OWE"];
 function parseResult(dv){
-  if (dv.byteLength < 11) return;
-  const i = dv.getUint8(0), count = dv.getUint8(1);
-  const rssi = dv.getInt8(2), ch = dv.getUint8(3), auth = dv.getUint8(4);
-  let mac=[]; for (let k=0;k<6;k++) mac.push(dv.getUint8(5+k).toString(16).padStart(2,"0"));
-  let ssid=""; for (let k=11;k<dv.byteLength;k++) ssid += String.fromCharCode(dv.getUint8(k));
+  if (dv.byteLength < 12) return;            // [source][index][count][rssi][ch][auth][bssid6][ssid]
+  const i = dv.getUint8(1), count = dv.getUint8(2);
+  const rssi = dv.getInt8(3), ch = dv.getUint8(4), auth = dv.getUint8(5);
+  let mac=[]; for (let k=0;k<6;k++) mac.push(dv.getUint8(6+k).toString(16).padStart(2,"0"));
+  let ssid=""; for (let k=12;k<dv.byteLength;k++) ssid += String.fromCharCode(dv.getUint8(k));
   nets.set(i, {i, count, rssi, ch, auth, bssid:mac.join(":"), ssid});
   renderNets();
 }
@@ -233,16 +250,15 @@ setConnected(false);
 if (!navigator.bluetooth) $("nobt").hidden = false;
 
 function parseStatus(dv){
-  // Firmware sends a small status blob: [wifi:u32][ble:u32][toolId:u8].
+  // Tagged status blob: [source:u8][wifi:u32][ble:u32][toolId:u8]. The initial
+  // characteristic value is the text "ready" (no numbers) -- ignore that.
   try {
-    if (dv.byteLength >= 8){
-      $("wifi").textContent = dv.getUint32(0, true);
-      $("ble").textContent  = dv.getUint32(4, true);
+    if (dv.byteLength >= 10){
+      $("wifi").textContent = dv.getUint32(1, true);
+      $("ble").textContent  = dv.getUint32(5, true);
+      $("tool").textContent = "#"+dv.getUint8(9);
     }
-    if (dv.byteLength >= 9) $("tool").textContent = "#"+dv.getUint8(8);
-  } catch(e){ /* text status */
-    $("tool").textContent = new TextDecoder().decode(dv);
-  }
+  } catch(e){ /* leave prior values */ }
 }
 
 async function connect(){
@@ -278,9 +294,30 @@ async function disconnect(){ if (device?.gatt?.connected) device.gatt.disconnect
 
 async function sendOp(op, arg=0){
   if (!cmdCh){ log("not connected"); return; }
-  try { await cmdCh.writeValue(new Uint8Array([op, arg])); log("sent op "+op+(arg?(" arg "+arg):"")); }
+  try { await cmdCh.writeValue(new Uint8Array([op, arg, target]));
+        log("sent op "+op+(arg?(" arg "+arg):"")+" -> "+(target===TGT_BRIDGE?"bridge":"screen")); }
   catch(e){ log("send failed: "+e.message); }
 }
+
+function applyTargetGating(){
+  const bridge = target === TGT_BRIDGE;
+  $("tgt-note").hidden = !bridge;
+  GPSSD_OPS.forEach(op => {
+    document.querySelectorAll('button[data-op="'+op+'"]').forEach(b => {
+      b.dataset.gps = "1";
+      b.disabled = !(device?.gatt?.connected) || (bridge);
+    });
+  });
+}
+document.querySelectorAll('#target-seg button').forEach(b =>
+  b.addEventListener("click", () => {
+    target = Number(b.dataset.target);
+    document.querySelectorAll('#target-seg button').forEach(x =>
+      x.classList.toggle("on", x === b));
+    nets.clear(); selIndex = null; renderNets();  // lists are per-chip
+    applyTargetGating();
+    log("target = " + (target===TGT_BRIDGE ? "this bridge" : "screen chip"));
+  }));
 
 $("connect").addEventListener("click", () => (device?.gatt?.connected ? disconnect() : connect()));
 document.querySelectorAll("button[data-op]").forEach(b =>
