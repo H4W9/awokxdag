@@ -1,5 +1,6 @@
 // Arduino IDE selection.
 #if !defined(AWOK_DUAL_C5_TOUCH) && !defined(AWOK_DUAL_C5_MINI) && \
+    !defined(AWOK_DUAL_C5_BRIDGE) && \
     !defined(AWOK_DUAL_ESP32_TOUCH_V1) && !defined(AWOK_DUAL_ESP32_TOUCH_V2) && \
     !defined(AWOK_DUAL_ESP32_TOUCH_V3) && \
     !defined(AWOK_DUAL_ESP32_MINI_V1) && !defined(AWOK_DUAL_ESP32_MINI_V2) && \
@@ -28,6 +29,16 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2,
 
 #ifdef AWOK_MINI_DISPLAY
 AwokMiniDisplay display;
+#elif defined(AWOK_HEADLESS)
+AwokHeadlessDisplay display;  // no-op sink; the bridge has no screen
+// No touch panel on the bridge; a stub keeps every touch.* call compiling and
+// inert (touched() == false), so the input paths just never report a press.
+struct AwokHeadlessTouch {
+  bool begin() { return false; }
+  void setRotation(uint8_t) {}
+  bool touched() { return false; }
+  TS_Point getPoint() { return TS_Point(0, 0, 0); }
+} touch;
 #else
 AwokTouchDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
                          AwokPins::kDisplayReset);
@@ -67,6 +78,7 @@ bool backlightDimmed = false;
 uint32_t lastActivityMs = 0;
 bool lastSettingsWriteOk = true;
 bool scanInProgress = false;
+bool wifiScanContinuous = false;  // Wi-Fi Scan tool: keep scanning + merging
 bool pktmonActive = false;      // packet monitor (state defined in pktmon.ino)
 bool wpsScanActive = false;     // WPS scan (state defined in wps.ino)
 bool rogueWatchActive = false;  // rogue-AP watch (state in roguewatch.ino)
@@ -815,6 +827,8 @@ void drawBootScreen() {
   // (see scripts/gen_mini_boot.py). splash() pushes it straight to the ST7735.
   display.splash(kMiniBootScreenBitmap, kMiniBootScreenWidth,
                  kMiniBootScreenHeight);
+#elif defined(AWOK_HEADLESS)
+  // Headless bridge: no splash.
 #else
   // XBM stores black source pixels as set bits. Painting those black over a
   // white canvas preserves the supplied white-on-black composition exactly.
@@ -1536,7 +1550,7 @@ String reconItemLabel(int index) {
 void launchReconItem(int index) {
   const String label = kReconItems[index];
   if (label == "Wi-Fi Scan") {
-    scanWifi();
+    startWifiScanContinuous();
   } else if (label == "Channel Map") {
     if (wifiCount) {
       drawChannelMap();
@@ -1785,9 +1799,17 @@ void releaseBleMemory() {
     scan->stop();
     scan->clearResults();
   }
+#ifdef AWOK_HEADLESS
+  // The orange bridge hosts the BLE GATT server the phone is connected to;
+  // deinit-ing NimBLE would drop that connection. It has ample DMA to keep BLE
+  // resident (Gate 0: ~29 KB free with server + Wi-Fi up), so only stop the
+  // scan -- never tear the controller down.
+  return;
+#else
   delay(100);
   NimBLEDevice::deinit(true);
   logMemory("after BLE shutdown");
+#endif
 }
 
 // --- Dual-radio scheduler (both radios resident, alternate scans) ---------
@@ -1926,7 +1948,92 @@ void scanWifi() {
   scanInProgress = false;
   lastWifiScanOk = true;
   drawWifiResults();
+#ifdef AWOK_HEADLESS
+  if (g_bridgePhoneConnected) linkStreamWifiResults();  // bridge -> phone (BLE)
+#else
   if (remoteActive) linkStreamWifiResults();  // push the list to the phone
+#endif
+}
+
+// Continuous Wi-Fi scan for the Wi-Fi Scan tool: async re-scan on a loop,
+// MERGING results by BSSID so the list accumulates every AP seen (not just the
+// ones present in the latest sweep). New APs are streamed to the phone as they
+// appear; RSSI of known APs is refreshed in place. Runs until the view changes
+// or a Stop. scanWifi() above stays the blocking one-shot primitive that the
+// channel map / connect flow rely on.
+static int findWifiByBssid(const String& bssid) {
+  for (int i = 0; i < wifiCount; ++i)
+    if (wifiEntries[i].bssid == bssid) return i;
+  return -1;
+}
+
+static int mergeScannedWifi(int found) {
+  int added = 0;
+  for (int i = 0; i < found; ++i) {
+    String bssid = WiFi.BSSIDstr(i);
+    int idx = findWifiByBssid(bssid);
+    if (idx < 0) {
+      if (wifiCount >= kMaxWifiResults) continue;
+      idx = wifiCount++;
+      wifiEntries[idx].bssid = bssid;
+      ++added;
+    }
+    wifiEntries[idx].ssid = WiFi.SSID(i);
+    wifiEntries[idx].rssi = WiFi.RSSI(i);
+    wifiEntries[idx].channel = WiFi.channel(i);
+    wifiEntries[idx].auth = WiFi.encryptionType(i);
+  }
+  return added;
+}
+
+void startWifiScanContinuous() {
+  if (!ensureWifiStation()) {
+    showRadioError("Wi-Fi initialization failed");
+    return;
+  }
+  WiFi.disconnect(false, false);
+  wifiCount = 0;
+  wifiPage = 0;
+  wifiScanContinuous = true;
+  lastWifiScanOk = true;
+  currentView = View::kWifi;
+  WiFi.scanNetworks(true, true, true);  // async, show-hidden, passive
+  drawScanning("WI-FI");  // immediate feedback; first results replace it
+  Serial.println("[wifi] continuous scan started");
+}
+
+void stopWifiScanContinuous() {
+  if (!wifiScanContinuous) return;
+  wifiScanContinuous = false;
+  WiFi.scanDelete();
+  Serial.println("[wifi] continuous scan stopped");
+}
+
+void updateWifiScan() {
+  if (!wifiScanContinuous) return;
+  if (currentView != View::kWifi) { stopWifiScanContinuous(); return; }
+  const int r = WiFi.scanComplete();
+  if (r == WIFI_SCAN_RUNNING) return;
+  if (r >= 0) {
+    const int added = mergeScannedWifi(r);
+    WiFi.scanDelete();
+    if (added > 0) sortWifi();
+    drawWifiResults();
+    if (added > 0) {  // only stream when the list grew (keeps BLE traffic sane)
+#ifdef AWOK_HEADLESS
+      if (g_bridgePhoneConnected) linkStreamWifiResults();
+#else
+      if (remoteActive) linkStreamWifiResults();
+#endif
+    }
+    // Throttle SD writes: saving the full CSV every sweep thrashes the card.
+    static uint32_t lastWifiExportMs = 0;
+    if (added > 0 && millis() - lastWifiExportMs >= 15000) {
+      lastWifiExportMs = millis();
+      lastScanSdWriteOk = exportWifiScanToSd();
+    }
+  }
+  if (wifiScanContinuous) WiFi.scanNetworks(true, true, true);  // next sweep
 }
 
 void scanWifiForChannelMap() {
@@ -2122,8 +2229,13 @@ void setup() {
   if (sdReady) lastSavedSdWriteOk = exportSavedNetworksToSd();
   drawHome();
   display.present();  // both boards buffer now; blit the first frame
+#ifdef AWOK_HEADLESS
+  bridgeBleBegin();  // orange bridge: run the BLE GATT server the phone connects
+                     // to; commands dispatch locally or relay to the white chip.
+#else
   remoteBegin();  // Touch and Mini alike: listen for the orange bridge chip so
                   // a phone can drive this screen chip over ESP-NOW.
+#endif
   logMemory("ready");
 }
 
@@ -2139,6 +2251,7 @@ void loop() {
   handleSerial();
   updateBacklightSleep();
   updateScreenTest();
+  updateWifiScan();
   updateWifiSignalMonitor();
   updateDeauthMonitor();
   updateDeauthAttack();
@@ -2165,6 +2278,15 @@ void loop() {
   updateAuthFlood();
   updateAdvancedWatch();
   updateLink();
+#ifdef AWOK_HEADLESS
+  bridgeServiceCommand();  // run any phone command off the BLE host task
+  // Bridge: stream live status to the phone about once a second (no ESP-NOW).
+  static uint32_t lastBridgeStatusMs = 0;
+  if (g_bridgePhoneConnected && millis() - lastBridgeStatusMs >= 1000) {
+    lastBridgeStatusMs = millis();
+    linkBroadcastStatus();
+  }
+#endif
   updateNetworkTools();
   // Live-refresh the GPS status screen while it is open.
   static uint32_t lastGpsScreenDrawMs = 0;

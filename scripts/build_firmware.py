@@ -30,6 +30,13 @@ NIMBLE_OBSERVER_ONLY_FLAGS = (
     "-DCONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED "
     "-DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED"
 )
+# The merged bridge runs the full firmware headless with a GATT server: it needs
+# the PERIPHERAL role (server) AND the OBSERVER role (BLE-scan tools), so only
+# Central + Broadcaster are trimmed.
+NIMBLE_BRIDGE_FLAGS = (
+    "-DCONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED "
+    "-DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED"
+)
 LINKER_WRAP_FLAGS = (
     "-Wl,-z,muldefs "
     "-Wl,--wrap=esp_wifi_init -Wl,--wrap=esp_bt_controller_init"
@@ -46,10 +53,10 @@ PROFILES = {
     "dual-esp32-mini-v3": (CLASSIC_FQBN, "AWOK_DUAL_ESP32_MINI_V3"),
 }
 
-# The orange bridge is a separate headless sketch (BLE GATT + ESP-NOW), not a
-# board profile of the main firmware: no display define, NimBLE Peripheral role
-# (so no Observer-only trim), no linker wraps, and it needs the AWOKxDAG include
-# dir for the shared link_protocol.h.
+# The orange bridge now runs the SAME firmware as the white chip, just headless
+# (no display/touch) with the BLE GATT server folded in: it is a board profile
+# of AWOKxDAG.ino (AWOK_DUAL_C5_BRIDGE), with the main firmware's linker wraps
+# and a NimBLE role set that keeps PERIPHERAL (server) + OBSERVER (scan tools).
 BRIDGE = "dual-c5-bridge"
 ALL_TARGETS = tuple(PROFILES) + (BRIDGE,)
 
@@ -69,9 +76,9 @@ def main():
 
     if args.board == BRIDGE:
         fqbn = C5_FQBN
-        sketch = ROOT / "AxDBridge/AxDBridge.ino"
-        celf_flags = ""
-        cpp_flags = f"-I{ROOT / 'AWOKxDAG'}"
+        sketch = ROOT / "AWOKxDAG/AWOKxDAG.ino"
+        celf_flags = LINKER_WRAP_FLAGS
+        cpp_flags = f"-DAWOK_DUAL_C5_BRIDGE {NIMBLE_BRIDGE_FLAGS}"
     else:
         fqbn, define = PROFILES[args.board]
         sketch = ROOT / "AWOKxDAG/AWOKxDAG.ino"

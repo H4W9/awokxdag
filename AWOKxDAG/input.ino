@@ -564,7 +564,7 @@ void handleTouch() {
       } else if (x < 192) {
         drawDeauthSelect();
       } else {
-        scanWifi();
+        startWifiScanContinuous();
       }
     } else {
       if (x < 80) {
@@ -572,7 +572,7 @@ void handleTouch() {
       } else if (x < 160) {
         drawDeauthSelect();
       } else {
-        scanWifi();
+        startWifiScanContinuous();
       }
     }
     return;
@@ -674,6 +674,7 @@ bool toolBlocksSerialShortcuts() {
 }
 
 void stopActiveTools() {
+  stopWifiScanContinuous();
   if (deauthAttackActive) stopDeauthAttack();
   if (deauthMonitorActive) stopDeauthMonitor();
   if (handshakeCaptureActive) stopHandshakeCapture();
@@ -736,7 +737,7 @@ void handleSerial() {
     Serial.printf("\n[gps] raw echo %s\n", gpsRawEcho ? "ON" : "OFF");
     if (currentView == View::kSettings) drawSettings();
   }
-  if (command == 'w') scanWifi();
+  if (command == 'w') startWifiScanContinuous();
   if (command == 'c') {
     if (wifiCount) {
       drawChannelMap();

@@ -41,6 +41,16 @@
 // with Wi-Fi via RadioScheduler; it is never resident at the same time).
 // False keeps a view Wi-Fi-only. Set by radioSchedulerBegin.
 bool radiosCoexist = false;
+#elif defined(AWOK_HEADLESS)
+#include "headless_display.h"  // orange bridge chip: no screen, BLE-driven
+bool radiosCoexist = true;     // C5: Wi-Fi + BLE run resident together
+// Bridge BLE server hooks (defined in bridge_ble.ino); forward-declared so the
+// main sketch and link.ino can notify the phone regardless of .ino tab order.
+extern volatile bool g_bridgePhoneConnected;
+void bridgeBleBegin();
+void bridgeNotifyStatus(uint8_t source, const uint8_t* body, size_t len);
+void bridgeNotifyResult(uint8_t source, const uint8_t* body, size_t len);
+void bridgeServiceCommand();
 #else
 #ifdef AWOK_CLASSIC_ESP32
 bool radiosCoexist = false;
@@ -99,7 +109,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.4.2";
+constexpr char kVersion[] = "1.4.3";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;

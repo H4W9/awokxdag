@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.4.2
+- **Version:** 1.4.3
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -25,12 +25,14 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
 ## Features
 
 ### Recon (passive)
-- **Wi-Fi Scan** — dual-band discovery for up to 128 APs: SSID, BSSID, RSSI,
+- **Wi-Fi Scan** — dual-band discovery for up to 64 APs: SSID, BSSID, RSSI,
   channel, band, and advertised auth mode, with Prev/Next paging after ten.
-  Tap a result for a passive audit; **Track** graphs its RSSI; **Deauth** targets
-  it; **Grab** jumps straight to handshake capture.
+  Scans **continuously**, merging by BSSID so the list accumulates every AP seen
+  (RSSI refreshed in place) until you select one or leave. Tap a result for a
+  passive audit; **Track** graphs its RSSI; **Deauth** targets it; **Grab** jumps
+  straight to handshake capture.
 - **Channel Map** — 2.4 GHz and detected 5 GHz channel occupancy chart.
-- **BLE Scan** — up to 128 advertisers with Prev/Next paging and tap-to-inspect detail (address
+- **BLE Scan** — up to 64 advertisers with Prev/Next paging and tap-to-inspect detail (address
   type, TX power, connectable/scannable, manufacturer data, service UUIDs).
   Advertised Flipper service UUIDs get an **[F?]** hint and CSV identification field;
   the hint does not verify device identity.
@@ -306,11 +308,12 @@ The port is autodetected when only one is present; pass `--port` if several
 serial devices are attached. Any board profile `build_firmware.py` accepts
 works here too.
 
-### Phone control over BLE (two-chip bridge)
+### Phone control over BLE (both chips)
 
-The Dual C5 has two ESP32-C5 chips. Flash the **screen** chip (white port) with
-its normal firmware — `dual-c5-touch` **or** `dual-c5-mini`, both listen for the
-bridge — and the **headless** chip (orange port) with the bridge:
+The Dual C5 has two ESP32-C5 chips, and **both now run the full firmware**. Flash
+the **screen** chip (white port) with `dual-c5-touch` **or** `dual-c5-mini`, and
+the **bridge** chip (orange port) with `dual-c5-bridge` — the *same* firmware
+built headless (no screen) with a BLE GATT server folded in:
 
 ```bash
 python3 scripts/flash_firmware.py dual-c5-touch    # (or dual-c5-mini) white port
@@ -320,14 +323,17 @@ python3 scripts/flash_firmware.py dual-c5-bridge   # cable in the orange port
 The bridge advertises as **`AxD-Bridge`** over BLE. Open the control page —
 `https://dagnazty.github.io/awokxdag/control.html` (or the local
 `website/public/control.html`) — in **Bluefy** on iOS or **Chrome** on Android
-(Safari has no Web Bluetooth), tap **Connect**, and drive the screen chip: Wi-Fi
-/ BLE scan, channel map, packet monitor, deauth watch, clients, wardrive
-start/stop, GPS, and Stop/Home. Live counts stream back to the phone.
+(Safari has no Web Bluetooth), tap **Connect**, then pick a **Target chip**:
 
-The split keeps BLE (bridge) and Wi-Fi (screen) on separate chips, so the phone
-link is never dropped by the screen chip's channel hopping; the bridge sweeps
-every channel when sending a command so it reaches the screen chip even while a
-tool is hopping. The two chips talk over ESP-NOW; the shared wire format is
+- **This bridge** — the orange chip runs the tool *locally* (Wi-Fi/BLE scan,
+  monitors, attacks). GPS-wardrive and Files/SD are screen-chip only for now.
+- **Screen chip** — the command is relayed over ESP-NOW to the white chip, which
+  runs it.
+
+Either way the network list, per-AP actions (Deauth / Grab / Track / Evil Twin /
+Probe Lure) and live counts stream back to the phone, tagged with the chip that
+produced them. The bridge sweeps every channel when relaying so a command reaches
+the screen chip even while it is hopping. The two chips talk over ESP-NOW; the shared wire format is
 `AWOKxDAG/link_protocol.h`.
 
 ### Dual C5 Mini
@@ -339,7 +345,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.4.2/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.4.3/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
@@ -431,17 +437,17 @@ retain 32 results per table and 128 Wardrive deduplication addresses; combined
 views use Wi-Fi only. See [original Touch](docs/dual-esp32-touch.md) and
 [original Mini](docs/dual-esp32-mini.md).
 
-Wi-Fi and BLE scans retain up to **128 results** each. BLE results use ten rows
+Wi-Fi and BLE scans retain up to **64 results** each (dual-band C5). BLE results use ten rows
 per page, with Prev/Next controls and detail inspection on every page.
 Clients, Security Audit, BLE Trackers, Cameras, WPS, Hidden SSID, Harvester,
-Probe Intel, and Karma Watch each retain up to **128 entries** (Probe Intel counts
+Probe Intel, and Karma Watch each retain up to **64 entries** (Probe Intel counts
 SSIDs). Live summary screens keep their existing row limits; available CSV
 exports include the full collected table. Continuous BLE scans use callbacks
-without retaining a NimBLE result list, so the regular scan's 128-result cap does
+without retaining a NimBLE result list, so the regular scan's 64-result cap does
 not stop their incoming observations. Their feature tables remain bounded.
 
 On Mini, the Wi-Fi, BLE, Clients, Probe Intel, and Karma Watch result tables
-are allocated in PSRAM at boot, preserving their 128-entry capacities and moving
+are allocated in PSRAM at boot, preserving their 64-entry capacities and moving
 **47 KiB** of table storage out of internal RAM. Strings are constructed normally;
 radio buffers and callback queues remain internal. A table falls back to internal
 RAM if its PSRAM allocation fails; failure of both allocations stops startup.

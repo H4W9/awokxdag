@@ -19,6 +19,38 @@ static uint8_t linkScanChannel = 0;
 // ---- ESP-NOW plumbing ---------------------------------------------------
 
 void onLinkRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+#ifdef AWOK_HEADLESS
+  // On the bridge, ESP-NOW frames from the white screen chip are its telemetry
+  // and Wi-Fi results (in response to relayed commands) -- forward them to the
+  // phone tagged as the screen chip. The bridge is never itself commanded over
+  // ESP-NOW, so nothing here is queued as a command.
+  if (len < 6) return;
+  uint32_t magic;
+  memcpy(&magic, data, 4);
+  if (magic != kLinkMagic) return;
+  const uint8_t type = data[5];
+  if (type == kLinkMsgTelem && len == static_cast<int>(sizeof(LinkPacket))) {
+    LinkPacket p;
+    memcpy(&p, data, sizeof(p));
+    uint8_t blob[9];
+    memcpy(blob + 0, &p.networks, 4);
+    memcpy(blob + 4, &p.bleCount, 4);
+    blob[8] = p.channel;
+    bridgeNotifyStatus(kSourceScreen, blob, sizeof(blob));
+  } else if (type == kLinkMsgWifiResult &&
+             len == static_cast<int>(sizeof(AxdWifiResult))) {
+    AxdWifiResult r;
+    memcpy(&r, data, sizeof(r));
+    uint8_t blob[11 + 32];
+    blob[0] = r.index; blob[1] = r.count;
+    blob[2] = static_cast<uint8_t>(r.rssi); blob[3] = r.channel; blob[4] = r.auth;
+    memcpy(blob + 5, r.bssid, 6);
+    size_t sl = strnlen(r.ssid, 32);
+    memcpy(blob + 11, r.ssid, sl);
+    bridgeNotifyResult(kSourceScreen, blob, 11 + sl);
+  }
+  return;
+#else
   if (len != static_cast<int>(sizeof(LinkPacket))) return;
   const int next = (linkPacketHead + 1) % kLinkPacketQueueSlots;
   if (next == linkPacketTail) return;  // queue full: drop
@@ -27,6 +59,7 @@ void onLinkRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   item.rssi = (info && info->rx_ctrl) ? info->rx_ctrl->rssi : -127;
   if (info && info->src_addr) memcpy(item.pkt.srcMac, info->src_addr, 6);
   linkPacketHead = next;
+#endif
 }
 
 bool linkEnsureEspNow() {
@@ -263,13 +296,35 @@ void linkDrainPackets() {
 // AxdWifiResult per AP. Sent while homed on the rendezvous channel, where the
 // bridge listens.
 void linkStreamWifiResults() {
+  const int n = wifiCount;
+#ifdef AWOK_HEADLESS
+  // The bridge runs the tool locally: notify the phone directly over BLE, one
+  // result per notification, tagged as this chip's own output. No ESP-NOW hop.
+  for (int i = 0; i < n; ++i) {
+    uint8_t blob[11 + 32];
+    uint8_t mac[6] = {0};
+    parseBssid(wifiEntries[i].bssid, mac);
+    blob[0] = static_cast<uint8_t>(i);
+    blob[1] = static_cast<uint8_t>(n);
+    blob[2] = static_cast<uint8_t>(static_cast<int8_t>(wifiEntries[i].rssi));
+    blob[3] = static_cast<uint8_t>(wifiEntries[i].channel);
+    blob[4] = static_cast<uint8_t>(wifiEntries[i].auth);
+    memcpy(blob + 5, mac, 6);
+    size_t sl = wifiEntries[i].ssid.length();
+    if (sl > 32) sl = 32;
+    memcpy(blob + 11, wifiEntries[i].ssid.c_str(), sl);
+    bridgeNotifyResult(kSourceBridge, blob, 11 + sl);
+    delay(30);
+  }
+  Serial.printf("[bridge] notified %d Wi-Fi result(s) to phone\n", n);
+  return;
+#else
   if (!linkEspNowReady) return;
   // A scan leaves the radio on an arbitrary channel; the bridge only listens on
   // the rendezvous channel, so home there before streaming or the phone sees a
   // partial (or empty) list. Safe: this is only called from idle (scan complete
   // or a ListWifi request), never mid-hop.
   esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
-  const int n = wifiCount;
   for (int i = 0; i < n; ++i) {
     AxdWifiResult r;
     r.index = static_cast<uint8_t>(i);
@@ -287,13 +342,14 @@ void linkStreamWifiResults() {
     delay(30);
   }
   Serial.printf("[remote] streamed %d Wi-Fi result(s) on ch %u\n", n, kLinkChannel);
+#endif
 }
 
 void linkDispatchCommand(uint8_t op, uint8_t arg) {
   Serial.printf("[remote] command op=%u arg=%u\n", op, arg);
   switch (op) {
     // Recon
-    case kAxdCmdWifiScan: scanWifi(); break;
+    case kAxdCmdWifiScan: startWifiScanContinuous(); break;
     case kAxdCmdBleScan: scanBle(); break;
     case kAxdCmdChannelMap:
       if (wifiCount) drawChannelMap(); else scanWifiForChannelMap();
@@ -348,13 +404,35 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
 }
 
 void linkBroadcastStatus() {
+  const uint32_t nets = wardriveActive ? wardriveNetworks : (uint32_t)wifiCount;
+  const uint32_t ble = wardriveActive ? wardriveBleCount : (uint32_t)bleCount;
+  const uint8_t view = static_cast<uint8_t>(currentView);
+#ifdef AWOK_HEADLESS
+  // Bridge -> phone directly: [wifi u32][ble u32][tool u8][gpsFix u8][sats u8]
+  // [lat f32][lon f32] (source tag prefixed by bridgeNotifyStatus). The app
+  // reads the GPS tail when present so the headless bridge's fix shows on-phone.
+  uint8_t blob[19];
+  memcpy(blob + 0, &nets, 4);
+  memcpy(blob + 4, &ble, 4);
+  blob[8] = view;
+  blob[9] = gpsHasFix() ? 1 : 0;
+  blob[10] = static_cast<uint8_t>(
+      gps.satellites.isValid() ? gps.satellites.value() : 0);
+  float lat = gps.location.isValid() ? static_cast<float>(gps.location.lat()) : 0.0f;
+  float lon = gps.location.isValid() ? static_cast<float>(gps.location.lng()) : 0.0f;
+  memcpy(blob + 11, &lat, 4);
+  memcpy(blob + 15, &lon, 4);
+  bridgeNotifyStatus(kSourceBridge, blob, sizeof(blob));
+  return;
+#else
   if (!linkEspNowReady) return;
   LinkPacket p;
   linkFillCommon(p, kLinkMsgTelem);
-  p.networks = wardriveActive ? wardriveNetworks : wifiCount;
-  p.bleCount = wardriveActive ? wardriveBleCount : bleCount;
-  p.channel = static_cast<uint8_t>(currentView);  // "tool id" for the phone UI
+  p.networks = nets;
+  p.bleCount = ble;
+  p.channel = view;  // "tool id" for the phone UI
   esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&p), sizeof(p));
+#endif
 }
 
 // Always-on from boot: keep ESP-NOW listening so the phone can drive this chip
@@ -625,7 +703,7 @@ void updateLink() {
     // phone can always reach us -- including to leave a view a BLE tool left us
     // in after it shut Wi-Fi down. Active hopping tools manage the radio
     // themselves; we only re-home between them.
-    if (!toolBlocksSerialShortcuts() && !scanInProgress) {
+    if (!toolBlocksSerialShortcuts() && !scanInProgress && !wifiScanContinuous) {
       if (WiFi.getMode() != WIFI_STA) linkEnsureEspNow();  // a BLE tool tore it down
       esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
     }

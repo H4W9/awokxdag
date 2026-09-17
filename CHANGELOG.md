@@ -5,6 +5,61 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-09-17
+
+### Added
+
+- **The orange bridge chip is now a full, phone-controllable node — both chips
+  from one page.** The bridge stopped being a tiny relay sketch: it now runs the
+  **same firmware as the white chip, headless** (new `AWOK_DUAL_C5_BRIDGE`
+  profile with a no-op `Adafruit_GFX` display) with the BLE GATT server folded in
+  (`bridge_ble.ino`). Every phone command carries a **target byte**: run the tool
+  **locally on the bridge** (dispatch straight into `linkDispatchCommand`) or
+  **relay to the white screen chip** over the existing ESP-NOW channel sweep. The
+  bridge's own tool output notifies the phone directly; the white chip's relayed
+  output is forwarded on, each tagged with its source chip. The web app gains a
+  **"Target chip" selector** (Screen chip / This bridge); the network list,
+  per-AP actions, and live status all follow the selection. This is possible
+  because the coexistence work (v1.4.2) lets the bridge run Wi-Fi + BLE together
+  — measured ~29 KB DMA free with the GATT server and a Wi-Fi scan both up.
+- The bridge builds from `AWOKxDAG.ino` (not the retired `AxDBridge.ino`) with
+  the main firmware's linker wraps and a NimBLE role set that keeps **Peripheral**
+  (GATT server) **and Observer** (BLE-scan tools). On the bridge, `releaseBleMemory`
+  never deinits — NimBLE stays resident so the phone connection is never dropped.
+- GPS is wired to the orange chip and confirmed working (multi-constellation
+  fix); the bridge streams **GPS fix/sats/lat/lon** to the phone in its status
+  heartbeat and the app shows a live GPS readout.
+- **Wardrive to phone (no SD needed).** The orange chip has GPS but no SD card,
+  so wardrive there streams each WiGLE row (BSSID/SSID/auth/time/chan/RSSI/lat/
+  lon/alt/accuracy/type) to the phone over BLE as it's logged; the app collects
+  them and a **Download CSV** button saves a `WigleWifi_1.4` file straight to the
+  phone. On the white chip wardrive still writes `wardrive.csv` to SD as before.
+  Files/SD browsing stays screen-chip only on the bridge.
+- **Wi-Fi Scan is now continuous** on both chips. The tool async-rescans on a
+  loop and **merges results by BSSID**, so the list accumulates every AP seen
+  (not just the latest sweep) and refreshes RSSI in place; new APs stream to the
+  phone as they appear. Selecting a network or leaving the view stops it. Channel
+  Map and the network-connect flow keep the blocking one-shot scan.
+
+### Fixed
+
+- Bridge-local commands run on the main loop instead of inside the BLE write
+  callback, so a phone-triggered Wi-Fi scan on the orange chip streams the *full*
+  AP list (previously the blocked callback dropped most result notifications).
+- Continuous Wi-Fi scan keeps the screen responsive (it no longer holds
+  `scanInProgress`, which had frozen touch/serial) and shows a **"Scanning…"**
+  indicator on start instead of an empty list — which also removes the stray
+  extra tap that could land on Channel Map. SD writes are throttled to ~15 s.
+- Wardrive **Download CSV** uses the Web Share sheet on iOS ("Save to Files");
+  the plain `<a download>` it used before was a no-op in Bluefy/iOS.
+
+### Changed
+
+- Status screen shows **Power: ON** instead of "Power: USB". On this board a
+  battery (when fitted) feeds the 5 V rail through the 5V/GND pins — a regulated
+  rail that reads ~5 V regardless of charge — so there is no cell voltage to
+  sense and no meaningful battery percentage to display.
+
 ## [1.4.2] - 2026-09-16
 
 ### Fixed
@@ -528,7 +583,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/dagnazty/awokxdag/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/dagnazty/awokxdag/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/dagnazty/awokxdag/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/dagnazty/awokxdag/compare/v1.3.5...v1.4.0

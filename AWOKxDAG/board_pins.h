@@ -2,11 +2,17 @@
 
 // Explicit board profiles; reject mismatched silicon before touching GPIOs.
 #if (defined(AWOK_DUAL_C5_TOUCH) + defined(AWOK_DUAL_C5_MINI) + \
+     defined(AWOK_DUAL_C5_BRIDGE) + \
      defined(AWOK_DUAL_ESP32_TOUCH_V1) + defined(AWOK_DUAL_ESP32_TOUCH_V2) + \
      defined(AWOK_DUAL_ESP32_TOUCH_V3) + \
      defined(AWOK_DUAL_ESP32_MINI_V1) + defined(AWOK_DUAL_ESP32_MINI_V2) + \
      defined(AWOK_DUAL_ESP32_MINI_V3)) != 1
 #error "Select exactly one AWOK board profile"
+#endif
+// The orange bridge chip runs the full firmware with no screen/touch/buttons;
+// it is driven entirely over BLE. AWOK_HEADLESS makes display/input/boot no-ops.
+#if defined(AWOK_DUAL_C5_BRIDGE)
+#define AWOK_HEADLESS
 #endif
 #if defined(AWOK_DUAL_C5_MINI) || defined(AWOK_DUAL_ESP32_MINI_V1) || \
     defined(AWOK_DUAL_ESP32_MINI_V2) || defined(AWOK_DUAL_ESP32_MINI_V3)
@@ -86,7 +92,12 @@ constexpr int kSpiMosi = 7;
 constexpr int kDisplayCs = 23;
 constexpr int kDisplayDc = 24;
 constexpr int kDisplayReset = -1;  // Reset is not controlled by a GPIO.
-#ifdef AWOK_DUAL_C5_MINI
+#if defined(AWOK_DUAL_C5_BRIDGE)
+constexpr char kBoardLabel[] = "Dual C5 Bridge";
+constexpr int kBacklight = -1;
+constexpr bool kBacklightOn = true;
+constexpr int kTouchCs = -1;  // headless: no touch, no buttons (BLE-driven)
+#elif defined(AWOK_DUAL_C5_MINI)
 constexpr char kBoardLabel[] = "Dual C5 Mini";
 constexpr int kBacklight = 5;
 constexpr bool kBacklightOn = false;

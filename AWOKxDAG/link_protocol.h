@@ -89,6 +89,21 @@ constexpr int kLink5ChannelCount =
 // Remote-control opcodes carried in a kLinkMsgCommand frame's `reserved` low
 // byte. Mirrors the on-device serial shortcuts (handleSerial) so the phone,
 // the bridge, and the screen chip all agree. Also mirrored in the web app.
+// Command target: which chip should run the tool. Carried in the phone's BLE
+// write ([op, arg, target]); does NOT ride ESP-NOW, so LinkPacket is unchanged.
+enum AxdTarget : uint8_t {
+  kTargetBridge = 0,  // run on the orange bridge chip itself (local dispatch)
+  kTargetScreen = 1,  // relay over ESP-NOW to the white screen chip
+};
+
+// Source tag prefixed to status/result notifications so the phone knows which
+// chip produced them.
+enum AxdSource : uint8_t {
+  kSourceBridge = 0,
+  kSourceScreen = 1,
+  kSourceWardrive = 2,  // results char carries a WiGLE CSV text row (bridge)
+};
+
 enum AxdCommand : uint8_t {
   kAxdCmdNone = 0,
   // Recon

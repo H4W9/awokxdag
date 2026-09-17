@@ -36,7 +36,10 @@ void drawStatus() {
     const int mv = analogReadMilliVolts(AwokPins::kBatteryAdc);
     display.printf("%.2f V", mv * AwokPins::kBatteryDivider / 1000.0f);
   } else {
-    display.print("USB");
+    // Battery (when present) feeds the 5 V rail via 5V/GND -- a regulated rail
+    // that reads ~5 V regardless of charge, so there is no cell voltage to gauge
+    // and no percentage to show. Just report that the board is powered.
+    display.print("ON");
   }
   y += step;
 

@@ -193,8 +193,24 @@ void appendWigleTail(File& file, int channel, int rssi, const char* type) {
   file.println(type);
 }
 
-void appendWardriveRow(const String& bssid, const String& ssid,
-                       wifi_auth_mode_t auth, int channel, int rssi) {
+// The WiGLE row tail as a String (same fields/order as appendWigleTail): so the
+// full row can be both written to SD and streamed to the phone.
+String wardriveWigleTail(int channel, int rssi, const char* type) {
+  return gpsTimestamp() + "," + String(channel) + "," + String(rssi) + "," +
+         String(gps.location.lat(), 6) + "," + String(gps.location.lng(), 6) +
+         "," + String(gps.altitude.meters(), 1) + "," +
+         String(gps.hdop.isValid() ? gps.hdop.hdop() * 5.0 : 0.0, 1) + "," + type;
+}
+
+// Persist a wardrive row to SD when available, and (on the headless bridge) push
+// it to the phone so the app can build/download the WiGLE CSV even with no SD.
+static void wardriveEmitRow(const String& line) {
+#ifdef AWOK_HEADLESS
+  if (g_bridgePhoneConnected)
+    bridgeNotifyResult(kSourceWardrive,
+                       reinterpret_cast<const uint8_t*>(line.c_str()),
+                       line.length());
+#endif
   if (!wardriveCsvReady) return;
   File file = SD.open(kWardriveCsvPath, FILE_APPEND);
   if (!file) {
@@ -202,32 +218,19 @@ void appendWardriveRow(const String& bssid, const String& ssid,
     sdReady = false;
     return;
   }
-  file.print(bssid);
-  file.print(',');
-  file.print(csvField(ssid));
-  file.print(',');
-  file.print(wigleAuth(auth));
-  file.print(',');
-  appendWigleTail(file, channel, rssi, "WIFI");
+  file.println(line);
   file.close();
 }
 
+void appendWardriveRow(const String& bssid, const String& ssid,
+                       wifi_auth_mode_t auth, int channel, int rssi) {
+  wardriveEmitRow(bssid + "," + csvField(ssid) + "," + wigleAuth(auth) + "," +
+                  wardriveWigleTail(channel, rssi, "WIFI"));
+}
+
 void appendWardriveBleRow(const String& address, const String& name, int rssi) {
-  if (!wardriveCsvReady) return;
-  File file = SD.open(kWardriveCsvPath, FILE_APPEND);
-  if (!file) {
-    wardriveCsvReady = false;
-    sdReady = false;
-    return;
-  }
-  file.print(address);
-  file.print(',');
-  file.print(csvField(name));
-  file.print(',');
-  file.print("[BLE]");
-  file.print(',');
-  appendWigleTail(file, 0, rssi, "BLE");
-  file.close();
+  wardriveEmitRow(address + "," + csvField(name) + ",[BLE]," +
+                  wardriveWigleTail(0, rssi, "BLE"));
 }
 
 // NimBLE scan callback (runs in the BLE task). Enqueues a POD BleHit for the
