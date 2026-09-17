@@ -342,18 +342,32 @@ document.querySelectorAll('#target-seg button').forEach(b =>
     log("target = " + (target===TGT_BRIDGE ? "this bridge" : "screen chip"));
   }));
 
-function downloadWardriveCsv(){
+async function downloadWardriveCsv(){
   if (!wardriveRows.length){ log("no wardrive rows yet"); return; }
   const header =
     "WigleWifi_1.4,appRelease=AxD,model=ESP32-C5,release=1.4.3,device=AxD,display=none,board=Dual C5 Bridge,brand=AxD\n" +
     "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n";
-  const blob = new Blob([header + wardriveRows.join("\n") + "\n"], {type:"text/csv"});
-  const url = URL.createObjectURL(blob);
+  const text = header + wardriveRows.join("\n") + "\n";
+  const fname = "wardrive-" + Date.now() + ".csv";
+  // iOS/Bluefy ignore <a download>; the Web Share API with a File opens the
+  // share sheet -> "Save to Files". Fall back to an anchor on Android/desktop.
+  try {
+    const file = new File([text], fname, { type: "text/csv" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: fname });
+      log("shared " + wardriveRows.length + " rows (Save to Files)");
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") { log("save cancelled"); return; }
+    // otherwise fall through to the anchor method
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
   const a = document.createElement("a");
-  a.href = url; a.download = "wardrive-" + Date.now() + ".csv";
+  a.href = url; a.download = fname; a.target = "_blank"; a.rel = "noopener";
   document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  log("saved " + wardriveRows.length + " wardrive rows to CSV");
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  log("downloaded " + wardriveRows.length + " rows");
 }
 $("wd-save").addEventListener("click", downloadWardriveCsv);
 $("wd-clear").addEventListener("click", () => {
