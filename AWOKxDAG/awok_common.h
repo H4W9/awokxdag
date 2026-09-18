@@ -392,7 +392,10 @@ struct LinkQueueItem {
 constexpr uint32_t kFleetInviteIntervalMs = 400;   // coordinator invite cadence
 constexpr uint32_t kFleetRosterIntervalMs = 1000;  // coordinator roster cadence
 constexpr uint32_t kFleetMemberTimeoutMs = 6000;   // drop a silent member
-constexpr int kFleetRowRingSlots = 96;             // per-worker outbound row ring
+// Per-worker outbound row ring. Each slot is a full FleetWardriveRow (~76 B) and
+// there are two of these rings, so on the RAM-tight classic ESP32 (single-band)
+// keep it small; the dual-band C5 has the headroom for a deeper buffer.
+constexpr int kFleetRowRingSlots = AwokPins::kDualBand ? 96 : 24;
 
 // One fleet member as tracked by the coordinator (and mirrored on every node
 // from the roster). `mac`/`caps` come from the roster; the rest are live.

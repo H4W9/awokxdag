@@ -73,6 +73,10 @@ All notable changes to AxD are documented here. This project follows
   `/awokxdag/wardrive-NNN.csv` (first unused index) on every Start instead of
   appending to one ever-growing `wardrive.csv`, so each session is its own file.
   The wardrive/split screens show the current file name; a serial line reports it.
+- **Classic ESP32 builds fixed.** The fleet feature's two `FleetWardriveRow` row
+  rings (~76 B/slot × 96 × 2 ≈ 15 KB of static DRAM) overflowed the RAM-tight
+  single-band ESP32's `dram0_0_seg`. `kFleetRowRingSlots` is now 96 on the
+  dual-band C5 and 24 on the classic ESP32, so all nine board targets link again.
 - 1.5.0 Fleet Wardrive is feature-complete (Phases 1–4).
 
 ## [1.4.4] - 2026-09-17
