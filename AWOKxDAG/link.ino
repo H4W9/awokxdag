@@ -1488,8 +1488,8 @@ void drawLinkWardrive() {
     display.printf("Session %lu", static_cast<unsigned long>(linkSessionId));
     display.setTextColor(wardriveCsvReady ? kAccent : kWarn, kBackground);
     display.setCursor(6, 196);
-    display.print(wardriveCsvReady ? "SD: wardrive.csv (WiGLE)"
-                                   : "SD unavailable; not logging");
+    if (wardriveCsvReady) display.print("SD: " + wardriveCsvName());
+    else display.print("SD unavailable; not logging");
     display.setTextColor(kMuted, kBackground);
     display.setCursor(6, 216);
     display.print("Wi-Fi only in Link mode (no BLE).");

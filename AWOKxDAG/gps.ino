@@ -154,24 +154,40 @@ void wardriveAddMac(const uint8_t* mac) {
   memcpy(wardriveMacs[wardriveMacCount++], mac, 6);
 }
 
+// Open a FRESH CSV for this wardrive run: /awokxdag/wardrive-NNN.csv, using the
+// first index not already on the card, so every Start (solo, link, or fleet)
+// writes a new file instead of appending to one growing log.
 bool openWardriveCsv() {
   if (!ensureSdCard()) return false;
-  if (!SD.exists(kWardriveCsvPath)) {
-    File file = SD.open(kWardriveCsvPath, FILE_WRITE);
-    if (!file) {
-      sdReady = false;
-      return false;
-    }
-    file.println(
-        String("WigleWifi_1.4,appRelease=AxD,model=") + AwokPins::kChipLabel + ",release=" +
-        kVersion +
-        ",device=AxD,display=ILI9341,board=" + AwokPins::kBoardLabel + ",brand=AxD");
-    file.println(
-        "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
-        "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");
-    file.close();
+  g_wardriveCsvPath = "";
+  for (int n = 1; n <= 999; ++n) {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "%s/wardrive-%03d.csv", kSdDirectory, n);
+    if (!SD.exists(buf)) { g_wardriveCsvPath = String(buf); break; }
   }
+  if (g_wardriveCsvPath.length() == 0)  // 999 files already: reuse the legacy name
+    g_wardriveCsvPath = String(kWardriveCsvPath);
+  File file = SD.open(g_wardriveCsvPath.c_str(), FILE_WRITE);
+  if (!file) {
+    sdReady = false;
+    return false;
+  }
+  file.println(
+      String("WigleWifi_1.4,appRelease=AxD,model=") + AwokPins::kChipLabel + ",release=" +
+      kVersion +
+      ",device=AxD,display=ILI9341,board=" + AwokPins::kBoardLabel + ",brand=AxD");
+  file.println(
+      "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
+      "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");
+  file.close();
+  Serial.printf("[wardrive] logging to %s\n", g_wardriveCsvPath.c_str());
   return true;
+}
+
+// Basename of the current run's CSV for on-screen display (empty before start).
+String wardriveCsvName() {
+  if (g_wardriveCsvPath.length() == 0) return String("wardrive.csv");
+  return g_wardriveCsvPath.substring(g_wardriveCsvPath.lastIndexOf('/') + 1);
 }
 
 // Shared tail of a WiGLE row (timestamp, channel, rssi, gps, accuracy, type).
@@ -212,7 +228,7 @@ static void wardriveEmitRow(const String& line) {
                        line.length());
 #endif
   if (!wardriveCsvReady) return;
-  File file = SD.open(kWardriveCsvPath, FILE_APPEND);
+  File file = SD.open(g_wardriveCsvPath.c_str(), FILE_APPEND);
   if (!file) {
     wardriveCsvReady = false;
     sdReady = false;
@@ -382,8 +398,8 @@ void drawWardrive() {
   }
   display.setTextColor(wardriveCsvReady ? kAccent : kWarn, kBackground);
   display.setCursor(6, 176);
-  display.print(wardriveCsvReady ? "SD: wardrive.csv (WiGLE)"
-                                 : "SD unavailable; not logging");
+  if (wardriveCsvReady) display.print("SD: " + wardriveCsvName());
+  else display.print("SD unavailable; not logging");
   display.setTextColor(kMuted, kBackground);
   if (radiosCoexist) {
     display.setCursor(6, 196);

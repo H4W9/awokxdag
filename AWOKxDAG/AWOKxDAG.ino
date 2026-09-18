@@ -211,6 +211,7 @@ uint32_t wardriveScans = 0;
 uint32_t wardriveStartMs = 0;
 uint32_t lastWardriveDrawMs = 0;
 bool wardriveCsvReady = false;
+String g_wardriveCsvPath;  // this run's CSV file (a new one is made each start)
 uint8_t wardriveMacs[kMaxWardriveMacs][6];
 int wardriveMacCount = 0;
 uint32_t wardriveBleCount = 0;

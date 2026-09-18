@@ -69,6 +69,10 @@ All notable changes to AxD are documented here. This project follows
   chip. A malformed roster that omits the local worker is rejected instead of
   defaulting it to coordinator slot zero. Powering up never auto-links or
   promotes a chip into a fleet.
+- **A new CSV per wardrive run.** Solo, link, and fleet wardrive now open a fresh
+  `/awokxdag/wardrive-NNN.csv` (first unused index) on every Start instead of
+  appending to one ever-growing `wardrive.csv`, so each session is its own file.
+  The wardrive/split screens show the current file name; a serial line reports it.
 - 1.5.0 Fleet Wardrive is feature-complete (Phases 1–4).
 
 ## [1.4.4] - 2026-09-17
