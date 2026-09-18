@@ -222,6 +222,27 @@ static void wardriveEmitRow(const String& line) {
   file.close();
 }
 
+// Coordinator: merge a WiGLE row received from a fleet member. Dedups by id
+// (Wi-Fi BSSID / BLE address), builds the line from the member's own GPS carried
+// in the frame, and emits it through the same SD+phone sink as local rows. The
+// FirstSeen timestamp uses the coordinator's clock (rows stream in near real
+// time and the fleet is co-located, so it is within a second of the sighting).
+void wardriveEmitPeerRow(const FleetWardriveRow& r) {
+  if (wardriveMacSeen(r.id)) return;
+  wardriveAddMac(r.id);
+  char idStr[18];
+  snprintf(idStr, sizeof(idStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           r.id[0], r.id[1], r.id[2], r.id[3], r.id[4], r.id[5]);
+  const String name(r.name);
+  String line = String(idStr) + "," + csvField(name) + "," +
+                (r.isBle ? String("[BLE]") : String(wigleAuth((wifi_auth_mode_t)r.auth))) + "," +
+                gpsTimestamp() + "," + String(r.channel) + "," + String((int)r.rssi) +
+                "," + String(r.lat, 6) + "," + String(r.lon, 6) + "," +
+                String((int)r.alt) + ".0,0.0," + (r.isBle ? "BLE" : "WIFI");
+  wardriveEmitRow(line);
+  if (r.isBle) ++wardriveBleCount; else ++wardriveNetworks;
+}
+
 void appendWardriveRow(const String& bssid, const String& ssid,
                        wifi_auth_mode_t auth, int channel, int rssi) {
   wardriveEmitRow(bssid + "," + csvField(ssid) + "," + wigleAuth(auth) + "," +

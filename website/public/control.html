@@ -170,10 +170,12 @@
       <button data-op="61">Join Fleet</button>
       <button data-op="62" class="stop">Leave Fleet</button>
     </div>
-    <div class="k" id="fleet-info" style="margin-top:10px">Fleet: off</div>
+    <div class="status" id="fleet-info" style="margin-top:10px">Selected target: Fleet off</div>
+    <div class="k" id="fleet-screen-info" style="margin-top:6px">Screen chip: waiting for status</div>
+    <div class="k" id="fleet-bridge-info">This bridge: waiting for status</div>
     <div class="k" style="margin-top:6px">Start on one chip (the coordinator), then
       switch the target above and Join on each other chip. Every node's rows merge
-      into the wardrive CSV. The status line reflects the bridge chip.</div>
+      into the wardrive CSV. Fleet status follows the selected target above.</div>
   </div>
 
   <div class="card">
@@ -226,7 +228,7 @@ const log = (m) => { const d=$("log"); d.textContent += (new Date().toLocaleTime
 // Several bridges can be connected at once; commands go to the ACTIVE one, but
 // every bridge's wardrive rows merge into one CSV. Each entry:
 //   {id, num, device, cmdCh, statusCh, resultsCh, name, connected,
-//    nets:Map, selIndex, status:{...}, row, mbEl, dotEl}
+//    nets:Map, selIndex, statuses:[bridge,screen], row, mbEl, dotEl}
 let conns = [];
 let activeId = null;
 let connCounter = 0;
@@ -266,7 +268,7 @@ function refreshTargetButtons(){
 // ---- connection list ----------------------------------------------------
 function connSummary(c){
   if (!c.connected) return "disconnected";
-  const s = c.status;
+  const s = c.statuses[TGT_BRIDGE] || {};
   let parts = [];
   if (s.fleetShort) parts.push(s.fleetShort);
   parts.push("wifi " + (s.wifi ?? "–"));
@@ -358,8 +360,12 @@ if (!navigator.bluetooth) $("nobt").hidden = false;
 
 // ---- status (per bridge; the active one drives the stat cards) -----------
 function parseStatus(dv, c){
-  const s = c.status;
   try {
+    if (dv.byteLength < 1) return;
+    const source = dv.getUint8(0);
+    if (source !== TGT_BRIDGE && source !== TGT_SCREEN) return;
+    const s = c.statuses[source] || (c.statuses[source] = {});
+    s.seen = true;
     if (dv.byteLength >= 10){
       s.wifi = dv.getUint32(1, true);
       s.ble  = dv.getUint32(5, true);
@@ -369,11 +375,16 @@ function parseStatus(dv, c){
       s.gpsFix = dv.getUint8(10); s.sats = dv.getUint8(11);
       s.lat = dv.getFloat32(12, true); s.lon = dv.getFloat32(16, true);
     }
-    if (dv.byteLength >= 24){  // fleet tail: active,members,code(u16),coordinator
-      s.fleetActive = dv.getUint8(19); s.members = dv.getUint8(20);
-      s.code = dv.getUint16(21, true); s.coord = dv.getUint8(23);
+    if (dv.byteLength >= 25){  // source + fleet tail: active,members,code(u16),role flags
+      s.fleetActive = dv.getUint8(20); s.members = dv.getUint8(21);
+      s.code = dv.getUint16(22, true);
+      const roleFlags = dv.getUint8(24);
+      s.coord = (roleFlags & 0x01) !== 0;
+      s.listening = (roleFlags & 0x02) !== 0;
+      s.fleetRunning = (roleFlags & 0x04) !== 0;
       s.fleetShort = s.fleetActive
-        ? (s.coord ? "coord " : "member ") + String(s.code).padStart(4,"0")
+        ? (s.listening ? "joining" : (s.coord ? "coord " : "member ") +
+          String(s.code).padStart(4,"0") + "/" + s.members)
         : "";
     }
   } catch(e){ /* leave prior values */ }
@@ -381,22 +392,37 @@ function parseStatus(dv, c){
   if (c.id === activeId) renderStats();
 }
 
+function fleetDescription(s){
+  if (!s || !s.seen) return "waiting for status";
+  if (!s.fleetActive) return "Fleet off";
+  if (s.listening) return "joining — waiting for coordinator";
+  const nodes = s.members + " node" + (s.members===1 ? "" : "s");
+  return (s.coord ? "coordinator" : "member") + " · code " +
+    String(s.code).padStart(4,"0") + " · " + nodes +
+    (s.fleetRunning ? " · logging" : " · ready");
+}
+
 function renderStats(){
   const c = activeConn();
   if (!c){ $("wifi").textContent = "–"; $("ble").textContent = "–";
     $("tool").textContent = "–"; $("gps").textContent = "GPS: –";
-    $("fleet-info").textContent = "Fleet: off"; return; }
-  const s = c.status;
+    $("fleet-info").textContent = "Selected target: Fleet off";
+    $("fleet-screen-info").textContent = "Screen chip: waiting for status";
+    $("fleet-bridge-info").textContent = "This bridge: waiting for status";
+    return; }
+  const s = c.statuses[target] || {};
   $("wifi").textContent = s.wifi ?? "–";
   $("ble").textContent  = s.ble ?? "–";
   $("tool").textContent = s.tool!=null ? "#"+s.tool : "–";
   $("gps").textContent = s.gpsFix
     ? "GPS: FIX · " + s.sats + " sats · " + s.lat.toFixed(5) + ", " + s.lon.toFixed(5)
     : (s.sats!=null ? "GPS: no fix · " + s.sats + " sats" : "GPS: –");
-  $("fleet-info").textContent = s.fleetActive
-    ? "Fleet: " + (s.coord ? "coordinator" : "member") + " · code " +
-      String(s.code).padStart(4,"0") + " · " + s.members + " node" + (s.members===1?"":"s")
-    : "Fleet: off";
+  $("fleet-info").textContent =
+    (target===TGT_SCREEN ? "Selected screen: " : "Selected bridge: ") + fleetDescription(s);
+  $("fleet-screen-info").textContent =
+    "Screen chip: " + fleetDescription(c.statuses[TGT_SCREEN]);
+  $("fleet-bridge-info").textContent =
+    "This bridge: " + fleetDescription(c.statuses[TGT_BRIDGE]);
 }
 
 // ---- connect / add another ----------------------------------------------
@@ -432,7 +458,7 @@ async function addEsp(){
     }
     c = { id: device.id, num: ++connCounter, device, name: (device.name||"AxD") + " #" + (connCounter),
           cmdCh:null, statusCh:null, resultsCh:null, connected:false,
-          nets:new Map(), selIndex:null, status:{} };
+          nets:new Map(), selIndex:null, statuses:[{},{}] };
     device.addEventListener("gattserverdisconnected", () => onDisc(c));
     log("connecting to " + c.name + "…");
     await wireConn(c);

@@ -5,6 +5,72 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+### In progress — 1.5.0 Fleet Wardrive (multi-node)
+
+- **Credit:** Fleet Wardrive's explicit coordinator/node topology was informed
+  by **[Piglet](https://github.com/Hamspiced/piglet)** by **Hamspiced**. Piglet's
+  Core/Node ESP-NOW implementation was the reference for keeping one coordinator
+  authoritative while workers discover, join, heartbeat, and reconnect. AxD's
+  wire protocol, roster/channel assignment, aggregation, UI, and web integration
+  are implemented for this firmware.
+
+- **Phase 1 (done): fleet session + N-way channel split.** New ESP-NOW protocol
+  (`FleetInvite`/`FleetJoin`/`FleetRoster` in `link_protocol.h`) lets up to
+  `kFleetMaxNodes` C5 chips form one session: a coordinator broadcasts an invite
+  with a short code, other armed nodes **auto-join**, and the coordinator deals a
+  **roster** so every node learns its index and role. The old 2-way channel deal
+  (`linkNextAssignedChannel`) is generalized to **N-way** (`idx % M == mySlice`),
+  and one member can be designated the BLE node. Testable over serial: `F` starts
+  a fleet, `J` arms a node to auto-join; each prints its assignment.
+- **Phase 2 (done): row aggregation into one CSV.** Workers queue each new WiGLE
+  row and stream it to the coordinator in the rendezvous window (`FleetWardriveRow`
+  frames, per-member contiguous ACK + retransmit); the coordinator dedups and
+  writes it to SD and/or streams it to the phone via the existing
+  `kSourceWardrive` path -- one merged CSV. Fleet nodes share the rendezvous
+  window and sync their clocks to the coordinator (carried in the invite). `f`
+  starts a fleet wardrive; joiners start automatically via the roster's
+  `wardriveOn` flag. Coordinator prints a periodic aggregate/per-member status.
+  Validated on hardware: a 2-node fleet forms and the coordinator aggregates.
+- **Phase 3 (done): dedicated BLE node.** The roster designates one member (a
+  non-coordinator with BLE capability) as the fleet's BLE scanner; it is excluded
+  from the N-way Wi-Fi split. Instead of hopping Wi-Fi channels it parks on the
+  link channel and runs a continuous BLE observer scan (co-resident with
+  Wi-Fi/ESP-NOW), reusing the wardrive BLE callbacks/queue. New devices are
+  deduped by address and either logged locally (if the BLE node is also the
+  coordinator) or streamed to the coordinator as `FleetWardriveRow` frames
+  (`isBle=1`) in the same rendezvous window as Wi-Fi rows, landing in the one
+  merged CSV. So a fleet covers Wi-Fi *and* BLE without cross-node duplicates.
+- **Phase 4 (done): fleet UI on-device and in the web app.** The Link screen's
+  idle footer is now **Back / Fleet / Solo**; Fleet opens a menu with **Start**
+  (become coordinator) and **Join** (arm to auto-join), replacing the serial
+  `f`/`j` triggers with buttons. A live fleet view shows the session code, each
+  member's role (coord / wifi / BLE) and row count, the aggregate Wi-Fi/BLE
+  totals, and LOGGING/READY state, with **Go/Stop** (coordinator) and **Leave**
+  controls. The web app (`control.html`) gains a **Fleet** card — Start/Join/Leave
+  buttons plus per-target status (coordinator/member, code, live node count and
+  logging state) parsed from the fleet tail on bridge and screen status blobs.
+  The coordinator display shows `Nodes: N`; worker heartbeats and a six-second
+  timeout keep that count current. New opcodes `kAxdCmdFleetStart/Join/
+  Stop` (60–62) let the phone drive the fleet on either chip. So the flow is:
+  Start Fleet on one chip, switch target and Join on the others, one merged CSV.
+- **Multi-bridge web app.** `control.html` now manages several bridge
+  connections at once: **Add ESP** connects each board's orange chip and they all
+  stay live, so you switch the **active** bridge with a tap instead of
+  disconnecting and reconnecting. Each bridge shows its own live Wi-Fi/BLE counts,
+  GPS, and fleet role in the connection list; commands and the Wi-Fi list follow
+  the active bridge, while **wardrive rows from every connected bridge merge into
+  the one CSV**. Handy for a multi-board fleet where each board's coordinator is a
+  separate BLE server.
+- **Fixed coordinators "fighting."** Fleet roles now follow an explicit
+  coordinator/worker model: the chip where **Start** was pressed remains the
+  coordinator, while **Join** pins a worker to that coordinator's MAC and
+  session until Leave. Coordinators ignore competing invites, joined workers
+  ignore foreign invites/rosters, and unsolicited rosters cannot auto-enroll a
+  chip. A malformed roster that omits the local worker is rejected instead of
+  defaulting it to coordinator slot zero. Powering up never auto-links or
+  promotes a chip into a fleet.
+- 1.5.0 Fleet Wardrive is feature-complete (Phases 1–4).
+
 ## [1.4.4] - 2026-09-17
 
 ### Changed

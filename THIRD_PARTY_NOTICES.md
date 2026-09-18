@@ -1,5 +1,19 @@
 # Third-party references and notices
 
+## Piglet — Hamspiced
+
+Fleet Wardrive's explicit coordinator/node ESP-NOW topology was informed by
+[Piglet](https://github.com/Hamspiced/piglet) by **Hamspiced**. Piglet's
+Core/Node behavior provided the reference for keeping a user-selected Core
+authoritative while nodes discover, join, heartbeat, and reconnect.
+
+AxD's fleet wire protocol, roster and channel assignment, row aggregation,
+display UI, and web integration are implemented for AxD; Piglet source code was
+not copied into this repository. Piglet is distributed under the
+[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+license](https://github.com/Hamspiced/piglet/blob/main/LICENSE). Thanks to
+Hamspiced for publishing Piglet and its ESP-NOW design openly.
+
 ## Evil-M5Project — 7h30th3r0n3
 
 The Network Tools and Flipper-like BLE service hints reference the feature designs

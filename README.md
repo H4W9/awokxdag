@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.4.4
+- **Version:** 1.5.0
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -166,6 +166,14 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   partner-lost alert. Each board logs its own WiGLE `wardrive.csv` and uses its
   own GPS. Started unpaired, it wardrives every channel solo. Reached from the GPS
   screen; Wi-Fi-only in this release.
+- **Fleet Wardrive** — links up to six C5 chips in an explicit
+  coordinator/worker topology. Press **Start** on one chip to make it the stable
+  coordinator, then **Join** on each worker. The coordinator assigns Wi-Fi/BLE
+  roles, maintains a live node count with heartbeats, and merges every worker's
+  rows into one WiGLE CSV. The coordinator/node ESP-NOW design was informed by
+  **[Piglet](https://github.com/Hamspiced/piglet)** by **Hamspiced**, whose open
+  mesh-node implementation provided the reference for keeping one Core
+  authoritative while nodes discover, join, and reconnect to it.
 
 ### Status / utility
 - **Status** — uptime, free heap, chip temp, SD used/total, GPS fix, Wi-Fi MAC,
@@ -345,7 +353,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.4.4/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.5.0/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
@@ -504,6 +512,11 @@ without it. Thanks to:
 - **[FZEasyMarauderFlash](https://github.com/SkeletonMan03/FZEasyMarauderFlash)**
   by **SkeletonMan03** — flashing reference used for the original Mini pin
   sourcing.
+- **[Piglet](https://github.com/Hamspiced/piglet)** by **Hamspiced** — the
+  coordinator/node ESP-NOW reference for Fleet Wardrive. Piglet's Core/Node
+  model informed AxD's explicit Start/Join roles, coordinator pinning, worker
+  discovery/heartbeats, and reconnect behavior. AxD uses its own packet format,
+  roster, channel-dealing, aggregation, display, and web integration.
 - The libraries this firmware builds on: **Adafruit GFX**, **Adafruit ILI9341**,
   **Adafruit ST7735 and ST7789**, **Adafruit BusIO**, **NimBLE-Arduino**,
   **XPT2046_Touchscreen**, and **TinyGPSPlus** — each under its own license.
