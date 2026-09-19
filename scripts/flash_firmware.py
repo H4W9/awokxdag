@@ -35,6 +35,9 @@ CHIP = {b: ("esp32c5" if b in C5 else "esp32") for b in (
     "dual-c5-touch", "dual-c5-mini", "dual-c5-bridge",
     "dual-esp32-touch-v1", "dual-esp32-touch-v2", "dual-esp32-touch-v3",
     "dual-esp32-mini-v1", "dual-esp32-mini-v2", "dual-esp32-mini-v3",
+    "dual-esp32-touch-bridge-v1", "dual-esp32-touch-bridge-v2",
+    "dual-esp32-touch-bridge-v3", "dual-esp32-mini-bridge-v1",
+    "dual-esp32-mini-bridge-v2", "dual-esp32-mini-bridge-v3",
 )}
 
 

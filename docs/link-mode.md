@@ -42,7 +42,17 @@ uniform so a C5 and a classic 2.4 GHz board can pair.
 - A one-second rendezvous on channel 1 exchanges telemetry. Each screen shows
   its own AP count, the partner's, the combined count, partner link RSSI, and a
   partner-lost alert.
-- Each board writes its own WiGLE `wardrive.csv` and geotags from its own GPS.
+- Each board writes a new WiGLE `wardrive-NNNN.csv` per Start and geotags from
+  its own GPS.
 - Started unpaired, Link Mode wardrives every assigned channel solo.
+
+## Fleet Wardrive
+
+- Exactly one member is dedicated to BLE scanning.
+- Classic v1-v3 Touch/Mini WROOM workers own and evenly split 2.4 GHz.
+- When classic workers are present, C5 Wi-Fi workers own and evenly split 5 GHz.
+- In an all-C5 fleet, the Wi-Fi workers evenly split the full dual-band plan.
+- Band pools use independent modulo slices, so no two Wi-Fi workers receive the
+  same channel.
 
 See `AWOKxDAG/link.ino` for the state machine.

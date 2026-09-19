@@ -5,7 +5,7 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
-### In progress — 1.5.0 Fleet Wardrive (multi-node)
+### In progress — 1.5.1 Fleet Wardrive (multi-node)
 
 - **Credit:** Fleet Wardrive's explicit coordinator/node topology was informed
   by **[Piglet](https://github.com/Hamspiced/piglet)** by **Hamspiced**. Piglet's
@@ -16,7 +16,7 @@ All notable changes to AxD are documented here. This project follows
 
 - **Phase 1 (done): fleet session + N-way channel split.** New ESP-NOW protocol
   (`FleetInvite`/`FleetJoin`/`FleetRoster` in `link_protocol.h`) lets up to
-  `kFleetMaxNodes` C5 chips form one session: a coordinator broadcasts an invite
+  `kFleetMaxNodes` C5 or classic ESP32 chips form one session: a coordinator broadcasts an invite
   with a short code, other armed nodes **auto-join**, and the coordinator deals a
   **roster** so every node learns its index and role. The old 2-way channel deal
   (`linkNextAssignedChannel`) is generalized to **N-way** (`idx % M == mySlice`),
@@ -31,8 +31,8 @@ All notable changes to AxD are documented here. This project follows
   starts a fleet wardrive; joiners start automatically via the roster's
   `wardriveOn` flag. Coordinator prints a periodic aggregate/per-member status.
   Validated on hardware: a 2-node fleet forms and the coordinator aggregates.
-- **Phase 3 (done): dedicated BLE node.** The roster designates one member (a
-  non-coordinator with BLE capability) as the fleet's BLE scanner; it is excluded
+- **Phase 3 (done): dedicated BLE node.** The roster designates one member as
+  the fleet's BLE scanner; it is excluded
   from the N-way Wi-Fi split. Instead of hopping Wi-Fi channels it parks on the
   link channel and runs a continuous BLE observer scan (co-resident with
   Wi-Fi/ESP-NOW), reusing the wardrive BLE callbacks/queue. New devices are
@@ -40,6 +40,13 @@ All notable changes to AxD are documented here. This project follows
   coordinator) or streamed to the coordinator as `FleetWardriveRow` frames
   (`isBle=1`) in the same rendezvous window as Wi-Fi rows, landing in the one
   merged CSV. So a fleet covers Wi-Fi *and* BLE without cross-node duplicates.
+- **Capability-aware, collision-free channel assignment.** Exactly one fleet
+  member is BLE-only. Classic v1-v3 Touch/Mini WROOM workers take precedence on
+  2.4 GHz and evenly split those channels only; when classics are present, C5
+  workers stay on 5 GHz and evenly split that band only. With no classic Wi-Fi
+  worker, C5 workers evenly split the full dual-band plan. BLE-node selection
+  preserves the only C5 in a mixed fleet so 5 GHz coverage is not lost, and
+  role changes stop the previous BLE scan before the node returns to Wi-Fi.
 - **Phase 4 (done): fleet UI on-device and in the web app.** The Link screen's
   idle footer is now **Back / Fleet / Solo**; Fleet opens a menu with **Start**
   (become coordinator) and **Join** (arm to auto-join), replacing the serial
@@ -70,14 +77,18 @@ All notable changes to AxD are documented here. This project follows
   defaulting it to coordinator slot zero. Powering up never auto-links or
   promotes a chip into a fleet.
 - **A new CSV per wardrive run.** Solo, link, and fleet wardrive now open a fresh
-  `/awokxdag/wardrive-NNN.csv` (first unused index) on every Start instead of
+  `/awokxdag/wardrive-NNNN.csv` (first unused index) on every Start instead of
   appending to one ever-growing `wardrive.csv`, so each session is its own file.
   The wardrive/split screens show the current file name; a serial line reports it.
 - **Classic ESP32 builds fixed.** The fleet feature's two `FleetWardriveRow` row
   rings (~76 B/slot × 96 × 2 ≈ 15 KB of static DRAM) overflowed the RAM-tight
   single-band ESP32's `dram0_0_seg`. `kFleetRowRingSlots` is now 96 on the
   dual-band C5 and 24 on the classic ESP32, so all nine board targets link again.
-- 1.5.0 Fleet Wardrive is feature-complete (Phases 1–4).
+- **Classic bridges added.** Original Dual ESP32 Touch and Mini v1/v2/v3 now
+  each have a matching headless BLE-to-ESP-NOW bridge profile and packaged
+  build/flash target. Classic bridges retain the revision-specific GPS/SD pin
+  map and restrict relay sweeps to supported 2.4 GHz channels.
+- 1.5.1 Fleet Wardrive is feature-complete (Phases 1–4).
 
 ## [1.4.4] - 2026-09-17
 
@@ -127,7 +138,7 @@ All notable changes to AxD are documented here. This project follows
   so wardrive there streams each WiGLE row (BSSID/SSID/auth/time/chan/RSSI/lat/
   lon/alt/accuracy/type) to the phone over BLE as it's logged; the app collects
   them and a **Download CSV** button saves a `WigleWifi_1.4` file straight to the
-  phone. On the white chip wardrive still writes `wardrive.csv` to SD as before.
+  phone. On the white chip each Start writes a new `wardrive-NNNN.csv` to SD.
   Files/SD browsing stays screen-chip only on the bridge.
 - **Wi-Fi Scan is now continuous** on both chips. The tool async-rescans on a
   loop and **merges results by BSSID**, so the list accumulates every AP seen

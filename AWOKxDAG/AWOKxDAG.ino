@@ -4,7 +4,13 @@
     !defined(AWOK_DUAL_ESP32_TOUCH_V1) && !defined(AWOK_DUAL_ESP32_TOUCH_V2) && \
     !defined(AWOK_DUAL_ESP32_TOUCH_V3) && \
     !defined(AWOK_DUAL_ESP32_MINI_V1) && !defined(AWOK_DUAL_ESP32_MINI_V2) && \
-    !defined(AWOK_DUAL_ESP32_MINI_V3)
+    !defined(AWOK_DUAL_ESP32_MINI_V3) && \
+    !defined(AWOK_DUAL_ESP32_TOUCH_BRIDGE_V1) && \
+    !defined(AWOK_DUAL_ESP32_TOUCH_BRIDGE_V2) && \
+    !defined(AWOK_DUAL_ESP32_TOUCH_BRIDGE_V3) && \
+    !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V1) && \
+    !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V2) && \
+    !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V3)
 //#define AWOK_DUAL_C5_TOUCH
 #define AWOK_DUAL_C5_MINI
 //#define AWOK_DUAL_ESP32_TOUCH_V1
@@ -2161,7 +2167,10 @@ void openBleDetail(const BleEntry& entry) {
 }
 
 void initializeDisplayAndTouch() {
-#ifdef AWOK_MINI_DISPLAY
+#ifdef AWOK_HEADLESS
+  display.begin();
+  display.setTextWrap(false);
+#elif defined(AWOK_MINI_DISPLAY)
   for (int pin : {AwokPins::kButtonLeft, AwokPins::kButtonCenter,
                   AwokPins::kButtonUp, AwokPins::kButtonRight,
                   AwokPins::kButtonDown}) {

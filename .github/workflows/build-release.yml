@@ -7,7 +7,7 @@ on:
       version:
         description: "Release version (e.g. 1.0.0)"
         required: true
-        default: "1.5.0"
+        default: "1.5.1"
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
@@ -58,6 +58,24 @@ jobs:
           - variant: bridge
             label: "Dual C5 Bridge (headless BLE<->ESP-NOW)"
             board: dual-c5-bridge
+          - variant: esp32-touch-bridge-v1
+            label: "Dual ESP32 Touch Bridge v1"
+            board: dual-esp32-touch-bridge-v1
+          - variant: esp32-touch-bridge-v2
+            label: "Dual ESP32 Touch Bridge v2"
+            board: dual-esp32-touch-bridge-v2
+          - variant: esp32-touch-bridge-v3
+            label: "Dual ESP32 Touch Bridge v3"
+            board: dual-esp32-touch-bridge-v3
+          - variant: esp32-mini-bridge-v1
+            label: "Dual ESP32 Mini Bridge v1"
+            board: dual-esp32-mini-bridge-v1
+          - variant: esp32-mini-bridge-v2
+            label: "Dual ESP32 Mini Bridge v2"
+            board: dual-esp32-mini-bridge-v2
+          - variant: esp32-mini-bridge-v3
+            label: "Dual ESP32 Mini Bridge v3"
+            board: dual-esp32-mini-bridge-v3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,11 +133,11 @@ jobs:
             --build-path "build-${{ matrix.variant }}" \
             AWOKxDAG/AWOKxDAG.ino
 
-      - name: Compile ${{ matrix.label }} (bridge; separate sketch)
+      - name: Compile ${{ matrix.label }} (headless bridge profile)
         if: ${{ matrix.board }}
-        # The headless bridge is a different sketch with its own flags (NimBLE
-        # Peripheral role on, no linker wraps, shared header include);
-        # build_firmware.py already encodes all of that.
+        # Bridge profiles keep NimBLE Peripheral + Broadcaster + Observer and
+        # compile the same full firmware headlessly; build_firmware.py encodes
+        # those flags.
         run: python3 scripts/build_firmware.py ${{ matrix.board }}
 
       - name: Stage ${{ matrix.label }} artifacts
@@ -182,6 +200,7 @@ jobs:
             - **Dual C5 Touch / Mini** — prefixes `awokxdag-touch-…` / `awokxdag-mini-…`
             - **Original Dual ESP32 Touch v1/v2/v3** (experimental) — `awokxdag-esp32-touch-v<revision>-…`
             - **Original Dual ESP32 Mini v1/v2/v3** (experimental) — `awokxdag-esp32-mini-v<revision>-…`
+            - **C5 and original ESP32 headless bridges** — `awokxdag-bridge-…` / `awokxdag-esp32-*-bridge-v<revision>-…`
 
             Original ESP32 builds support 2.4 GHz only, 32-entry result tables,
             and separate Wi-Fi/BLE operation. See the board port documentation

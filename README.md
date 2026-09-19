@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.5.0
+- **Version:** 1.5.1
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -163,14 +163,17 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   and the 2.4 GHz unit takes all of 2.4 GHz, with no overlap. A one-second
   time-synced rendezvous on channel 1 swaps telemetry, so each screen shows its
   own, the partner's, and the combined AP count, the partner's link RSSI, and a
-  partner-lost alert. Each board logs its own WiGLE `wardrive.csv` and uses its
+  partner-lost alert. Each board logs its own session WiGLE CSV and uses its
   own GPS. Started unpaired, it wardrives every channel solo. Reached from the GPS
   screen; Wi-Fi-only in this release.
-- **Fleet Wardrive** — links up to six C5 chips in an explicit
+- **Fleet Wardrive** — links up to six C5 or classic ESP32 Touch/Mini boards in an explicit
   coordinator/worker topology. Press **Start** on one chip to make it the stable
   coordinator, then **Join** on each worker. The coordinator assigns Wi-Fi/BLE
   roles, maintains a live node count with heartbeats, and merges every worker's
-  rows into one WiGLE CSV. The coordinator/node ESP-NOW design was informed by
+  rows into one WiGLE CSV. Exactly one node is BLE-only. Classic WROOM workers
+  take precedence on 2.4 GHz and split its channels without overlap; C5 workers
+  split 5 GHz without overlap. In an all-C5 fleet, the C5 Wi-Fi workers split
+  the full dual-band plan. The coordinator/node ESP-NOW design was informed by
   **[Piglet](https://github.com/Hamspiced/piglet)** by **Hamspiced**, whose open
   mesh-node implementation provided the reference for keeping one Core
   authoritative while nodes discover, join, and reconnect to it.
@@ -250,7 +253,7 @@ works without a card, and readable snapshots mirror to:
 | `pmkid.txt` | captured PMKID (hashcat-ready) |
 | `portal_creds.csv` | evil portal / evil twin |
 | `pktmon.pcap` | packet monitor |
-| `wardrive.csv` | WiGLE 1.4 wardrive (Wi-Fi + BLE) |
+| `wardrive-NNNN.csv` | One new WiGLE 1.4 wardrive file per Start (Wi-Fi + BLE) |
 | `security_audit.csv` | Security Audit posture report |
 | `ble_trackers.csv` | BLE Trackers scan |
 | `harvest.pcap` | Harvester capture (link type 105) |
@@ -318,14 +321,19 @@ works here too.
 
 ### Phone control over BLE (both chips)
 
-The Dual C5 has two ESP32-C5 chips, and **both now run the full firmware**. Flash
-the **screen** chip (white port) with `dual-c5-touch` **or** `dual-c5-mini`, and
-the **bridge** chip (orange port) with `dual-c5-bridge` — the *same* firmware
-built headless (no screen) with a BLE GATT server folded in:
+Dual C5 and original Dual ESP32 boards can run the full firmware on both chips.
+Flash the **screen** chip (white port) with its Touch/Mini profile, then flash
+the **bridge** chip (orange port) with the matching headless bridge profile. The
+bridge is the *same* firmware built without a screen and with its BLE GATT server
+enabled:
 
 ```bash
 python3 scripts/flash_firmware.py dual-c5-touch    # (or dual-c5-mini) white port
 python3 scripts/flash_firmware.py dual-c5-bridge   # cable in the orange port
+
+# Original ESP32 example; use the profile matching Touch/Mini and v1/v2/v3
+python3 scripts/flash_firmware.py dual-esp32-touch-v1
+python3 scripts/flash_firmware.py dual-esp32-touch-bridge-v1
 ```
 
 The bridge advertises as **`AxD-Bridge`** over BLE. Open the control page —
@@ -353,7 +361,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.5.0/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.5.1/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center
@@ -372,7 +380,14 @@ the Mini panels. Package any of them with the same script:
 ```bash
 python3 scripts/build_firmware.py dual-esp32-touch-v1   # or -v2 / -v3
 python3 scripts/build_firmware.py dual-esp32-mini-v1    # or -v2 / -v3
+python3 scripts/build_firmware.py dual-esp32-touch-bridge-v1
+python3 scripts/build_firmware.py dual-esp32-mini-bridge-v1
 ```
+
+Each classic Touch/Mini revision has a matching `*-bridge-v1`, `*-bridge-v2`,
+or `*-bridge-v3` artifact. These headless builds preserve the selected board's
+GPS/SD wiring, expose the same `AxD-Bridge` BLE service as the C5 bridge, and
+relay only across the classic ESP32's supported 2.4 GHz channels.
 
 ## Hardware map (Dual C5 Touch)
 

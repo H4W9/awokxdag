@@ -31,12 +31,9 @@ NIMBLE_OBSERVER_ONLY_FLAGS = (
     "-DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED"
 )
 # The merged bridge runs the full firmware headless with a GATT server: it needs
-# the PERIPHERAL role (server) AND the OBSERVER role (BLE-scan tools), so only
-# Central + Broadcaster are trimmed.
-NIMBLE_BRIDGE_FLAGS = (
-    "-DCONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED "
-    "-DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED"
-)
+# the PERIPHERAL role (server), BROADCASTER role (advertising), and OBSERVER
+# role (BLE-scan tools), so only Central is trimmed.
+NIMBLE_BRIDGE_FLAGS = "-DCONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED"
 LINKER_WRAP_FLAGS = (
     "-Wl,-z,muldefs "
     "-Wl,--wrap=esp_wifi_init -Wl,--wrap=esp_bt_controller_init"
@@ -53,12 +50,25 @@ PROFILES = {
     "dual-esp32-mini-v3": (CLASSIC_FQBN, "AWOK_DUAL_ESP32_MINI_V3"),
 }
 
-# The orange bridge now runs the SAME firmware as the white chip, just headless
-# (no display/touch) with the BLE GATT server folded in: it is a board profile
-# of AWOKxDAG.ino (AWOK_DUAL_C5_BRIDGE), with the main firmware's linker wraps
-# and a NimBLE role set that keeps PERIPHERAL (server) + OBSERVER (scan tools).
-BRIDGE = "dual-c5-bridge"
-ALL_TARGETS = tuple(PROFILES) + (BRIDGE,)
+# Bridge profiles run the SAME firmware as the screen chip, just headless (no
+# display/touch) with the BLE GATT server folded in. Touch/Mini and revision stay
+# explicit for classic boards because their GPS and SD wiring differs.
+BRIDGES = {
+    "dual-c5-bridge": (C5_FQBN, "AWOK_DUAL_C5_BRIDGE"),
+    "dual-esp32-touch-bridge-v1":
+        (CLASSIC_FQBN, "AWOK_DUAL_ESP32_TOUCH_BRIDGE_V1"),
+    "dual-esp32-touch-bridge-v2":
+        (CLASSIC_FQBN, "AWOK_DUAL_ESP32_TOUCH_BRIDGE_V2"),
+    "dual-esp32-touch-bridge-v3":
+        (CLASSIC_FQBN, "AWOK_DUAL_ESP32_TOUCH_BRIDGE_V3"),
+    "dual-esp32-mini-bridge-v1":
+        (CLASSIC_FQBN, "AWOK_DUAL_ESP32_MINI_BRIDGE_V1"),
+    "dual-esp32-mini-bridge-v2":
+        (CLASSIC_FQBN, "AWOK_DUAL_ESP32_MINI_BRIDGE_V2"),
+    "dual-esp32-mini-bridge-v3":
+        (CLASSIC_FQBN, "AWOK_DUAL_ESP32_MINI_BRIDGE_V3"),
+}
+ALL_TARGETS = tuple(PROFILES) + tuple(BRIDGES)
 
 
 def main():
@@ -74,11 +84,11 @@ def main():
     work = (args.build_path or ROOT / "build" / (args.board + "-objects")).resolve()
     output = ROOT / "build" / f"{args.board}-{version}"
 
-    if args.board == BRIDGE:
-        fqbn = C5_FQBN
+    if args.board in BRIDGES:
+        fqbn, define = BRIDGES[args.board]
         sketch = ROOT / "AWOKxDAG/AWOKxDAG.ino"
         celf_flags = LINKER_WRAP_FLAGS
-        cpp_flags = f"-DAWOK_DUAL_C5_BRIDGE {NIMBLE_BRIDGE_FLAGS}"
+        cpp_flags = f"-D{define} {NIMBLE_BRIDGE_FLAGS}"
     else:
         fqbn, define = PROFILES[args.board]
         sketch = ROOT / "AWOKxDAG/AWOKxDAG.ino"
@@ -88,8 +98,8 @@ def main():
 
     command = ["arduino-cli", "compile", "--fqbn", fqbn, "--warnings", "all",
                "--build-path", str(work)]
-    # Main firmware: the ieee80211_raw_frame_sanity_check symbol must win over
-    # libnet80211.a (linker wraps). The bridge needs none of that.
+    # The raw-frame override and radio-memory wrappers are shared by screen and
+    # bridge profiles because every target runs the same full firmware.
     command += ["--build-property", f"compiler.c.elf.extra_flags={celf_flags}"]
     command += ["--build-property", f"compiler.cpp.extra_flags={cpp_flags}"]
     # Error-level CORE_DEBUG_LEVEL: silent unless something is actually
