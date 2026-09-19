@@ -5,13 +5,17 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
-### 1.5.2 Touch controls
+## [1.5.2] - 2026-09-19
+
+### Changed
 
 - **Touch controls improved.** Primary Touch buttons are wider, light taps are
   accepted at a lower pressure threshold, and the press debounce was reduced
   from 250 ms to 120 ms for faster navigation without repeat firing.
 
-### 1.5.1 Fleet Wardrive (multi-node)
+## [1.5.1] - 2026-09-18
+
+### Added
 
 - **Credit:** Fleet Wardrive's explicit coordinator/node topology was informed
   by **[Piglet](https://github.com/Hamspiced/piglet)** by **Hamspiced**. Piglet's
