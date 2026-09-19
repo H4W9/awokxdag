@@ -189,5 +189,6 @@ constexpr int kXMax = 3495;
 constexpr int kYMin = 437;
 constexpr int kYMax = 3449;
 #endif
-constexpr int kPressureMin = 400;
+// Accept lighter taps while staying above the XPT2046's idle/noise floor.
+constexpr int kPressureMin = 250;
 }  // namespace AwokTouchCalibration
