@@ -5,7 +5,75 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-09-20
+
+### Added
+
+- **Modernized Web Bluetooth remote control interface.** The web control app
+  (`website/public/control.html` and `website/dist/control.html`) now features a
+  streamlined tactical dark theme, tabbed navigation (Telemetry, Wi-Fi Scan,
+  Wardrive, Tools & Ops, Fleet, and Terminal Log), real-time Wi-Fi network search
+  and sorting (by signal strength or channel), dynamic 4-bar RSSI signal meters,
+  and direct Google Maps link from live GPS coordinates.
+- **Real-time WiGLE wardrive stream parsing.** Incoming WiGLE 1.6 CSV rows
+  streamed from the ESP32 bridge over BLE are parsed live into a structured
+  sightings table displaying Type (Wi-Fi/BLE), SSID, BSSID, RSSI, Channel, Auth,
+  and GPS coordinates, alongside live counters for total sightings, Wi-Fi APs,
+  BLE devices, and open networks.
+- **Friendly tool opcode decoding.** Raw tool opcodes (`#1`, `#7`, `#50`, `#52`,
+  etc.) displayed on the phone are automatically mapped to readable names and
+  status badges (e.g. `#7 Wardrive`, `#1 Wi-Fi Scan`, `#52 Deauth`).
+
+### Fixed
+
+- **Fleet coordinator lockup under multi-node wardrive load.** Fixed an issue where
+  the fleet coordinator froze shortly after wardriving began with more than one
+  worker node connected.
+  - **Batched SD writes:** Coordinator now buffers WiGLE CSV writes and batches SD
+    card flushes (every 5 rows or 1000 ms) instead of executing a synchronous,
+    blocking `flush()` on every single incoming row from worker nodes.
+  - **Bounded ESP-NOW row queue processing:** Restricted ESP-NOW fleet row queue
+    ingestion to a maximum of 4 rows per frame, increased queue capacity from 16 to
+    32 entries, and added cooperative task yielding (`yield()` / `delay(1)`) every
+    3 dispatches to avoid starving the coordinator main loop and watchdog timer.
+  - **Non-blocking BLE relay buffer:** Replaced blocking GATT notification loops
+    with a non-blocking ring buffer on the bridge chip, preventing worker node
+    backpressure when streaming live rows to a connected phone.
+
+## [1.5.3] - 2026-09-19
+
+### Changed
+
+- **Single wardrive credential file.** WiGLE and WDGWars credentials now share
+  one `wardrive_upload.txt` file on SD, with a safe checked-in example that can
+  be copied, completed, and renamed without committing live API credentials.
+- **GPS-backed system time.** Fresh GPS UTC now sets and periodically corrects
+  the ESP system clock used by TLS, logs, and SD/FAT timestamps. NTP remains an
+  upload fallback when GPS time is unavailable, and synchronized UTC survives
+  temporary GPS signal loss instead of reverting to an uptime-only timestamp.
+- **Wardrive upload reliability.** WiGLE and WDGWars TLS trust now includes
+  stable root certificates, connection and streaming timeouts are explicit,
+  and failures identify the TLS, header, SD-read, body, or response stage
+  instead of collapsing every problem into `connection/write failed`.
+  Network discovery buffers and the SD file handle are now released before the
+  TLS handshake, preventing mbedTLS `SSL_ALLOC_FAILED` (`-32512`) on RAM-tight
+  boards; LAN-tool workspace is recreated lazily when it is next needed.
+  On PSRAM-equipped C5 boards, large mbedTLS record allocations are routed to
+  PSRAM while AES/key state stays in internal RAM, preserving enough internal
+  heap for the ESP hardware AES backend to complete the handshake.
+
 ## [1.5.2] - 2026-09-19
+
+### Added
+
+- **Direct wardrive upload page.** Under Network Tools, users can select and
+  join a Wi-Fi network, choose a `wardrive-*.csv` file from SD, select WiGLE or
+  WDGWars, and explicitly upload it. Credentials come from one SD config file,
+  `wardrive_upload.txt` (with a checked-in safe example), stay
+  out of logs, and are wiped from RAM after a bounded multipart upload over
+  certificate-verified HTTPS.
+- **WiGLE 1.6 export.** New on-device and phone-downloaded wardrive CSVs include
+  Frequency, RCOIs, and MfgrId columns for documented WDGWars compatibility.
 
 ### Changed
 
@@ -698,7 +766,11 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.4...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.5.4...HEAD
+[1.5.4]: https://github.com/dagnazty/awokxdag/compare/v1.5.3...v1.5.4
+[1.5.3]: https://github.com/dagnazty/awokxdag/compare/v1.5.2...v1.5.3
+[1.5.2]: https://github.com/dagnazty/awokxdag/compare/v1.5.1...v1.5.2
+[1.5.1]: https://github.com/dagnazty/awokxdag/compare/v1.4.4...v1.5.1
 [1.4.4]: https://github.com/dagnazty/awokxdag/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/dagnazty/awokxdag/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/dagnazty/awokxdag/compare/v1.4.1...v1.4.2

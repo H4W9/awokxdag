@@ -14,6 +14,19 @@ not copied into this repository. Piglet is distributed under the
 license](https://github.com/Hamspiced/piglet/blob/main/LICENSE). Thanks to
 Hamspiced for publishing Piglet and its ESP-NOW design openly.
 
+## ESP32 Marauder — justcallmekoko
+
+AxD's direct wardrive upload workflow references ESP32 Marauder's documented
+network/file/destination flow and SD credential-file convention. AxD consolidates
+the credentials into its own `wardrive_upload.txt` format; its screen, multipart
+streaming client, TLS validation, response handling, and audit integration are
+newly implemented for AxD, and no uploader source body was copied.
+
+[ESP32 Marauder](https://github.com/justcallmekoko/ESP32Marauder) is maintained
+by **justcallmekoko (Justin Hazard)** and distributed under GPL-3.0. Thanks for
+publishing the hardware mappings, radio lifecycle work, and direct-upload user
+workflow that informed this firmware.
+
 ## Evil-M5Project — 7h30th3r0n3
 
 The Network Tools and Flipper-like BLE service hints reference the feature designs

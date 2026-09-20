@@ -57,7 +57,7 @@ void onLinkRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   // Fleet wardrive rows (workers -> coordinator) and their ACKs.
   if (type == kLinkMsgFleetWardriveRow &&
       len == static_cast<int>(sizeof(FleetWardriveRow))) {
-    fleetOnRowFrame(data);
+    if (fleetCoordinator) fleetOnRowFrame(data);
     return;
   }
   if (type == kLinkMsgFleetAck && len == static_cast<int>(sizeof(FleetAck))) {
@@ -144,9 +144,10 @@ bool linkEnsureEspNow() {
 // by the aggregator in updateLink). Ack lets a worker retransmit only new rows.
 static FleetWardriveRow fleetRowRing[kFleetRowRingSlots];
 static volatile int fleetRowHead = 0;
-static int fleetRowTail = 0;
+static volatile int fleetRowTail = 0;
 
 void fleetOnRowFrame(const uint8_t* data) {
+  if (!fleetCoordinator) return;
   const int next = (fleetRowHead + 1) % kFleetRowRingSlots;
   if (next == fleetRowTail) return;  // full: drop (worker retransmits)
   memcpy(&fleetRowRing[fleetRowHead], data, sizeof(FleetWardriveRow));
@@ -232,7 +233,9 @@ void fleetBroadcastRoster() {
     memcpy(r.members[i].mac, fleetMembers[i].mac, 6);
     r.members[i].caps = fleetMembers[i].caps;
   }
-  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+  if (!linkWardriveActive) {
+    esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+  }
   esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&r), sizeof(r));
 }
 
@@ -311,19 +314,28 @@ void fleetSendJoin() {
 void fleetCoordHandleJoin(const LinkPacket& p) {
   if (!fleetCoordinator || p.sessionId != fleetSessionId) return;
   int idx = fleetIndexOfMac(p.srcMac);
+  bool rosterChanged = false;
   if (idx < 0) {
     if (fleetMemberCount >= kFleetMaxNodes) return;
     idx = fleetMemberCount++;
     memcpy(fleetMembers[idx].mac, p.srcMac, 6);
     fleetMembers[idx].rows = 0;
     fleetMembers[idx].ackSeq = 0;
+    rosterChanged = true;
     Serial.printf("[fleet] member %d joined\n", idx);
   }
-  fleetMembers[idx].caps = p.flags;
+  if (fleetMembers[idx].caps != p.flags) {
+    fleetMembers[idx].caps = p.flags;
+    rosterChanged = true;
+  }
   fleetMembers[idx].lastSeenMs = millis();
-  fleetDealRoster();
-  fleetBroadcastRoster();
-  if (currentView == View::kLinkWardrive) drawFleetStatus();
+  if (rosterChanged) {
+    fleetDealRoster();
+    if (!linkWardriveActive || linkInWindow) {
+      fleetBroadcastRoster();
+    }
+    if (currentView == View::kLinkWardrive) drawFleetStatus();
+  }
 }
 
 // A worker only accepts rosters from the coordinator/session it deliberately
@@ -436,16 +448,23 @@ void fleetCoordinatorTick(uint32_t now) {
   }
   if (rosterChanged) {
     fleetDealRoster();
-    fleetBroadcastRoster();
+    if (!linkWardriveActive || linkInWindow) {
+      fleetBroadcastRoster();
+    }
     if (currentView == View::kLinkWardrive) drawFleetStatus();
   }
-  if (now - lastFleetInviteMs >= kFleetInviteIntervalMs) {
-    lastFleetInviteMs = now;
-    fleetBroadcastInvite();
-  }
-  if (now - lastFleetRosterMs >= kFleetRosterIntervalMs) {
-    lastFleetRosterMs = now;
-    fleetBroadcastRoster();
+  // During an active wardrive, invite and roster broadcasts happen during
+  // the rendezvous window (when everyone is parked on kLinkChannel). Only
+  // broadcast on timer when wardrive is idle.
+  if (!linkWardriveActive) {
+    if (now - lastFleetInviteMs >= kFleetInviteIntervalMs) {
+      lastFleetInviteMs = now;
+      fleetBroadcastInvite();
+    }
+    if (now - lastFleetRosterMs >= kFleetRosterIntervalMs) {
+      lastFleetRosterMs = now;
+      fleetBroadcastRoster();
+    }
   }
   static uint32_t lastFleetStatusMs = 0;
   if (linkWardriveActive && now - lastFleetStatusMs >= 3000) {
@@ -504,25 +523,32 @@ void fleetWorkerSendRows() {
 }
 
 // Coordinator: merge every inbound row (dedup + SD + phone) and advance each
-// member's contiguous ACK high-water.
+// member's ACK sequence. Capped to 32 rows per pass to prevent starvation.
 void fleetCoordDrainRows() {
   if (!fleetCoordinator) { fleetRowTail = fleetRowHead; return; }
-  while (fleetRowTail != fleetRowHead) {
+  int drained = 0;
+  while (fleetRowTail != fleetRowHead && drained < 32) {
     FleetWardriveRow r = fleetRowRing[fleetRowTail];
     fleetRowTail = (fleetRowTail + 1) % kFleetRowRingSlots;
+    ++drained;
     if (r.sessionId != fleetSessionId) continue;
     const int m = fleetIndexOfMac(r.src);
     if (m >= 0) {
       fleetMembers[m].lastSeenMs = millis();
-      if (r.seq == fleetMembers[m].ackSeq + 1) fleetMembers[m].ackSeq = r.seq;
+      // If the worker reset its sequence (e.g. rebooted/rejoined), allow resync
+      if (r.seq < fleetMembers[m].ackSeq && r.seq <= 2) {
+        fleetMembers[m].ackSeq = r.seq;
+      } else if (r.seq > fleetMembers[m].ackSeq) {
+        fleetMembers[m].ackSeq = r.seq;
+      }
       fleetMembers[m].rows++;
     }
     wardriveEmitPeerRow(r);  // dedups by id; writes SD + streams to phone
   }
 }
 
-// Coordinator: tell each member the highest contiguous row seq stored, so it can
-// free ACKed rows and resend only the gap.
+// Coordinator: tell each member the highest row seq stored, so it can
+// free ACKed rows.
 void fleetSendAcks() {
   if (!fleetCoordinator) return;
   for (int i = 0; i < fleetMemberCount; ++i) {
@@ -532,6 +558,7 @@ void fleetSendAcks() {
     memcpy(a.targetMac, fleetMembers[i].mac, 6);
     a.seq = fleetMembers[i].ackSeq;
     esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&a), sizeof(a));
+    delay(2);
   }
 }
 
@@ -571,6 +598,7 @@ void fleetStopBleScanOnly() {
 void fleetStopLocal() {
   linkWardriveActive = false;
   fleetStopBleScanOnly();
+  closeWardriveCsv();
 }
 
 // Coordinator: stop the fleet wardrive but keep the session up (members stop via
@@ -624,7 +652,18 @@ void updateFleetBleNode(uint32_t now) {
   const bool windowDue = (lnow % kLinkRendezvousMs) < kLinkWindowMs;
   if (windowDue && now - lastLinkTelemMs >= 60) {
     lastLinkTelemMs = now;
-    if (fleetCoordinator) { fleetSendAcks(); fleetCoordDrainRows(); }
+    if (fleetCoordinator) {
+      fleetSendAcks();
+      fleetCoordDrainRows();
+      if (now - lastFleetInviteMs >= kFleetInviteIntervalMs) {
+        lastFleetInviteMs = now;
+        fleetBroadcastInvite();
+      }
+      if (now - lastFleetRosterMs >= kFleetRosterIntervalMs) {
+        lastFleetRosterMs = now;
+        fleetBroadcastRoster();
+      }
+    }
     else fleetWorkerSendRows();
   }
   if (windowDue) linkMaybeBroadcastRemoteStatus(now);
@@ -1237,7 +1276,7 @@ void startLinkWardrive() {
   wardriveNetworks = 0;
   wardriveBleCount = 0;  // BLE off in Link v1
   wardriveScans = 0;
-  wardriveMacCount = 0;
+  wardriveResetDedup();
   wardriveStartMs = millis();
   linkChannelCursor = 0;
   linkInWindow = false;
@@ -1248,7 +1287,7 @@ void startLinkWardrive() {
   signalMonitorActive = false;
 
   WiFi.disconnect(false, false);
-  wardriveCsvReady = openWardriveCsv();
+  wardriveCsvReady = (!fleetActive || fleetCoordinator) ? openWardriveCsv() : false;
   linkWardriveActive = true;
   recordFirmwareAudit(
       "link", "split_wardrive_start",
@@ -1266,6 +1305,7 @@ void stopLinkWardrive() {
   linkWardriveActive = false;
   linkInWindow = false;
   WiFi.scanDelete();
+  closeWardriveCsv();
   // Keep Wi-Fi STA resident; powering it down breaks the next radio bring-up.
   Serial.printf("[link] split wardrive stopped; %lu Wi-Fi networks\n",
                 static_cast<unsigned long>(wardriveNetworks));
@@ -1279,9 +1319,15 @@ void updateLinkWardrive(uint32_t now) {
     const uint32_t lnow = linkNow();
     const bool windowDue = (lnow % kLinkRendezvousMs) < kLinkWindowMs;
     if (windowDue) {
-      const int r = WiFi.scanComplete();
+      int r = WiFi.scanComplete();
+      // If an in-flight scan is still running 60ms into the window, cancel it
+      // so the rendezvous window can proceed on kLinkChannel.
+      if (r == WIFI_SCAN_RUNNING && (lnow % kLinkRendezvousMs) > 60) {
+        WiFi.scanDelete();
+        r = WIFI_SCAN_FAILED;
+      }
       if (r == WIFI_SCAN_RUNNING) {
-        // Let the in-flight scan finish before parking on the link channel.
+        // Let the in-flight scan finish if it completes in the first 60ms
       } else {
         if (r >= 0) {
           linkIngestScan(r);
@@ -1297,8 +1343,20 @@ void updateLinkWardrive(uint32_t now) {
         if (now - lastLinkTelemMs >= 60) {
           lastLinkTelemMs = now;
           if (fleetActive) {
-            if (fleetCoordinator) { fleetSendAcks(); fleetCoordDrainRows(); }
-            else fleetWorkerSendRows();
+            if (fleetCoordinator) {
+              fleetSendAcks();
+              fleetCoordDrainRows();
+              if (now - lastFleetInviteMs >= kFleetInviteIntervalMs) {
+                lastFleetInviteMs = now;
+                fleetBroadcastInvite();
+              }
+              if (now - lastFleetRosterMs >= kFleetRosterIntervalMs) {
+                lastFleetRosterMs = now;
+                fleetBroadcastRoster();
+              }
+            } else {
+              fleetWorkerSendRows();
+            }
           } else {
             linkSendTelem();
           }
@@ -1326,9 +1384,21 @@ void updateLinkWardrive(uint32_t now) {
     linkIngestScan(result);
     WiFi.scanDelete();
     ++wardriveScans;
-    linkStartNextScan();
+    const uint32_t rem = kLinkRendezvousMs - (linkNow() % kLinkRendezvousMs);
+    if (!paired || rem >= (kLinkWardriveDwellMs + 40)) {
+      linkStartNextScan();
+    }
   } else {
-    linkStartNextScan();
+    const uint32_t rem = kLinkRendezvousMs - (linkNow() % kLinkRendezvousMs);
+    if (!paired || rem >= (kLinkWardriveDwellMs + 40)) {
+      linkStartNextScan();
+    }
+  }
+
+  static uint32_t lastLinkFlushMs = 0;
+  if (now - lastLinkFlushMs >= 2000) {
+    lastLinkFlushMs = now;
+    flushWardriveCsv();
   }
 
   if (currentView == View::kLinkWardrive &&
