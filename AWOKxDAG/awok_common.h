@@ -118,10 +118,10 @@ constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
 constexpr int kCaptureSlotBytes = 256;
-constexpr int kCaptureQueueSlots = 24;
+constexpr int kCaptureQueueSlots = AwokPins::kDualBand ? 24 : 12;
 constexpr char kClientCsvPath[] = "/awokxdag/latest_clients.csv";
 constexpr int kMaxClients = kResultCapacity;
-constexpr int kSnifferQueueSlots = 32;
+constexpr int kSnifferQueueSlots = AwokPins::kDualBand ? 32 : 16;
 constexpr uint32_t kClientHopIntervalMs = 300;
 constexpr uint32_t kClientRedrawMs = 700;
 constexpr uint32_t kBeaconBurstIntervalMs = 20;
@@ -133,22 +133,22 @@ constexpr int kBeaconChannelCount =
 constexpr char kPortalSsid[] = "Free_WiFi";
 constexpr char kPortalCredsPath[] = "/awokxdag/portal_creds.csv";
 constexpr uint32_t kPortalRedrawMs = 1000;
-constexpr size_t kWardriveBloomFilterBytes = 4096;  // 32,768 bits for fast O(1) MAC deduplication
+constexpr size_t kWardriveBloomFilterBytes = AwokPins::kDualBand ? 4096 : 256;  // fast O(1) MAC deduplication bitset
 constexpr int kMaxWardriveMacs = AwokPins::kDualBand ? 512 : 128;
 constexpr uint32_t kWardriveRedrawMs = 800;
-constexpr int kBleHitQueueSlots = 24;
+constexpr int kBleHitQueueSlots = AwokPins::kDualBand ? 24 : 12;
 
 // Security Audit: passive beacon-IE posture report (encryption tier, PMF, WPS).
 constexpr char kSecurityAuditCsvPath[] = "/awokxdag/security_audit.csv";
 constexpr int kMaxAudit = kResultCapacity;
-constexpr int kAuditHitQueueSlots = 24;
+constexpr int kAuditHitQueueSlots = AwokPins::kDualBand ? 24 : 12;
 constexpr uint32_t kAuditHopIntervalMs = 300;
 constexpr uint32_t kAuditRedrawMs = 700;
 
 // BLE Trackers: passive AirTag/Find My, Tile, Samsung SmartTag detection.
 constexpr char kTrackerCsvPath[] = "/awokxdag/ble_trackers.csv";
 constexpr int kMaxTrackers = kResultCapacity;
-constexpr int kTrackerHitQueueSlots = 32;
+constexpr int kTrackerHitQueueSlots = AwokPins::kDualBand ? 32 : 16;
 constexpr uint32_t kTrackerRedrawMs = 700;
 // A tracker seen over a span longer than this (with repeat sightings) while you
 // move is flagged as potentially following you.
@@ -167,7 +167,7 @@ constexpr uint32_t kHarvestRedrawMs = 700;
 constexpr char kProbeIntelCsvPath[] = "/awokxdag/probe_intel.csv";
 constexpr int kMaxProbeSsids = kResultCapacity;
 constexpr int kProbeMacsPerSsid = 8;
-constexpr int kProbeHitQueueSlots = 32;
+constexpr int kProbeHitQueueSlots = AwokPins::kDualBand ? 32 : 16;
 constexpr uint32_t kProbeHopIntervalMs = 300;
 constexpr uint32_t kProbeRedrawMs = 700;
 
@@ -175,15 +175,15 @@ constexpr uint32_t kProbeRedrawMs = 700;
 constexpr char kKarmaLogCsvPath[] = "/awokxdag/karma_log.csv";
 constexpr int kMaxKarmaAps = kResultCapacity;
 constexpr int kKarmaSsidsPerAp = 6;
-constexpr int kKarmaHitQueueSlots = 24;
+constexpr int kKarmaHitQueueSlots = AwokPins::kDualBand ? 24 : 12;
 constexpr int kKarmaSsidThreshold = 3;  // distinct SSIDs => suspicious
 constexpr uint32_t kKarmaHopIntervalMs = 300;
 constexpr uint32_t kKarmaRedrawMs = 700;
 
 // Beacon Watch: beacon-flood / fake-AP detection by BSSID diversity per window.
 constexpr char kBeaconWatchLogCsvPath[] = "/awokxdag/beacon_flood_log.csv";
-constexpr int kBeaconWatchWindowSet = 64;   // distinct BSSIDs counted per window
-constexpr int kBeaconWatchHitQueueSlots = 32;
+constexpr int kBeaconWatchWindowSet = AwokPins::kDualBand ? 64 : 32;   // distinct BSSIDs counted per window
+constexpr int kBeaconWatchHitQueueSlots = AwokPins::kDualBand ? 32 : 16;
 constexpr uint32_t kBeaconWatchWindowMs = 2000;
 constexpr uint32_t kBeaconWatchRedrawMs = 500;
 constexpr uint32_t kBeaconWatchHopIntervalMs = 250;
@@ -198,11 +198,11 @@ constexpr uint32_t kAuthFloodThreshold = 30;  // auth/assoc frames / window
 
 // Advanced Watch: shared passive Wi-Fi/BLE anomaly detector.
 constexpr char kAdvancedWatchLogCsvPath[] = "/awokxdag/advanced_watch.csv";
-constexpr int kAdvancedHitQueueSlots = 64;
-constexpr int kAdvancedBleQueueSlots = 32;
-constexpr int kAdvancedMaxAps = 32;
+constexpr int kAdvancedHitQueueSlots = AwokPins::kDualBand ? 64 : 24;
+constexpr int kAdvancedBleQueueSlots = AwokPins::kDualBand ? 32 : 16;
+constexpr int kAdvancedMaxAps = AwokPins::kDualBand ? 32 : 16;
 constexpr int kAdvancedMaxDisconnectGroups = 8;
-constexpr int kAdvancedMaxBleFingerprints = 16;
+constexpr int kAdvancedMaxBleFingerprints = AwokPins::kDualBand ? 16 : 8;
 constexpr uint32_t kAdvancedWindowMs = 2000;
 constexpr uint32_t kAdvancedRedrawMs = 500;
 constexpr uint32_t kAdvancedHopIntervalMs = 300;
@@ -399,7 +399,7 @@ constexpr uint32_t kFleetRosterIntervalMs = 1000;  // coordinator roster cadence
 constexpr uint32_t kFleetMemberTimeoutMs = 15000;  // drop a silent member (15s resilience)
 // Per-worker outbound row ring. Each slot is a full FleetWardriveRow (~76 B).
 // Deep enough to absorb multi-worker bursts without dropping rows over radio.
-constexpr int kFleetRowRingSlots = AwokPins::kDualBand ? 128 : 64;
+constexpr int kFleetRowRingSlots = AwokPins::kDualBand ? 96 : 16;
 
 // One fleet member as tracked by the coordinator (and mirrored on every node
 // from the roster). `mac`/`caps` come from the roster; the rest are live.

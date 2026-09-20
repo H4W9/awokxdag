@@ -39,6 +39,7 @@ All notable changes to AxD are documented here. This project follows
   - **Non-blocking BLE relay buffer:** Replaced blocking GATT notification loops
     with a non-blocking ring buffer on the bridge chip, preventing worker node
     backpressure when streaming live rows to a connected phone.
+- **Classic ESP32 DRAM overflow during compilation.** Resolved `region 'dram0_0_seg' overflowed by 8336 bytes` during `arduino-cli compile` on classic single-band ESP32 Touch targets (`build-esp32-touch-v1`, `v2`, `v3`). Tuned static queues and deduplication tables (`kFleetRowRingSlots`, `kWardriveBloomFilterBytes`, `kCaptureQueueSlots`, `kAdvancedHitQueueSlots`, `kAdvancedMaxAps`, etc.) proportionally for single-band operation, reclaiming >25 KB of statically allocated `.dram0.bss` memory.
 
 ## [1.5.3] - 2026-09-19
 
