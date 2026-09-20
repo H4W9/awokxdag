@@ -332,6 +332,15 @@ void updateScreenTest() {
     if (digitalRead(AwokPins::kButtonDown) == LOW) screenTestButtons |= 16;
     if (screenTestButtons != before) drawScreenTest();
   }
+#elif defined(PANCAKE_CAP_TOUCH)
+  if (screenTestStep == kScreenTestInput) {
+    uint16_t panelX = 0, panelY = 0;
+    if (touch.read(panelX, panelY)) {
+      screenTestRawX = panelX;   // raw ST7796 panel coordinates (0..319/0..479)
+      screenTestRawY = panelY;
+      screenTestRawZ = 0;        // capacitive touch reports no pressure
+    }
+  }
 #else
   if (screenTestStep == kScreenTestInput && touch.touched()) {
     TS_Point point = touch.getPoint();
