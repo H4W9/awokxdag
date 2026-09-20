@@ -113,7 +113,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.5.3";
+constexpr char kVersion[] = "1.5.4";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -133,6 +133,7 @@ constexpr int kBeaconChannelCount =
 constexpr char kPortalSsid[] = "Free_WiFi";
 constexpr char kPortalCredsPath[] = "/awokxdag/portal_creds.csv";
 constexpr uint32_t kPortalRedrawMs = 1000;
+constexpr size_t kWardriveBloomFilterBytes = 4096;  // 32,768 bits for fast O(1) MAC deduplication
 constexpr int kMaxWardriveMacs = AwokPins::kDualBand ? 512 : 128;
 constexpr uint32_t kWardriveRedrawMs = 800;
 constexpr int kBleHitQueueSlots = 24;
@@ -395,11 +396,10 @@ struct LinkQueueItem {
 // ---- Fleet Wardrive runtime state --------------------------------------
 constexpr uint32_t kFleetInviteIntervalMs = 400;   // coordinator invite cadence
 constexpr uint32_t kFleetRosterIntervalMs = 1000;  // coordinator roster cadence
-constexpr uint32_t kFleetMemberTimeoutMs = 6000;   // drop a silent member
-// Per-worker outbound row ring. Each slot is a full FleetWardriveRow (~76 B) and
-// there are two of these rings, so on the RAM-tight classic ESP32 (single-band)
-// keep it small; the dual-band C5 has the headroom for a deeper buffer.
-constexpr int kFleetRowRingSlots = AwokPins::kDualBand ? 96 : 24;
+constexpr uint32_t kFleetMemberTimeoutMs = 15000;  // drop a silent member (15s resilience)
+// Per-worker outbound row ring. Each slot is a full FleetWardriveRow (~76 B).
+// Deep enough to absorb multi-worker bursts without dropping rows over radio.
+constexpr int kFleetRowRingSlots = AwokPins::kDualBand ? 128 : 64;
 
 // One fleet member as tracked by the coordinator (and mirrored on every node
 // from the roster). `mac`/`caps` come from the roster; the rest are live.
@@ -740,6 +740,10 @@ void configureBleScan(NimBLEScan* scan, NimBLEScanCallbacks* callbacks,
 bool radioSchedulerBegin(RadioScheduler& s);
 void radioSchedulerTick(RadioScheduler& s);
 void radioSchedulerEnd(RadioScheduler& s);
+
+void wardriveResetDedup();
+void closeWardriveCsv();
+void flushWardriveCsv();
 
 // Network Tools types precede Arduino-generated function prototypes.
 enum class NetJob { None, Join, Hosts, Ports, Cameras, Printers, Sip, Upnp };

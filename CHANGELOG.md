@@ -5,6 +5,41 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-09-20
+
+### Added
+
+- **Modernized Web Bluetooth remote control interface.** The web control app
+  (`website/public/control.html` and `website/dist/control.html`) now features a
+  streamlined tactical dark theme, tabbed navigation (Telemetry, Wi-Fi Scan,
+  Wardrive, Tools & Ops, Fleet, and Terminal Log), real-time Wi-Fi network search
+  and sorting (by signal strength or channel), dynamic 4-bar RSSI signal meters,
+  and direct Google Maps link from live GPS coordinates.
+- **Real-time WiGLE wardrive stream parsing.** Incoming WiGLE 1.6 CSV rows
+  streamed from the ESP32 bridge over BLE are parsed live into a structured
+  sightings table displaying Type (Wi-Fi/BLE), SSID, BSSID, RSSI, Channel, Auth,
+  and GPS coordinates, alongside live counters for total sightings, Wi-Fi APs,
+  BLE devices, and open networks.
+- **Friendly tool opcode decoding.** Raw tool opcodes (`#1`, `#7`, `#50`, `#52`,
+  etc.) displayed on the phone are automatically mapped to readable names and
+  status badges (e.g. `#7 Wardrive`, `#1 Wi-Fi Scan`, `#52 Deauth`).
+
+### Fixed
+
+- **Fleet coordinator lockup under multi-node wardrive load.** Fixed an issue where
+  the fleet coordinator froze shortly after wardriving began with more than one
+  worker node connected.
+  - **Batched SD writes:** Coordinator now buffers WiGLE CSV writes and batches SD
+    card flushes (every 5 rows or 1000 ms) instead of executing a synchronous,
+    blocking `flush()` on every single incoming row from worker nodes.
+  - **Bounded ESP-NOW row queue processing:** Restricted ESP-NOW fleet row queue
+    ingestion to a maximum of 4 rows per frame, increased queue capacity from 16 to
+    32 entries, and added cooperative task yielding (`yield()` / `delay(1)`) every
+    3 dispatches to avoid starving the coordinator main loop and watchdog timer.
+  - **Non-blocking BLE relay buffer:** Replaced blocking GATT notification loops
+    with a non-blocking ring buffer on the bridge chip, preventing worker node
+    backpressure when streaming live rows to a connected phone.
+
 ## [1.5.3] - 2026-09-19
 
 ### Changed
@@ -731,7 +766,11 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.4.4...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.5.4...HEAD
+[1.5.4]: https://github.com/dagnazty/awokxdag/compare/v1.5.3...v1.5.4
+[1.5.3]: https://github.com/dagnazty/awokxdag/compare/v1.5.2...v1.5.3
+[1.5.2]: https://github.com/dagnazty/awokxdag/compare/v1.5.1...v1.5.2
+[1.5.1]: https://github.com/dagnazty/awokxdag/compare/v1.4.4...v1.5.1
 [1.4.4]: https://github.com/dagnazty/awokxdag/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/dagnazty/awokxdag/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/dagnazty/awokxdag/compare/v1.4.1...v1.4.2

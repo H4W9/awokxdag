@@ -221,23 +221,54 @@ const char* wigleAuth(wifi_auth_mode_t auth) {
   }
 }
 
-bool wardriveMacSeen(const uint8_t* mac) {
-  for (int i = 0; i < wardriveMacCount; ++i) {
-    bool equal = true;
-    for (int j = 0; j < 6; ++j) {
-      if (wardriveMacs[i][j] != mac[j]) {
-        equal = false;
-        break;
-      }
-    }
-    if (equal) return true;
+static inline uint32_t macHash1(const uint8_t* mac) {
+  uint32_t h = 2166136261u;
+  for (int i = 0; i < 6; ++i) {
+    h = (h ^ mac[i]) * 16777619u;
   }
-  return false;
+  return h;
+}
+
+static inline uint32_t macHash2(const uint8_t* mac) {
+  uint32_t h = 0x811c9dc5u;
+  for (int i = 0; i < 6; ++i) {
+    h = (h * 33) ^ mac[i];
+  }
+  return h;
+}
+
+constexpr size_t kWardriveBloomBits = kWardriveBloomFilterBytes * 8;
+
+bool wardriveMacSeen(const uint8_t* mac) {
+  const uint32_t h1 = macHash1(mac);
+  const uint32_t h2 = macHash2(mac);
+  const uint32_t b1 = h1 % kWardriveBloomBits;
+  const uint32_t b2 = (h1 + h2) % kWardriveBloomBits;
+  const uint32_t b3 = (h1 + 2 * h2) % kWardriveBloomBits;
+  const uint32_t b4 = (h1 + 3 * h2) % kWardriveBloomBits;
+  return (wardriveBloom[b1 >> 3] & (1 << (b1 & 7))) &&
+         (wardriveBloom[b2 >> 3] & (1 << (b2 & 7))) &&
+         (wardriveBloom[b3 >> 3] & (1 << (b3 & 7))) &&
+         (wardriveBloom[b4 >> 3] & (1 << (b4 & 7)));
 }
 
 void wardriveAddMac(const uint8_t* mac) {
-  if (wardriveMacCount >= kMaxWardriveMacs) return;
-  memcpy(wardriveMacs[wardriveMacCount++], mac, 6);
+  const uint32_t h1 = macHash1(mac);
+  const uint32_t h2 = macHash2(mac);
+  const uint32_t b1 = h1 % kWardriveBloomBits;
+  const uint32_t b2 = (h1 + h2) % kWardriveBloomBits;
+  const uint32_t b3 = (h1 + 2 * h2) % kWardriveBloomBits;
+  const uint32_t b4 = (h1 + 3 * h2) % kWardriveBloomBits;
+  wardriveBloom[b1 >> 3] |= (1 << (b1 & 7));
+  wardriveBloom[b2 >> 3] |= (1 << (b2 & 7));
+  wardriveBloom[b3 >> 3] |= (1 << (b3 & 7));
+  wardriveBloom[b4 >> 3] |= (1 << (b4 & 7));
+  ++wardriveMacCount;
+}
+
+void wardriveResetDedup() {
+  memset(wardriveBloom, 0, sizeof(wardriveBloom));
+  wardriveMacCount = 0;
 }
 
 // Open a FRESH CSV for this wardrive run: /awokxdag/wardrive-NNNN.csv, using the
@@ -245,6 +276,7 @@ void wardriveAddMac(const uint8_t* mac) {
 // writes a new file instead of appending to one growing log.
 bool openWardriveCsv() {
   if (!ensureSdCard()) return false;
+  closeWardriveCsv();
   g_wardriveCsvPath = "";
   for (int n = 1; n <= 9999; ++n) {
     char buf[48];
@@ -255,21 +287,37 @@ bool openWardriveCsv() {
     Serial.println("[wardrive] no free session filename (0001-9999)");
     return false;
   }
-  File file = SD.open(g_wardriveCsvPath.c_str(), FILE_WRITE);
-  if (!file) {
+  g_wardriveFile = SD.open(g_wardriveCsvPath.c_str(), FILE_WRITE);
+  if (!g_wardriveFile) {
     sdReady = false;
+    wardriveCsvReady = false;
     return false;
   }
-  file.println(
+  g_wardriveFile.println(
       String("WigleWifi-1.6,appRelease=AxD,model=") + AwokPins::kChipLabel + ",release=" +
       kVersion +
       ",device=AxD,display=ILI9341,board=" + AwokPins::kBoardLabel + ",brand=AxD");
-  file.println(
+  g_wardriveFile.println(
       "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,"
       "CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type");
-  file.close();
+  g_wardriveFile.flush();
+  wardriveCsvReady = true;
   Serial.printf("[wardrive] logging to %s\n", g_wardriveCsvPath.c_str());
   return true;
+}
+
+void closeWardriveCsv() {
+  if (g_wardriveFile) {
+    g_wardriveFile.flush();
+    g_wardriveFile.close();
+  }
+  wardriveCsvReady = false;
+}
+
+void flushWardriveCsv() {
+  if (wardriveCsvReady && g_wardriveFile) {
+    g_wardriveFile.flush();
+  }
 }
 
 // Basename of the current run's CSV for on-screen display (empty before start).
@@ -317,24 +365,22 @@ String wardriveWigleTail(int channel, int rssi, const char* type) {
          ",,0," + type;
 }
 
-// Persist a wardrive row to SD when available, and (on the headless bridge) push
-// it to the phone so the app can build/download the WiGLE CSV even with no SD.
-static void wardriveEmitRow(const String& line) {
+// Persist a wardrive row to SD via persistent open file handle, and (on the
+// headless bridge) push it to the phone so the app can build/download the WiGLE
+// CSV even with no SD.
+static void wardriveEmitRow(const char* line, size_t len) {
 #ifdef AWOK_HEADLESS
   if (g_bridgePhoneConnected)
     bridgeNotifyResult(kSourceWardrive,
-                       reinterpret_cast<const uint8_t*>(line.c_str()),
-                       line.length());
+                       reinterpret_cast<const uint8_t*>(line),
+                       len);
 #endif
-  if (!wardriveCsvReady) return;
-  File file = SD.open(g_wardriveCsvPath.c_str(), FILE_APPEND);
-  if (!file) {
-    wardriveCsvReady = false;
-    sdReady = false;
-    return;
-  }
-  file.println(line);
-  file.close();
+  if (!wardriveCsvReady || !g_wardriveFile) return;
+  g_wardriveFile.println(line);
+}
+
+static void wardriveEmitRow(const String& line) {
+  wardriveEmitRow(line.c_str(), line.length());
 }
 
 // Coordinator: merge a WiGLE row received from a fleet member. Dedups by id
@@ -345,17 +391,20 @@ static void wardriveEmitRow(const String& line) {
 void wardriveEmitPeerRow(const FleetWardriveRow& r) {
   if (wardriveMacSeen(r.id)) return;
   wardriveAddMac(r.id);
-  char idStr[18];
-  snprintf(idStr, sizeof(idStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-           r.id[0], r.id[1], r.id[2], r.id[3], r.id[4], r.id[5]);
-  const String name(r.name);
-  String line = String(idStr) + "," + csvField(name) + "," +
-                (r.isBle ? String("[BLE]") : String(wigleAuth((wifi_auth_mode_t)r.auth))) + "," +
-                gpsTimestamp() + "," + String(r.channel) + "," +
-                String(wigleFrequencyMhz(r.channel)) + "," + String((int)r.rssi) +
-                "," + String(r.lat, 6) + "," + String(r.lon, 6) + "," +
-                String((int)r.alt) + ".0,0.0,,0," + (r.isBle ? "BLE" : "WIFI");
-  wardriveEmitRow(line);
+  char line[256];
+  const char* authStr = r.isBle ? "[BLE]" : wigleAuth((wifi_auth_mode_t)r.auth);
+  const char* typeStr = r.isBle ? "BLE" : "WIFI";
+  String escapedName = csvField(String(r.name));
+  String ts = gpsTimestamp();
+  int n = snprintf(line, sizeof(line),
+                   "%02X:%02X:%02X:%02X:%02X:%02X,%s,%s,%s,%u,%d,%d,%.6f,%.6f,%d.0,0.0,,0,%s",
+                   r.id[0], r.id[1], r.id[2], r.id[3], r.id[4], r.id[5],
+                   escapedName.c_str(), authStr, ts.c_str(),
+                   (unsigned)r.channel, wigleFrequencyMhz(r.channel), (int)r.rssi,
+                   r.lat, r.lon, (int)r.alt, typeStr);
+  if (n > 0 && static_cast<size_t>(n) < sizeof(line)) {
+    wardriveEmitRow(line, static_cast<size_t>(n));
+  }
   if (r.isBle) ++wardriveBleCount; else ++wardriveNetworks;
 }
 
@@ -527,7 +576,7 @@ void startWardrive() {
   wardriveNetworks = 0;
   wardriveBleCount = 0;
   wardriveScans = 0;
-  wardriveMacCount = 0;
+  wardriveResetDedup();
   bleHitHead = 0;
   bleHitTail = 0;
   wardriveStartMs = millis();
@@ -560,6 +609,7 @@ void startWardrive() {
 void stopWardrive() {
   wardriveActive = false;
   radioSchedulerEnd(wardriveSched);
+  closeWardriveCsv();
   Serial.printf("[wardrive] stopped; %lu Wi-Fi, %lu BLE\n",
                 static_cast<unsigned long>(wardriveNetworks),
                 static_cast<unsigned long>(wardriveBleCount));
@@ -617,6 +667,11 @@ void updateWardrive() {
       // not started / failed: kick off a scan
       WiFi.scanNetworks(true, true, false, 120);
     }
+  }
+  static uint32_t lastWardriveFlushMs = 0;
+  if (millis() - lastWardriveFlushMs >= 2000) {
+    lastWardriveFlushMs = millis();
+    flushWardriveCsv();
   }
   if (currentView == View::kWardrive &&
       millis() - lastWardriveDrawMs >= kWardriveRedrawMs) {
