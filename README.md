@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.5.5
+- **Version:** 1.6.0
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -177,6 +177,12 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   **[Piglet](https://github.com/Hamspiced/piglet)** by **Hamspiced**, whose open
   mesh-node implementation provided the reference for keeping one Core
   authoritative while nodes discover, join, and reconnect to it.
+- **Fleet Hunter** — multi-node radio direction-finding and target trilateration.
+  Selected access points are tracked across the fleet; worker nodes transmit
+  observation frames (type 11) over ESP-NOW, and the coordinator solves target GPS
+  coordinates, distance, confidence radius, and compass bearing using Weighted
+  Centroid Localization. Includes an interactive directional radar compass on-device
+  and in the Web Bluetooth interface.
 
 ### Status / utility
 - **Status** — uptime, free heap, chip temp, SD used/total, GPS fix, Wi-Fi MAC,
@@ -383,7 +389,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.5.5/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.6.0/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center

@@ -5,6 +5,38 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-20
+
+### Added
+
+- **Fleet Hunter (multi-node target radio direction-finding & trilateration).**
+  - **Trilateration engine (`AWOKxDAG/locator.ino`):** Computes estimated target GPS
+    coordinates $(lat, lon)$, geodesic distance, and confidence radius using
+    Weighted Centroid Localization (WCL) with log-distance path loss ($n = 2.5$).
+    Calculates dynamic forward azimuth compass bearing ($0^\circ$–$360^\circ$) to guide
+    operators directly to rogue or target transmitters on foot.
+  - **Multi-node ESP-NOW protocol (`AWOKxDAG/link_protocol.h` & `link.ino`):**
+    Introduced `kLinkMsgFleetHuntObservation` (type 11, 28 bytes) and
+    `kLinkMsgFleetHuntResult` (type 12) frames. Fleet worker nodes send target
+    sightings with their own GPS coordinates and RSSI readings to the coordinator,
+    which aggregates observations across the fleet in a 16-point ring buffer.
+  - **On-device Radar Compass display:** Added `View::kFleetHunt` screen for Touch
+    (240×320) and Mini (128×128) devices, featuring a tactical circular radar scope
+    with concentric range rings, cardinal compass headers (N/E/S/W), real-time
+    target vector ray, animated pulsating target blip, confidence radius boundary,
+    and numerical metrics (distance, bearing, coordinates, RSSI, point count).
+  - **Interactive Web Bluetooth Radar Scope (`control.html`):**
+    - Added `🎯 Fleet Hunter` action button (opcode 55) for selected target APs.
+    - Added HTML5 Canvas radar scope visualizer with animated rotating sweep beam,
+      target blip, distance readout, directional compass badge, and confidence indicator.
+    - Direct "📍 Open in Maps" integration generating live Google Maps links from
+      solved coordinates.
+    - Added `$HUNT` telemetry parser (`parseHuntRow()`) and updated WiGLE CSV export
+      release header to `1.6.0`.
+  - **Bridge relay (`AxDBridge/AxDBridge.ino`):** Added headless ESP-NOW forwarding of
+    `FleetHuntResult` frames directly to Web Bluetooth clients as `kSourceHunt` (3)
+    notifications.
+
 ## [1.5.5] - 2026-09-20
 
 ### Fixed
@@ -805,7 +837,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.5.5...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/dagnazty/awokxdag/compare/v1.5.5...v1.6.0
 [1.5.5]: https://github.com/dagnazty/awokxdag/compare/v1.5.4...v1.5.5
 [1.5.4]: https://github.com/dagnazty/awokxdag/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/dagnazty/awokxdag/compare/v1.5.2...v1.5.3

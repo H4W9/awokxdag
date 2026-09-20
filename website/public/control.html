@@ -513,8 +513,53 @@
           <button data-op="52" class="stop">💥 Deauth</button>
           <button data-op="53" class="stop">🎣 Grab Handshake</button>
           <button data-op="54">📡 Track RSSI</button>
+          <button data-op="55" class="primary">🎯 Fleet Hunter</button>
           <button data-op="22" class="stop">👥 Evil Twin</button>
           <button data-op="23" class="stop">🪤 Probe Lure</button>
+        </div>
+
+        <!-- Fleet Hunter Radar Scope -->
+        <div id="hunt-card" style="display:none; margin-top:14px; border-top:1px solid var(--line); padding-top:12px;">
+          <div class="card-title">
+            <span style="color:var(--accent);">🎯 FLEET HUNTER RADAR SCOPE</span>
+            <span id="hunt-status-badge" class="badge badge-lime">TRACKING</span>
+          </div>
+          <div style="display:flex; flex-direction:column; align-items:center; margin: 12px 0;">
+            <canvas id="hunt-radar" width="260" height="260" style="background:#06101c; border-radius:50%; border:2px solid var(--accent); box-shadow:0 0 15px rgba(56,189,248,0.2);"></canvas>
+          </div>
+          <div class="grid" style="grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px;">
+            <div class="stat-box">
+              <div class="k">Est. Distance</div>
+              <div id="hunt-dist" class="v" style="color:var(--accent); font-size:15px;">-- m</div>
+            </div>
+            <div class="stat-box">
+              <div class="k">Bearing</div>
+              <div id="hunt-bearing" class="v" style="color:var(--lime); font-size:15px;">--°</div>
+            </div>
+            <div class="stat-box">
+              <div class="k">Confidence</div>
+              <div id="hunt-conf" class="v" style="color:var(--purple); font-size:15px;">±-- m</div>
+            </div>
+          </div>
+          <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px;">
+            <div class="stat-box">
+              <div class="k">Target RSSI</div>
+              <div id="hunt-rssi" class="v" style="color:var(--warn); font-size:14px;">-- dBm</div>
+            </div>
+            <div class="stat-box">
+              <div class="k">Multi-Node Points</div>
+              <div id="hunt-pts" class="v" style="color:var(--good); font-size:14px;">0 pts</div>
+            </div>
+          </div>
+          <div class="gps-panel" style="margin-top:4px;">
+            <div>
+              <div class="k" style="font-size:10px;">ESTIMATED TARGET COORDINATES</div>
+              <div id="hunt-coords" class="gps-coords">--.------, --.------</div>
+            </div>
+            <a id="hunt-map-link" href="#" target="_blank" rel="noopener" class="gps-link" style="display:none;">
+              📍 Open in Maps ↗
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -703,7 +748,7 @@ const CMD     = "a0d10000-1234-4a3c-8b21-000000000002"; // write
 const STATUS  = "a0d10000-1234-4a3c-8b21-000000000003"; // notify/read
 const RESULTS = "a0d10000-1234-4a3c-8b21-000000000004"; // notify (Wi-Fi list / WiGLE row)
 const OP_SELECT_WIFI = 51;
-const TARGET_OPS = [52,53,54,22,23];  // need a selected network
+const TARGET_OPS = [52,53,54,55,22,23];  // need a selected network
 const TGT_BRIDGE = 0, TGT_SCREEN = 1;
 let target = TGT_SCREEN;  // which chip runs the command
 const GPSSD_OPS = [42];  // Files -- screen-chip only (no SD on bridge)
@@ -718,7 +763,7 @@ const TOOL_NAMES = {
   22: "Evil Twin", 23: "Probe Lure", 24: "Auth Flood", 30: "Rogue Watch",
   31: "BLE Spam Watch", 32: "Karma Watch", 33: "Beacon Watch", 34: "Advanced Watch",
   40: "Locator", 41: "Status", 42: "Files", 43: "Fleet Wardrive", 50: "List Wi-Fi",
-  51: "Select Wi-Fi", 52: "Deauth", 53: "Grab Handshake", 54: "Track RSSI",
+  51: "Select Wi-Fi", 52: "Deauth", 53: "Grab Handshake", 54: "Track RSSI", 55: "Fleet Hunter",
   60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
 };
 
@@ -829,6 +874,189 @@ function touchConnRow(c){  // in-place refresh (no full re-render, avoids flicke
 // ---- per-bridge Wi-Fi list & Wardrive parsing ---------------------------
 const AUTH = ["Open","WEP","WPA","WPA2","WPA2-Ent","WPA3","WPA2/3","WAPI","OWE"];
 
+let huntData = {
+  bssid: "",
+  ssid: "",
+  lat: 0,
+  lon: 0,
+  dist: 0,
+  bearing: 0,
+  conf: 0,
+  rssi: -127,
+  points: 0,
+  active: false,
+  sweepAngle: 0
+};
+
+let radarAnimId = null;
+
+function initRadar() {
+  if (radarAnimId) return;
+  function animateRadar() {
+    drawRadarCanvas();
+    huntData.sweepAngle = (huntData.sweepAngle + 0.04) % (Math.PI * 2);
+    radarAnimId = requestAnimationFrame(animateRadar);
+  }
+  animateRadar();
+}
+
+function drawRadarCanvas() {
+  const canvas = $("hunt-radar");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2, cy = h / 2, r = w / 2 - 12;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Background radial gradient
+  const bgGrad = ctx.createRadialGradient(cx, cy, 5, cx, cy, r);
+  bgGrad.addColorStop(0, "#081b2f");
+  bgGrad.addColorStop(1, "#030a12");
+  ctx.fillStyle = bgGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Grid concentric rings
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.25)";
+  ctx.lineWidth = 1;
+  [0.33, 0.66, 1.0].forEach(frac => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * frac, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  // Crosshairs
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+  ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+  ctx.stroke();
+
+  // Cardinal labels
+  ctx.fillStyle = "#38bdf8";
+  ctx.font = "bold 10px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("N", cx, cy - r + 9);
+  ctx.fillText("S", cx, cy + r - 9);
+  ctx.fillText("W", cx - r + 9, cy);
+  ctx.fillText("E", cx + r - 9, cy);
+
+  // Sweep line
+  const sweepX = cx + Math.cos(huntData.sweepAngle) * r;
+  const sweepY = cy + Math.sin(huntData.sweepAngle) * r;
+  const sweepGrad = ctx.createLinearGradient(cx, cy, sweepX, sweepY);
+  sweepGrad.addColorStop(0, "rgba(56, 189, 248, 0.1)");
+  sweepGrad.addColorStop(1, "rgba(56, 189, 248, 0.6)");
+  ctx.strokeStyle = sweepGrad;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(sweepX, sweepY);
+  ctx.stroke();
+
+  // Observer dot
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Target blip if active
+  if (huntData.points > 0 && (huntData.lat !== 0 || huntData.dist > 0)) {
+    // Convert bearing (0 = North / up) to radar angle
+    const angleRad = (huntData.bearing - 90) * (Math.PI / 180);
+    // Range scale: up to 60 meters maps to r
+    const maxRange = 60;
+    const blipR = Math.min(Math.max((huntData.dist / maxRange) * (r - 16), 12), r - 10);
+    const bx = cx + Math.cos(angleRad) * blipR;
+    const by = cy + Math.sin(angleRad) * blipR;
+
+    // Direction line to target
+    ctx.strokeStyle = "rgba(57, 211, 83, 0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Confidence circle
+    const confR = Math.min(Math.max((huntData.conf / maxRange) * (r - 16), 6), 28);
+    ctx.strokeStyle = "rgba(227, 179, 65, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(bx, by, confR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Pulsing target blip
+    const pulse = 1 + 0.25 * Math.sin(Date.now() / 150);
+    ctx.fillStyle = "#39d353";
+    ctx.shadowColor = "#39d353";
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(bx, by, 5 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function parseHuntRow(rowStr) {
+  try {
+    const parts = rowStr.trim().split(",");
+    // $HUNT,BSSID,SSID,LAT,LON,DIST,BEARING,CONF,RSSI,POINTS
+    if (parts.length < 10 || parts[0] !== "$HUNT") return;
+    huntData.bssid = parts[1];
+    huntData.ssid = parts[2];
+    huntData.lat = parseFloat(parts[3]) || 0;
+    huntData.lon = parseFloat(parts[4]) || 0;
+    huntData.dist = parseFloat(parts[5]) || 0;
+    huntData.bearing = parseFloat(parts[6]) || 0;
+    huntData.conf = parseFloat(parts[7]) || 0;
+    huntData.rssi = parseInt(parts[8], 10) || -127;
+    huntData.points = parseInt(parts[9], 10) || 0;
+    huntData.active = true;
+
+    const card = $("hunt-card");
+    if (card) card.style.display = "block";
+    initRadar();
+
+    if ($("hunt-dist")) $("hunt-dist").textContent = huntData.dist.toFixed(1) + " m";
+    if ($("hunt-bearing")) {
+      const b = Math.round(huntData.bearing);
+      let cardinal = "N";
+      if (b >= 337.5 || b < 22.5) cardinal = "N";
+      else if (b < 67.5) cardinal = "NE";
+      else if (b < 112.5) cardinal = "E";
+      else if (b < 157.5) cardinal = "SE";
+      else if (b < 202.5) cardinal = "S";
+      else if (b < 247.5) cardinal = "SW";
+      else if (b < 292.5) cardinal = "W";
+      else cardinal = "NW";
+      $("hunt-bearing").textContent = b + "° " + cardinal;
+    }
+    if ($("hunt-conf")) $("hunt-conf").textContent = "±" + huntData.conf.toFixed(1) + " m";
+    if ($("hunt-rssi")) $("hunt-rssi").textContent = huntData.rssi + " dBm";
+    if ($("hunt-pts")) $("hunt-pts").textContent = huntData.points + " pt" + (huntData.points === 1 ? "" : "s");
+
+    if (huntData.lat !== 0 && huntData.lon !== 0) {
+      if ($("hunt-coords")) $("hunt-coords").textContent = huntData.lat.toFixed(6) + ", " + huntData.lon.toFixed(6);
+      const link = $("hunt-map-link");
+      if (link) {
+        link.href = `https://www.google.com/maps?q=${huntData.lat.toFixed(6)},${huntData.lon.toFixed(6)}`;
+        link.style.display = "inline-flex";
+      }
+    } else {
+      if ($("hunt-coords")) $("hunt-coords").textContent = "Acquiring GPS fix...";
+      const link = $("hunt-map-link");
+      if (link) link.style.display = "none";
+    }
+  } catch(e) {
+    console.error("Failed to parse hunt row:", e);
+  }
+}
+
 function parseResult(dv, c){
   if (dv.byteLength >= 1 && dv.getUint8(0) === 2) {  // wardrive WiGLE CSV row (text)
     let row = "";
@@ -836,6 +1064,18 @@ function parseResult(dv, c){
     wardriveRows.push(row);  // merged across every bridge
     $("wd-count").textContent = wardriveRows.length;
     parseWardriveRow(row);
+    return;
+  }
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 3) {  // Fleet Hunter telemetry (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseHuntRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x48 && dv.getUint8(2) === 0x55 && dv.getUint8(3) === 0x4E && dv.getUint8(4) === 0x54) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseHuntRow(row);
     return;
   }
   if (dv.byteLength < 12) return;            // [source][index][count][rssi][ch][auth][bssid6][ssid]
@@ -1191,6 +1431,11 @@ async function sendOp(op, arg=0){
     await c.cmdCh.writeValue(new Uint8Array([op, arg, target]));
     const opLabel = TOOL_NAMES[op] || ("Op " + op);
     log("["+c.name+"] " + opLabel + (arg?(" arg "+arg):"") + " -> " + (target===TGT_BRIDGE?"bridge":"screen"));
+    if (op === 55) {
+      const card = $("hunt-card");
+      if (card) card.style.display = "block";
+      initRadar();
+    }
   } catch(e){ log("send failed: "+e.message); }
 }
 
@@ -1239,7 +1484,7 @@ updateEnabled(); renderConns(); renderStats();
 async function downloadWardriveCsv(){
   if (!wardriveRows.length){ log("no wardrive rows yet"); return; }
   const header =
-    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.5.5,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
+    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.0,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
     "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\n";
   const text = header + wardriveRows.join("\n") + "\n";
   const fname = "wardrive-" + Date.now() + ".csv";
