@@ -223,7 +223,7 @@ class AwokPancakeDisplay : public Adafruit_GFX {
   // that avoids nearest-neighbour's uneven 1px/2px strokes. kEdgeGain 1 = plain
   // bilinear, higher = crisper (approaches nearest-neighbour).
   static inline uint8_t sharpen(uint8_t w) {
-    constexpr int kEdgeGain = 3;
+    constexpr int kEdgeGain = 5;
     int v = (int(w) - 128) * kEdgeGain + 128;
     if (v < 0) v = 0;
     if (v > 255) v = 255;
