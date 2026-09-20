@@ -111,9 +111,12 @@ class AwokPancakeDisplay : public Adafruit_GFX {
     }
     buffered_ = buffer_ != nullptr;
     if (buffered_) {
-      // Precompute the source column for each of the 320 output columns.
+      // Precompute the bilinear source column + weight for each output column.
+      // Q8 fixed point: 240*256/320 == 192 exactly, so no per-frame division.
       for (int outX = 0; outX < AwokST7796::kPanelW; ++outX) {
-        colMap_[outX] = (outX * kLogicalW) / AwokST7796::kPanelW;
+        const uint32_t sx = uint32_t(outX) * kLogicalW * 256 / AwokST7796::kPanelW;
+        colX0_[outX] = sx >> 8;               // integer source column (0..239)
+        colWx_[outX] = sx & 0xFF;             // weight of the next column (0..255)
       }
       fillScreen(0);
     } else {
@@ -123,19 +126,30 @@ class AwokPancakeDisplay : public Adafruit_GFX {
     return true;
   }
 
-  // Upscale-blit the 240x320 buffer to the full 320x480 panel (nearest-
-  // neighbour). Dirty-gated so idle frames cost nothing, matching the buffered
-  // ILI9341 path.
+  // Upscale-blit the 240x320 buffer to the full 320x480 panel with bilinear
+  // filtering. Point sampling at these non-integer ratios (x4/3, x3/2) makes 1px
+  // font strokes land as 1px or 2px unpredictably -- uneven, hard-to-read text.
+  // Bilinear renders every stroke at a consistent (anti-aliased) weight instead.
+  // Dirty-gated so idle frames cost nothing, matching the buffered ILI9341 path.
   void present(bool = true) {
     if (!buffered_ || !dirty_) return;
     static uint16_t line[AwokST7796::kPanelW];
     panel_.startWrite();
     panel_.setAddrWindow(0, 0, AwokST7796::kPanelW, AwokST7796::kPanelH);
     for (int outY = 0; outY < AwokST7796::kPanelH; ++outY) {
-      const uint16_t* srcRow =
-          buffer_ + size_t((outY * kLogicalH) / AwokST7796::kPanelH) * kLogicalW;
+      const uint32_t sy = uint32_t(outY) * kLogicalH * 256 / AwokST7796::kPanelH;
+      const int y0 = sy >> 8;
+      const int y1 = (y0 + 1 < kLogicalH) ? y0 + 1 : y0;
+      const uint8_t wy = sy & 0xFF;
+      const uint16_t* row0 = buffer_ + size_t(y0) * kLogicalW;
+      const uint16_t* row1 = buffer_ + size_t(y1) * kLogicalW;
       for (int outX = 0; outX < AwokST7796::kPanelW; ++outX) {
-        line[outX] = srcRow[colMap_[outX]];
+        const int x0 = colX0_[outX];
+        const int x1 = (x0 + 1 < kLogicalW) ? x0 + 1 : x0;
+        const uint8_t wx = colWx_[outX];
+        const uint16_t top = blend565(row0[x0], row0[x1], wx);
+        const uint16_t bot = blend565(row1[x0], row1[x1], wx);
+        line[outX] = blend565(top, bot, wy);
       }
       panel_.writePixels(line, AwokST7796::kPanelW, true, false);
     }
@@ -201,9 +215,21 @@ class AwokPancakeDisplay : public Adafruit_GFX {
  private:
   static constexpr int16_t kLogicalW = 240;
   static constexpr int16_t kLogicalH = 320;
+
+  // Blend two RGB565 pixels: result = a*(1-w/256) + b*(w/256), per channel.
+  static inline uint16_t blend565(uint16_t a, uint16_t b, uint8_t w) {
+    if (w == 0) return a;
+    const uint16_t iw = 256 - w;
+    const uint16_t r = ((a >> 11) * iw + (b >> 11) * w) >> 8;
+    const uint16_t g = (((a >> 5) & 0x3F) * iw + ((b >> 5) & 0x3F) * w) >> 8;
+    const uint16_t bl = ((a & 0x1F) * iw + (b & 0x1F) * w) >> 8;
+    return (r << 11) | (g << 5) | bl;
+  }
+
   AwokST7796 panel_;
   uint16_t* buffer_ = nullptr;
-  uint16_t colMap_[AwokST7796::kPanelW] = {0};
+  uint8_t colX0_[AwokST7796::kPanelW] = {0};  // bilinear source column per output col
+  uint8_t colWx_[AwokST7796::kPanelW] = {0};  // and its Q8 blend weight
   bool buffered_ = false;
   bool dirty_ = true;
 };
