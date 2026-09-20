@@ -1,14 +1,19 @@
 #pragma once
-// Pancake C5 display: a 3.5" ST7796 320x480 panel driven from the same 240x320
-// UI back buffer the ILI9341 Touch build uses.
+// Pancake C5 display: a 3.5" ST7796 320x480 panel.
 //
-// The entire AxD UI is laid out in a fixed 240x320 coordinate space (draw calls
-// and touch zones alike). Rather than reflow every view for the larger panel,
-// the Pancake build keeps that logical 240x320 canvas in a PSRAM back buffer --
-// exactly like touch_display.h -- and, once per frame, upscale-blits it to fill
-// the 320x480 ST7796 (nearest-neighbour, x4/3 across and x3/2 down). Touch is
-// mapped back through the same scale in input.ino, so every existing view and
-// hit box works unchanged. See input.ino readTouch() for the inverse mapping.
+// The AxD UI is authored in a fixed 240x320 coordinate space (draw calls and
+// touch zones alike). The Pancake build renders it at the panel's *native*
+// 320x480 resolution instead of stretching a finished 240x320 raster -- an
+// earlier scaled-buffer approach made font strokes fade or vary in thickness,
+// because scaling a bitmapped image by a non-integer ratio can't stay both
+// crisp and uniform.
+//
+// AwokPancakeDisplay keeps the 240x320 logical Adafruit_GFX interface (so the
+// sketch and touch mapping are untouched) but paints into a real 320x480
+// buffer: geometry is scaled up to fill the panel, while *text glyphs are drawn
+// at native resolution* (crisp, uniform, no resampling) at the scaled cursor
+// position. Text rendering reuses the base Adafruit_GFX::drawChar via a 1:1
+// "passthrough" pixel mode; geometry uses scaled pixel/rect fills.
 //
 // There is no Adafruit ST7796 library on the Arduino registry, so the panel
 // driver is a small Adafruit_SPITFT subclass here -- the same base class
@@ -93,10 +98,11 @@ class AwokST7796 : public Adafruit_SPITFT {
   void cmd(uint8_t command, uint8_t data) { sendCommand(command, &data, 1); }
 };
 
-// ---- 240x320 logical canvas that scales to fill the ST7796 -----------------
-// Drop-in for the AwokTouchDisplay used by the ILI9341 Touch build: same 240x320
-// Adafruit_GFX surface and begin()/present() contract, so the sketch is
-// unchanged. The difference is only in present(), which upscales to 320x480.
+// ---- 240x320 logical canvas rendered natively onto the 320x480 panel -------
+// Drop-in for AwokTouchDisplay: presents a 240x320 Adafruit_GFX surface, so the
+// sketch and the touch mapping (input.ino, panel->240x320) are unchanged. Draws
+// into a real 320x480 buffer -- geometry scaled to fill, text drawn crisp at
+// native resolution -- then blits 1:1 to the panel (no resampling).
 class AwokPancakeDisplay : public Adafruit_GFX {
  public:
   AwokPancakeDisplay(int8_t dc, int8_t cs, int8_t rst)
@@ -106,85 +112,70 @@ class AwokPancakeDisplay : public Adafruit_GFX {
     panel_.begin(freq);
     if (!buffer_) {
       buffer_ = static_cast<uint16_t*>(heap_caps_malloc(
-          size_t(kLogicalW) * kLogicalH * sizeof(uint16_t),
+          size_t(kPanelW) * kPanelH * sizeof(uint16_t),
           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     }
     buffered_ = buffer_ != nullptr;
+    // Logical->physical edge maps: pixel column/row i spans [lut[i], lut[i+1]).
+    for (int i = 0; i <= kLogicalW; ++i) sxLut_[i] = i * kPanelW / kLogicalW;
+    for (int i = 0; i <= kLogicalH; ++i) syLut_[i] = i * kPanelH / kLogicalH;
     if (buffered_) {
-      // Precompute the bilinear source column + weight for each output column.
-      // Q8 fixed point: 240*256/320 == 192 exactly, so no per-frame division.
-      for (int outX = 0; outX < AwokST7796::kPanelW; ++outX) {
-        const uint32_t sx = uint32_t(outX) * kLogicalW * 256 / AwokST7796::kPanelW;
-        colX0_[outX] = sx >> 8;               // integer source column (0..239)
-        colWx_[outX] = sx & 0xFF;             // weight of the next column (0..255)
-      }
       fillScreen(0);
     } else {
-      Serial.println("[display] no PSRAM back buffer; direct-to-panel 240x320");
+      Serial.println("[display] no PSRAM back buffer; direct-to-panel");
       panel_.fillScreen(0);
     }
     return true;
   }
 
-  // Upscale-blit the 240x320 buffer to the full 320x480 panel with bilinear
-  // filtering. Point sampling at these non-integer ratios (x4/3, x3/2) makes 1px
-  // font strokes land as 1px or 2px unpredictably -- uneven, hard-to-read text.
-  // Bilinear renders every stroke at a consistent (anti-aliased) weight instead.
-  // Dirty-gated so idle frames cost nothing, matching the buffered ILI9341 path.
+  // Blit the native 320x480 buffer straight to the panel -- no scaling here, so
+  // text stays exactly as rendered. Dirty-gated like the ILI9341 build.
   void present(bool = true) {
     if (!buffered_ || !dirty_) return;
-    static uint16_t line[AwokST7796::kPanelW];
     panel_.startWrite();
-    panel_.setAddrWindow(0, 0, AwokST7796::kPanelW, AwokST7796::kPanelH);
-    for (int outY = 0; outY < AwokST7796::kPanelH; ++outY) {
-      const uint32_t sy = uint32_t(outY) * kLogicalH * 256 / AwokST7796::kPanelH;
-      const int y0 = sy >> 8;
-      const int y1 = (y0 + 1 < kLogicalH) ? y0 + 1 : y0;
-      const uint8_t wy = sy & 0xFF;
-      const uint16_t* row0 = buffer_ + size_t(y0) * kLogicalW;
-      const uint16_t* row1 = buffer_ + size_t(y1) * kLogicalW;
-      for (int outX = 0; outX < AwokST7796::kPanelW; ++outX) {
-        const int x0 = colX0_[outX];
-        const int x1 = (x0 + 1 < kLogicalW) ? x0 + 1 : x0;
-        const uint8_t wx = colWx_[outX];
-        const uint16_t top = blend565(row0[x0], row0[x1], wx);
-        const uint16_t bot = blend565(row1[x0], row1[x1], wx);
-        line[outX] = blend565(top, bot, wy);
-      }
-      panel_.writePixels(line, AwokST7796::kPanelW, true, false);
+    panel_.setAddrWindow(0, 0, kPanelW, kPanelH);
+    for (int y = 0; y < kPanelH; ++y) {
+      panel_.writePixels(buffer_ + size_t(y) * kPanelW, kPanelW, true, false);
     }
     panel_.endWrite();
     dirty_ = false;
   }
 
   void setRotation(uint8_t r) {
-    Adafruit_GFX::setRotation(r);  // logical buffer is the canvas; panel is fixed
+    Adafruit_GFX::setRotation(r);  // UI uses rotation 0; scaling assumes it
   }
 
+  // --- Adafruit_GFX primitive overrides ---
+  // In passthrough mode (set only while drawChar renders a glyph) coordinates
+  // are already physical and written 1:1 -> crisp native text. Otherwise the
+  // logical coordinate/rect is scaled up to its physical footprint.
   void drawPixel(int16_t x, int16_t y, uint16_t color) override {
+    if (passthrough_) {
+      rawPixel(x, y, color);
+      return;
+    }
     if (!buffered_) {
       panel_.drawPixel(x, y, color);
       return;
     }
     if (x < 0 || y < 0 || x >= _width || y >= _height) return;
-    int16_t t;
-    switch (rotation) {
-      case 1: t = x; x = kLogicalW - 1 - y; y = t; break;
-      case 2: x = kLogicalW - 1 - x; y = kLogicalH - 1 - y; break;
-      case 3: t = x; x = y; y = kLogicalH - 1 - t; break;
-    }
-    buffer_[int32_t(y) * kLogicalW + x] = color;
-    dirty_ = true;
+    fillNative(sxLut_[x], syLut_[y], sxLut_[x + 1], syLut_[y + 1], color);
   }
 
-  void fillScreen(uint16_t color) override {
-    if (!buffered_) {
-      panel_.fillScreen(color);
+  void fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
+                uint16_t color) override {
+    if (passthrough_) {  // physical coords from drawChar; write 1:1
+      for (int16_t j = 0; j < h; ++j)
+        for (int16_t i = 0; i < w; ++i) rawPixel(x + i, y + j, color);
       return;
     }
-    const uint32_t n = uint32_t(kLogicalW) * kLogicalH;
-    for (uint32_t i = 0; i < n; ++i) buffer_[i] = color;
-    dirty_ = true;
+    if (!buffered_) {
+      panel_.fillRect(x, y, w, h, color);
+      return;
+    }
+    int x0 = x, y0 = y, x1 = x + w, y1 = y + h;
+    if (!clampLogicalRect(x0, y0, x1, y1)) return;
+    fillNative(sxLut_[x0], syLut_[y0], sxLut_[x1], syLut_[y1], color);
   }
 
   void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) override {
@@ -192,7 +183,9 @@ class AwokPancakeDisplay : public Adafruit_GFX {
       panel_.drawFastHLine(x, y, w, color);
       return;
     }
-    for (int16_t i = 0; i < w; ++i) drawPixel(x + i, y, color);
+    int x0 = x, y0 = y, x1 = x + w, y1 = y + 1;
+    if (!clampLogicalRect(x0, y0, x1, y1)) return;
+    fillNative(sxLut_[x0], syLut_[y0], sxLut_[x1], syLut_[y1], color);
   }
 
   void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) override {
@@ -200,36 +193,98 @@ class AwokPancakeDisplay : public Adafruit_GFX {
       panel_.drawFastVLine(x, y, h, color);
       return;
     }
-    for (int16_t i = 0; i < h; ++i) drawPixel(x, y + i, color);
+    int x0 = x, y0 = y, x1 = x + 1, y1 = y + h;
+    if (!clampLogicalRect(x0, y0, x1, y1)) return;
+    fillNative(sxLut_[x0], syLut_[y0], sxLut_[x1], syLut_[y1], color);
   }
 
-  void fillRect(int16_t x, int16_t y, int16_t w, int16_t h,
-                uint16_t color) override {
+  void fillScreen(uint16_t color) override {
     if (!buffered_) {
-      panel_.fillRect(x, y, w, h, color);
+      panel_.fillScreen(color);
       return;
     }
-    for (int16_t j = 0; j < h; ++j) drawFastHLine(x, y + j, w, color);
+    const uint32_t n = uint32_t(kPanelW) * kPanelH;
+    for (uint32_t i = 0; i < n; ++i) buffer_[i] = color;
+    dirty_ = true;
+  }
+
+  // Render text natively: draw each glyph 1:1 at the scaled cursor position so
+  // strokes are always crisp and uniform, regardless of the fractional layout
+  // scale. Mirrors Adafruit_GFX::write() (classic font) for cursor/wrap; AxD
+  // never sets a custom GFX font.
+  size_t write(uint8_t c) override {
+    if (c == '\n') {
+      cursor_x = 0;
+      cursor_y += textsize_y * 8;
+    } else if (c != '\r') {
+      if (wrap && (cursor_x + textsize_x * 6) > _width) {
+        cursor_x = 0;
+        cursor_y += textsize_y * 8;
+      }
+      // Opaque background: fill the whole scaled character cell first (so there
+      // are no gaps between the natively-sized glyphs), then draw the glyph
+      // transparently on top.
+      if (textbgcolor != textcolor) {
+        fillRect(cursor_x, cursor_y, textsize_x * 6, textsize_y * 8,
+                 textbgcolor);
+      }
+      passthrough_ = true;
+      Adafruit_GFX::drawChar(physX(cursor_x), physY(cursor_y), c, textcolor,
+                             textcolor, textsize_x, textsize_y);
+      passthrough_ = false;
+      cursor_x += textsize_x * 6;
+    }
+    return 1;
   }
 
  private:
   static constexpr int16_t kLogicalW = 240;
   static constexpr int16_t kLogicalH = 320;
 
-  // Blend two RGB565 pixels: result = a*(1-w/256) + b*(w/256), per channel.
-  static inline uint16_t blend565(uint16_t a, uint16_t b, uint8_t w) {
-    if (w == 0) return a;
-    const uint16_t iw = 256 - w;
-    const uint16_t r = ((a >> 11) * iw + (b >> 11) * w) >> 8;
-    const uint16_t g = (((a >> 5) & 0x3F) * iw + ((b >> 5) & 0x3F) * w) >> 8;
-    const uint16_t bl = ((a & 0x1F) * iw + (b & 0x1F) * w) >> 8;
-    return (r << 11) | (g << 5) | bl;
+  int physX(int lx) const {
+    if (lx < 0) lx = 0;
+    if (lx > kLogicalW) lx = kLogicalW;
+    return sxLut_[lx];
+  }
+  int physY(int ly) const {
+    if (ly < 0) ly = 0;
+    if (ly > kLogicalH) ly = kLogicalH;
+    return syLut_[ly];
   }
 
+  // Clamp a logical rect to [0,kLogicalW] x [0,kLogicalH]; false if empty.
+  bool clampLogicalRect(int& x0, int& y0, int& x1, int& y1) const {
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > kLogicalW) x1 = kLogicalW;
+    if (y1 > kLogicalH) y1 = kLogicalH;
+    return x1 > x0 && y1 > y0;
+  }
+
+  // Fill a physical (native-pixel) rect [x0,x1) x [y0,y1) in the back buffer.
+  void fillNative(int x0, int y0, int x1, int y1, uint16_t color) {
+    for (int py = y0; py < y1; ++py) {
+      uint16_t* row = buffer_ + size_t(py) * kPanelW;
+      for (int px = x0; px < x1; ++px) row[px] = color;
+    }
+    dirty_ = true;
+  }
+
+  void rawPixel(int px, int py, uint16_t color) {
+    if (px < 0 || py < 0 || px >= AwokST7796::kPanelW ||
+        py >= AwokST7796::kPanelH)
+      return;
+    buffer_[size_t(py) * AwokST7796::kPanelW + px] = color;
+    dirty_ = true;
+  }
+
+  static constexpr int16_t kPanelW = AwokST7796::kPanelW;
+  static constexpr int16_t kPanelH = AwokST7796::kPanelH;
   AwokST7796 panel_;
   uint16_t* buffer_ = nullptr;
-  uint8_t colX0_[AwokST7796::kPanelW] = {0};  // bilinear source column per output col
-  uint8_t colWx_[AwokST7796::kPanelW] = {0};  // and its Q8 blend weight
+  uint16_t sxLut_[kLogicalW + 1] = {0};  // logical column -> physical x edge
+  uint16_t syLut_[kLogicalH + 1] = {0};  // logical row    -> physical y edge
+  bool passthrough_ = false;             // true only while a glyph is drawn 1:1
   bool buffered_ = false;
   bool dirty_ = true;
 };
