@@ -228,10 +228,19 @@ class AwokPancakeDisplay : public Adafruit_GFX {
         fillRect(cursor_x, cursor_y, textsize_x * 6, textsize_y * 8,
                  textbgcolor);
       }
+      // drawChar() clips against _width/_height, but we hand it *physical*
+      // coordinates (up to 320x480) while the logical surface is 240x320 -- so
+      // widen the clip to the panel for the glyph, else right/bottom text is
+      // dropped. passthrough_ makes drawPixel/fillRect write 1:1 (crisp glyph).
+      const int16_t savedW = _width, savedH = _height;
+      _width = kPanelW;
+      _height = kPanelH;
       passthrough_ = true;
       Adafruit_GFX::drawChar(physX(cursor_x), physY(cursor_y), c, textcolor,
                              textcolor, textsize_x, textsize_y);
       passthrough_ = false;
+      _width = savedW;
+      _height = savedH;
       cursor_x += textsize_x * 6;
     }
     return 1;
