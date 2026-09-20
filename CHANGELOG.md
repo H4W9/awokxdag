@@ -5,7 +5,40 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-09-19
+
+### Changed
+
+- **Single wardrive credential file.** WiGLE and WDGWars credentials now share
+  one `wardrive_upload.txt` file on SD, with a safe checked-in example that can
+  be copied, completed, and renamed without committing live API credentials.
+- **GPS-backed system time.** Fresh GPS UTC now sets and periodically corrects
+  the ESP system clock used by TLS, logs, and SD/FAT timestamps. NTP remains an
+  upload fallback when GPS time is unavailable, and synchronized UTC survives
+  temporary GPS signal loss instead of reverting to an uptime-only timestamp.
+- **Wardrive upload reliability.** WiGLE and WDGWars TLS trust now includes
+  stable root certificates, connection and streaming timeouts are explicit,
+  and failures identify the TLS, header, SD-read, body, or response stage
+  instead of collapsing every problem into `connection/write failed`.
+  Network discovery buffers and the SD file handle are now released before the
+  TLS handshake, preventing mbedTLS `SSL_ALLOC_FAILED` (`-32512`) on RAM-tight
+  boards; LAN-tool workspace is recreated lazily when it is next needed.
+  On PSRAM-equipped C5 boards, large mbedTLS record allocations are routed to
+  PSRAM while AES/key state stays in internal RAM, preserving enough internal
+  heap for the ESP hardware AES backend to complete the handshake.
+
 ## [1.5.2] - 2026-09-19
+
+### Added
+
+- **Direct wardrive upload page.** Under Network Tools, users can select and
+  join a Wi-Fi network, choose a `wardrive-*.csv` file from SD, select WiGLE or
+  WDGWars, and explicitly upload it. Credentials come from one SD config file,
+  `wardrive_upload.txt` (with a checked-in safe example), stay
+  out of logs, and are wiped from RAM after a bounded multipart upload over
+  certificate-verified HTTPS.
+- **WiGLE 1.6 export.** New on-device and phone-downloaded wardrive CSVs include
+  Frequency, RCOIs, and MfgrId columns for documented WDGWars compatibility.
 
 ### Changed
 

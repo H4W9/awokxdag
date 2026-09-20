@@ -23,6 +23,7 @@
 #include <string>
 #include "network_parse.h"
 #include <WiFiUdp.h>
+#include <NetworkClientSecure.h>
 #include <lwip/sockets.h>
 #include <lwip/etharp.h>
 #include <lwip/priv/tcpip_priv.h>
@@ -30,6 +31,8 @@
 #include <esp_netif_net_stack.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <time.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "board_pins.h"
@@ -110,7 +113,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.5.2";
+constexpr char kVersion[] = "1.5.3";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -345,7 +348,9 @@ enum class View {
   kNetworkAps,
   kNetworkResults,
   kNetworkHost,
-  kNetworkDetail
+  kNetworkDetail,
+  kWardriveUpload,
+  kWardriveUploadFiles
 };
 
 // ---- Link Mode (ESP-NOW pairing of two AxD units) -----------------------
