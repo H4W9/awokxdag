@@ -107,6 +107,7 @@ bool beaconWatchActive = false;    // beacon-flood watch (state in beaconwatch.i
 bool authFloodActive = false;      // auth/assoc flood watch (authflood.ino)
 bool advancedWatchActive = false;  // combined Wi-Fi/BLE anomaly watch
 bool locatorActive = false;        // RSSI fox-hunt (state in locator.ino)
+bool fleetHuntActive = false;      // multi-node trilateration hunt (locator.ino)
 // SD export status for the new recon tabs (read by input.ino, which is
 // concatenated before those tabs, so the flags must live in the main sketch).
 bool lastAuditCsvOk = false;
@@ -1568,7 +1569,7 @@ const char* const kReconItems[] = {
     "Wi-Fi Scan",   "Channel Map",  "BLE Scan",     "Clients",
     "Packet Mon",   "WPS Scan",     "Hidden SSID",  "Cameras",
     "Security Audit", "BLE Trackers", "Harvester",  "Probe Intel",
-    "Saved", "Network Tools"};
+    "Saved", "Fleet Hunter", "Network Tools"};
 constexpr int kReconItemCount =
     static_cast<int>(sizeof(kReconItems) / sizeof(kReconItems[0]));
 constexpr int kMenuPerPage = 6;
@@ -1617,6 +1618,12 @@ void launchReconItem(int index) {
     startHarvester();
   } else if (label == "Probe Intel") {
     startProbeIntel();
+  } else if (label == "Fleet Hunter") {
+    if (selectedWifi.bssid.length()) {
+      startFleetHunt();
+    } else {
+      startWifiScanContinuous();
+    }
   } else if (label == "Network Tools") {
     openNetworkTools();
   } else if (label == "Saved") {
@@ -2323,6 +2330,7 @@ void loop() {
   updateBleDetect();
   updateProbeLure();
   updateLocator();
+  updateFleetHunt();
   updateWps();
   updateRogueWatch();
   updateHiddenReveal();

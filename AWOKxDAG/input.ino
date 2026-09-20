@@ -274,7 +274,19 @@ void handleTouch() {
       startLocator();  // reset the hunt
     } else {
       stopLocator();
-      beginWifiSignalMonitor();
+      startFleetHunt();
+    }
+    return;
+  }
+  if (currentView == View::kFleetHunt) {
+    if (x < 80) {
+      stopFleetHunt();
+      drawWifiAudit();
+    } else if (x < 160) {
+      startFleetHunt();  // reset the hunt
+    } else {
+      stopFleetHunt();
+      startLocator();
     }
     return;
   }
@@ -718,7 +730,7 @@ bool toolBlocksSerialShortcuts() {
          probeLureActive || securityAuditActive || trackerScanActive ||
          harvesterActive || probeIntelActive || karmaWatchActive ||
          beaconWatchActive || authFloodActive || advancedWatchActive ||
-         locatorActive || linkWardriveActive ||
+         locatorActive || fleetHuntActive || linkWardriveActive ||
          linkState == kLinkDiscovering || linkState == kLinkAwaitConfirm;
 }
 
@@ -747,6 +759,7 @@ void stopActiveTools() {
   if (authFloodActive) stopAuthFlood();
   if (advancedWatchActive) stopAdvancedWatch();
   if (locatorActive) stopLocator();
+  if (fleetHuntActive) stopFleetHunt();
   if (linkWardriveActive) stopLinkWardrive();
   if (linkState == kLinkDiscovering || linkState == kLinkAwaitConfirm) {
     linkCancelPairing();
