@@ -116,7 +116,7 @@ class AwokPancakeDisplay : public Adafruit_GFX {
       for (int outX = 0; outX < AwokST7796::kPanelW; ++outX) {
         const uint32_t sx = uint32_t(outX) * kLogicalW * 256 / AwokST7796::kPanelW;
         colX0_[outX] = sx >> 8;               // integer source column (0..239)
-        colWx_[outX] = sx & 0xFF;             // weight of the next column (0..255)
+        colWx_[outX] = sharpen(sx & 0xFF);    // edge-sharpened blend weight
       }
       fillScreen(0);
     } else {
@@ -140,7 +140,7 @@ class AwokPancakeDisplay : public Adafruit_GFX {
       const uint32_t sy = uint32_t(outY) * kLogicalH * 256 / AwokST7796::kPanelH;
       const int y0 = sy >> 8;
       const int y1 = (y0 + 1 < kLogicalH) ? y0 + 1 : y0;
-      const uint8_t wy = sy & 0xFF;
+      const uint8_t wy = sharpen(sy & 0xFF);
       const uint16_t* row0 = buffer_ + size_t(y0) * kLogicalW;
       const uint16_t* row1 = buffer_ + size_t(y1) * kLogicalW;
       for (int outX = 0; outX < AwokST7796::kPanelW; ++outX) {
@@ -215,6 +215,20 @@ class AwokPancakeDisplay : public Adafruit_GFX {
  private:
   static constexpr int16_t kLogicalW = 240;
   static constexpr int16_t kLogicalH = 320;
+
+  // Steepen a bilinear blend weight so anti-aliased edges stay crisp. Plain
+  // bilinear spreads an edge across a whole output pixel (soft/faded); this
+  // contrast-stretches the weight around the midpoint so the transition band is
+  // ~1/kEdgeGain of a pixel, while keeping the sub-pixel-consistent placement
+  // that avoids nearest-neighbour's uneven 1px/2px strokes. kEdgeGain 1 = plain
+  // bilinear, higher = crisper (approaches nearest-neighbour).
+  static inline uint8_t sharpen(uint8_t w) {
+    constexpr int kEdgeGain = 3;
+    int v = (int(w) - 128) * kEdgeGain + 128;
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    return uint8_t(v);
+  }
 
   // Blend two RGB565 pixels: result = a*(1-w/256) + b*(w/256), per channel.
   static inline uint16_t blend565(uint16_t a, uint16_t b, uint8_t w) {
