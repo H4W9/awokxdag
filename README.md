@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.6.0
+- **Version:** 1.6.1
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -64,6 +64,15 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
 - **Probe Intel** — aggregates directed probe requests by the SSID they name,
   ranked by probe count and distinct devices, revealing the preferred-network
   lists leaking from nearby devices. Passive.
+- **Topology Map** — Swarm Mesh Topology Graph mapping client ↔ AP associations
+  and directed probe request leaks across 2.4 GHz and 5 GHz channels. Flags unencrypted
+  open networks, streams live `$TOPO` telemetry, shares links across worker nodes via
+  ESP-NOW, and powers an interactive HTML5 force-directed physics graph in the Web
+  Bluetooth dashboard.
+- **Fleet Hunter** — multi-node radio direction-finding (RDF) and trilateration
+  engine. Aggregates multi-node target observations over ESP-NOW, computes estimated
+  GPS coordinates, geodesic range, confidence radius, and heading bearing, visualized
+  via a tactical radar scope on device and in the web dashboard.
 - **Saved** — up to 10 access points kept in NVS across reboots.
 
 ### Network Tools (connected LAN)
@@ -389,7 +398,7 @@ then build and package the Mini profile:
 python3 scripts/build_firmware.py dual-c5-mini
 ```
 
-Outputs are in `build/dual-c5-mini-1.6.0/`, with explicit board names and
+Outputs are in `build/dual-c5-mini-1.6.1/`, with explicit board names and
 `SHA256SUMS`. This command only compiles and packages; it does not flash.
 The Mini uses a native 128 × 128 layout with readable text, highlighted menu
 rows, wrapped details, and compact charts. Up/down moves through rows, center

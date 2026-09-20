@@ -5,6 +5,31 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-20
+
+### Added
+
+- **Swarm Mesh Topology Graph (Client & AP Relationship Map):**
+  - **Promiscuous link sniffer (`AWOKxDAG/topologymap.ino`):** Channel-hopping 802.11 monitor
+    capturing active associations from data frames (`toDs && !fromDs`) and directed probe
+    request leaks (`0x40` subtype) across 2.4 GHz and 5 GHz bands. Detects unencrypted open
+    networks directly from beacon/probe capability flags.
+  - **Multi-node Swarm Protocol (`AWOKxDAG/link_protocol.h` & `link.ino`):**
+    Introduced `kLinkMsgFleetTopology` (type 13, 48 bytes) to stream client-to-AP and client-to-probe
+    links across fleet worker nodes to the coordinator. Opcode 56 (`kAxdCmdTopology`) provides
+    remote activation over ESP-NOW and Web Bluetooth.
+  - **On-device Cluster UI (`View::kTopologyMap`):** Hierarchical cluster matrix on Touch
+    (240×320) and Mini (128×128) screens, displaying APs with channel, encryption badge, and
+    indented connected client stations showing packet count and signal RSSI.
+  - **Interactive Web Bluetooth Force-Directed Physics Graph (`control.html`):**
+    Dedicated "🕸️ Topology" tab featuring real-time HTML5 Canvas particle physics
+    (Coulomb repulsion, Hooke springs, centering gravity), interactive drag-and-drop,
+    node inspector drawer, live metric counters (APs, Clients, Probes, Open Networks),
+    probe leak toggles, and JSON/CSV export.
+  - **Bridge & SD Telemetry (`AxDBridge/AxDBridge.ino` & `topologymap.ino`):**
+    Streams `$TOPO,AP,...`, `$TOPO,CLI,...`, and `$TOPO,PRB,...` telemetry via `kSourceTopo` (4)
+    over BLE and logs to `/awokxdag/topology_map.csv` with GPS coordinates.
+
 ## [1.6.0] - 2026-09-20
 
 ### Added
@@ -837,7 +862,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/dagnazty/awokxdag/compare/v1.5.5...v1.6.0
 [1.5.5]: https://github.com/dagnazty/awokxdag/compare/v1.5.4...v1.5.5
 [1.5.4]: https://github.com/dagnazty/awokxdag/compare/v1.5.3...v1.5.4
