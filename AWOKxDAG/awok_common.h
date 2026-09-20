@@ -61,7 +61,12 @@ bool radiosCoexist = false;
 #else
 bool radiosCoexist = true;
 #endif
+#ifdef PANCAKE_DISPLAY
+#include "pancake_display.h"    // 240x320 buffer scaled to fill the ST7796 320x480
+#include "pancake_touch.h"      // FT6336 capacitive controller (I2C)
+#else
 #include "touch_display.h"     // buffered ILI9341 wrapper (kills refresh flicker)
+#endif
 #include "boot_screen_data.h"  // 240x320 Touch splash; unused on the Mini
 #endif
 

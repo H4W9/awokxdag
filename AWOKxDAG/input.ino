@@ -4,6 +4,17 @@ bool readTouch(int& screenX, int& screenY) {
 #ifdef AWOK_MINI_DISPLAY
   return digitalRead(AwokPins::kButtonCenter) == LOW &&
          display.selection(screenX, screenY);
+#elif defined(PANCAKE_CAP_TOUCH)
+  // FT6336 reports raw ST7796 panel coordinates (0..319 x 0..479); scale them
+  // back into the 240x320 logical UI space -- the inverse of the upscale blit
+  // pancake_display.h uses to fill the panel.
+  uint16_t panelX = 0, panelY = 0;
+  if (!touch.read(panelX, panelY)) return false;
+  screenX = constrain(int(panelX) * kScreenWidth / AwokST7796::kPanelW, 0,
+                      kScreenWidth - 1);
+  screenY = constrain(int(panelY) * kScreenHeight / AwokST7796::kPanelH, 0,
+                      kScreenHeight - 1);
+  return true;
 #else
   if (!touch.touched()) return false;
   TS_Point point = touch.getPoint();

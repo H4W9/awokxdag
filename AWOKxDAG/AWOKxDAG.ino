@@ -45,6 +45,10 @@ struct AwokHeadlessTouch {
   bool touched() { return false; }
   TS_Point getPoint() { return TS_Point(0, 0, 0); }
 } touch;
+#elif defined(PANCAKE_DISPLAY)
+AwokPancakeDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
+                           AwokPins::kDisplayReset);
+AwokCapTouch touch;  // FT6336 capacitive controller (I2C)
 #else
 AwokTouchDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
                          AwokPins::kDisplayReset);
@@ -2189,6 +2193,20 @@ void initializeDisplayAndTouch() {
     while (true) delay(1000);
   }
   display.setTextWrap(false);
+#elif defined(PANCAKE_DISPLAY)
+  // Pancake C5: ST7796 on the FSPI bus, FT6336 capacitive touch on I2C. Touch
+  // has no SPI chip select, so there is no CS juggling as on the XPT2046 path.
+  pinMode(AwokPins::kDisplayCs, OUTPUT);
+  pinMode(AwokPins::kSdCs, OUTPUT);
+  digitalWrite(AwokPins::kDisplayCs, HIGH);
+  digitalWrite(AwokPins::kSdCs, HIGH);
+  SPI.begin(AwokPins::kSpiSck, AwokPins::kSpiMiso, AwokPins::kSpiMosi, -1);
+  pinMode(AwokPins::kBacklight, OUTPUT);
+  digitalWrite(AwokPins::kBacklight, AwokPins::kBacklightOn ? HIGH : LOW);
+  display.begin(27000000);
+  display.setRotation(0);
+  display.setTextWrap(false);
+  touch.begin();  // Wire + FT6336 on the I2C bus
 #else
   pinMode(AwokPins::kDisplayCs, OUTPUT);
   pinMode(AwokPins::kTouchCs, OUTPUT);
