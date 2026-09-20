@@ -1,5 +1,6 @@
 // Arduino IDE selection.
-#if !defined(AWOK_DUAL_C5_TOUCH) && !defined(AWOK_DUAL_C5_MINI) && \
+#if !defined(AWOK_DUAL_C5_TOUCH) && !defined(PANCAKE_C5) && \
+    !defined(AWOK_DUAL_C5_MINI) && \
     !defined(AWOK_DUAL_C5_BRIDGE) && \
     !defined(AWOK_DUAL_ESP32_TOUCH_V1) && !defined(AWOK_DUAL_ESP32_TOUCH_V2) && \
     !defined(AWOK_DUAL_ESP32_TOUCH_V3) && \
@@ -12,6 +13,7 @@
     !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V2) && \
     !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V3)
 //#define AWOK_DUAL_C5_TOUCH
+//#define PANCAKE_C5
 #define AWOK_DUAL_C5_MINI
 //#define AWOK_DUAL_ESP32_TOUCH_V1
 //#define AWOK_DUAL_ESP32_TOUCH_V2
