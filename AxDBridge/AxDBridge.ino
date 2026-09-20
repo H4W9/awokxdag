@@ -89,10 +89,23 @@ static void onEspNowRecv(const esp_now_recv_info_t*, const uint8_t* data, int le
     LinkPacket p;
     memcpy(&p, data, sizeof(p));
     if (!g_status) return;
-    uint8_t blob[9];
-    memcpy(blob + 0, &p.networks, 4);
-    memcpy(blob + 4, &p.bleCount, 4);
-    blob[8] = p.channel;
+    uint8_t blob[25] = {0};
+    blob[0] = 1;  // kSourceScreen
+    memcpy(blob + 1, &p.networks, 4);
+    memcpy(blob + 5, &p.bleCount, 4);
+    blob[9] = p.channel;
+    if (p.flags & kLinkTelemStatus) {
+      blob[10] = (p.flags & kLinkTelemGpsFix) ? 1 : 0;
+      blob[11] = static_cast<uint8_t>(p.reserved >> 8);
+      memcpy(blob + 12, &p.sessionId, 4);    // latitude float bits
+      memcpy(blob + 16, &p.masterMillis, 4); // longitude float bits
+      blob[20] = (p.flags & kLinkTelemFleetActive) ? 1 : 0;
+      blob[21] = static_cast<uint8_t>(p.reserved & 0xFF);
+      memcpy(blob + 22, &p.code, 2);
+      blob[24] = ((p.flags & kLinkTelemFleetCoordinator) ? 0x01 : 0) |
+                 ((p.flags & kLinkTelemFleetListening) ? 0x02 : 0) |
+                 ((p.flags & kLinkTelemFleetRunning) ? 0x04 : 0);
+    }
     g_status->setValue(blob, sizeof(blob));
     g_status->notify();
   } else if (type == kLinkMsgWifiResult &&
@@ -100,17 +113,18 @@ static void onEspNowRecv(const esp_now_recv_info_t*, const uint8_t* data, int le
     AxdWifiResult r;
     memcpy(&r, data, sizeof(r));
     if (!g_results) return;
-    // Compact blob for the phone: index,count,rssi,channel,auth,bssid[6],ssid.
-    uint8_t blob[11 + 32];
-    blob[0] = r.index;
-    blob[1] = r.count;
-    blob[2] = static_cast<uint8_t>(r.rssi);
-    blob[3] = r.channel;
-    blob[4] = r.auth;
-    memcpy(blob + 5, r.bssid, 6);
+    // Compact blob for the phone: source,index,count,rssi,channel,auth,bssid[6],ssid.
+    uint8_t blob[1 + 11 + 32];
+    blob[0] = 1;  // kSourceScreen
+    blob[1] = r.index;
+    blob[2] = r.count;
+    blob[3] = static_cast<uint8_t>(r.rssi);
+    blob[4] = r.channel;
+    blob[5] = r.auth;
+    memcpy(blob + 6, r.bssid, 6);
     size_t sl = strnlen(r.ssid, 32);
-    memcpy(blob + 11, r.ssid, sl);
-    g_results->setValue(blob, 11 + sl);
+    memcpy(blob + 12, r.ssid, sl);
+    g_results->setValue(blob, 1 + 11 + sl);
     g_results->notify();
   }
 }
@@ -189,6 +203,15 @@ void loop() {
     bridgeSweepCommand(g_op, g_arg, g_seq);
     g_sweepsLeft--;
     g_nextSweepMs = millis() + kCmdSweepGapMs;
+  }
+  static uint32_t lastSelfStatusMs = 0;
+  if (g_connected && g_status && millis() - lastSelfStatusMs >= 1000) {
+    lastSelfStatusMs = millis();
+    uint8_t blob[25] = {0};
+    blob[0] = 0;  // kSourceBridge
+    blob[9] = g_sweepsLeft ? g_op : 0;
+    g_status->setValue(blob, sizeof(blob));
+    g_status->notify();
   }
   delay(10);
 }

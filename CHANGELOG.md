@@ -5,6 +5,44 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.5.5] - 2026-09-20
+
+### Fixed
+
+- **Live Wi-Fi AP and BLE discovery counters in Web Bluetooth control.** Resolved an
+  issue where scanned Wi-Fi APs and BLE devices were not displayed (showing `0` or
+  `–`) in the control interface during wardriving and fleet multi-node wardriving
+  for both the bridge chip and the screen chip.
+  - **Fleet status telemetry (`AWOKxDAG/link.ino`):** Fixed `linkBroadcastStatus()`
+    which previously only checked `wardriveActive`. During fleet wardriving,
+    `linkWardriveActive` and `fleetWardriveOn` were active instead, causing discovery
+    counts to fall back to unpopulated manual scan counters (`0`). It now checks all
+    wardriving and fleet states and retains session totals upon stopping.
+  - **Screen-to-bridge inter-pass channel rendezvous (`AWOKxDAG/gps.ino`):** While
+    actively wardriving on the screen chip, the Wi-Fi radio continuously sweeps
+    channels 1–14 (and 5 GHz). Between scan passes (right after `WiFi.scanDelete()`)
+    and on BLE-to-Wi-Fi phase transitions, the screen chip now temporarily homes to
+    `kLinkChannel` (channel 1) and calls `linkBroadcastStatus()`. This ensures the
+    bridge chip reliably receives live updates every 1–2 seconds.
+  - **Bridge protocol & self-status alignment (`AxDBridge/AxDBridge.ino`):** Added the
+    missing source prefix byte (`blob[0] = 1`), populated the complete 25-byte status
+    payload with GPS and fleet tails, prefixed Wi-Fi result frames, and added a 1 Hz
+    self-status heartbeat for `kSourceBridge` (`0`).
+
+### Added
+
+- **Dual-target telemetry breakdown in web control app.**
+  - **Telemetry tab:** Added target indicator badge (`Screen Chip` vs `Bridge Chip`)
+    and live dual-target quick breakdown (`Screen: X APs · Y BLE | Bridge: A APs · B BLE`).
+  - **Fleet tab:** Added dedicated breakdown stat cards for Screen Chip Scanned,
+    Bridge Chip Scanned, and Fleet Total Sighted.
+  - **Live node descriptions:** Enhanced `fleetDescription()` to dynamically append
+    live AP and BLE counts per node (e.g. `coordinator · code 1234 · 3 nodes · logging · 142 APs · 38 BLE`).
+  - **Connection list summary:** Updated `connSummary()` to report AP and BLE
+    counts across both target chips.
+  - **Tool opcode decoder:** Added friendly mapping for `View::kWardrive` (19) and
+    active `Fleet Wardrive` state.
+
 ## [1.5.4] - 2026-09-20
 
 ### Added
@@ -767,7 +805,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.5.4...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.5.5...HEAD
+[1.5.5]: https://github.com/dagnazty/awokxdag/compare/v1.5.4...v1.5.5
 [1.5.4]: https://github.com/dagnazty/awokxdag/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/dagnazty/awokxdag/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/dagnazty/awokxdag/compare/v1.5.1...v1.5.2
