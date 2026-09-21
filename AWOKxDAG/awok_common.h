@@ -139,7 +139,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.6.3";
+constexpr char kVersion[] = "1.6.4";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -218,6 +218,38 @@ struct BleIntelEntry {
   uint32_t firstSeenMs = 0;
   uint32_t lastSeenMs = 0;
   uint32_t sightings = 0;
+};
+
+// Spectrogram: dual-band RF waterfall & channel duty cycle monitor.
+constexpr char kSpectrogramCsvPath[] = "/awokxdag/spectrogram.csv";
+constexpr uint32_t kSpectrogramDwellMs = 60;
+constexpr uint32_t kSpectrogramRedrawMs = 120;
+constexpr int kWaterfallHistoryRows = 28;
+constexpr int kSpectrogramHitQueueSlots = AwokPins::kDualBand ? 32 : 16;
+
+struct SpectrogramChannelStats {
+  uint8_t channel = 0;
+  uint8_t dutyPercent = 0;
+  uint16_t packetCount = 0;
+  uint32_t byteCount = 0;
+  int8_t peakRssi = -127;
+  int8_t avgNoise = -127;
+  uint16_t mgmtCount = 0;
+  uint16_t ctrlCount = 0;
+  uint16_t dataCount = 0;
+  uint32_t lastSeenMs = 0;
+};
+
+struct SpectrogramHit {
+  uint8_t channel = 0;
+  uint8_t dutyPercent = 0;
+  uint16_t packetCount = 0;
+  uint32_t byteCount = 0;
+  int8_t peakRssi = -127;
+  int8_t avgNoise = -127;
+  uint16_t mgmtCount = 0;
+  uint16_t ctrlCount = 0;
+  uint16_t dataCount = 0;
 };
 
 // Harvester: all-channel passive EAPOL/PMKID collection (no deauth).
@@ -423,7 +455,8 @@ enum class View {
   kWardriveUploadFiles,
   kFleetHunt,
   kTopologyMap,
-  kBleIntel
+  kBleIntel,
+  kSpectrogram
 };
 
 // ---- Link Mode (ESP-NOW pairing of two AxD units) -----------------------
@@ -827,6 +860,14 @@ void radioSchedulerEnd(RadioScheduler& s);
 void wardriveResetDedup();
 void closeWardriveCsv();
 void flushWardriveCsv();
+
+void startSpectrogram();
+void stopSpectrogram();
+void updateSpectrogram();
+void drawSpectrogram();
+void cycleSpectrogramMode();
+void handleSpectrogramBarTouch(int touchedIdx);
+bool exportSpectrogramToSd();
 
 // Network Tools types precede Arduino-generated function prototypes.
 enum class NetJob { None, Join, Hosts, Ports, Cameras, Printers, Sip, Upnp };

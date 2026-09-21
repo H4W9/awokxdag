@@ -5,6 +5,19 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.6.4] - 2026-09-21
+
+### Added
+
+- **Dual-Band RF Spectrogram & Waterfall Analyzer (`AWOKxDAG/spectrogram.ino`):**
+  - **Promiscuous RF Monitor:** Continuous passive channel dwell measuring frame arrival rate, byte volume, peak RSSI, and noise floor across 2.4 GHz (channels 1–13) and 5 GHz (channels 36–165).
+  - **Duty Cycle & Airtime Saturation Metric:** Computes estimated physical on-air channel occupancy percentage (0–100%) and categorizes Management, Control, and Data frame distributions.
+  - **On-Device Thermal Waterfall Spectrogram (`View::kSpectrogram`):** Touch (240×320) interface displaying live channel stats, instantaneous spectrum bar chart with decay peak-hold indicators, and a scrolling 28-row thermal 2D waterfall heat map. Mini (128×128) compact duty cycle and bar chart.
+  - **Channel Sweeping & Single-Channel Lock Modes:** Supports cycling through All Channels, 2.4 GHz only, or locking onto a specific congested channel (with direct tap-to-lock on the bar chart).
+  - **SD Card CSV Logging:** Exports full channel spectrum and duty cycle snapshots to `/awokxdag/spectrogram.csv` with GPS coordinates.
+  - **Serial & BLE Telemetry Streaming:** Emits `$SPEC,ch,dutyPct,pkts,peakRssi,noise,mgmt,ctrl,data` over serial and Web Bluetooth (`kSourceSpectrogram = 6`).
+  - **Remote Dashboard Tab (`control.html`):** Dedicated "🌈 Spectrogram" tab featuring real-time HTML5 Canvas spectrum bar chart with peak hold, high-fps scrolling thermal waterfall canvas, band filters, and CSV export. Opcode 58 (`kAxdCmdSpectrogram`) remote activation.
+
 ## [1.6.3] - 2026-09-20
 
 ### Added
@@ -877,7 +890,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.3...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.4...HEAD
+[1.6.4]: https://github.com/dagnazty/awokxdag/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/dagnazty/awokxdag/compare/v1.6.1...v1.6.3
 [1.6.1]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/dagnazty/awokxdag/compare/v1.5.5...v1.6.0

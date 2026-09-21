@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.6.3
+- **Version:** 1.6.4
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -32,6 +32,12 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
   passive audit; **Track** graphs its RSSI; **Deauth** targets it; **Grab** jumps
   straight to handshake capture.
 - **Channel Map** — 2.4 GHz and detected 5 GHz channel occupancy chart.
+- **Spectrogram** — dual-band RF waterfall and channel duty cycle analyzer. Samples on-air
+  energy, frame rates, byte volume, and noise floor per channel (2.4 GHz and 5 GHz). Renders
+  an on-device instantaneous spectrum bar chart with peak hold indicators and a real-time
+  thermal scrolling 2D waterfall heat map. Supports All-channel sweeps, 2.4 GHz only, 5 GHz only,
+  or locked single-channel high-rate dwell. Streams live `$SPEC` telemetry and includes an
+  interactive Web Bluetooth canvas waterfall.
 - **BLE Scan** — up to 64 advertisers with Prev/Next paging and tap-to-inspect detail (address
   type, TX power, connectable/scannable, manufacturer data, service UUIDs).
   Advertised Flipper service UUIDs get an **[F?]** hint and CSV identification field;

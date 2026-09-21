@@ -18,7 +18,7 @@ test('Remote UI parses source-prefixed fleet status per target', async () => {
 
 test('Remote wardrive export stays aligned with firmware WiGLE 1.6 rows', async () => {
   const html = await readFile(new URL('./public/control.html', import.meta.url), 'utf8');
-  assert.match(html, /WigleWifi-1\.6,appRelease=AxD,model=ESP32,release=1\.6\.3/);
+  assert.match(html, /WigleWifi-1\.6,appRelease=AxD,model=ESP32,release=1\.6\.4/);
   assert.match(html, /MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type/);
   assert.doesNotMatch(html, /WigleWifi_1\.4/);
   // Fleet Hunter support
@@ -38,6 +38,12 @@ test('Remote wardrive export stays aligned with firmware WiGLE 1.6 rows', async 
   assert.match(html, /tab-bleintel/);
   assert.match(html, /parseBleIntelRow/);
   assert.match(html, /bleintel-list/);
+  // Dual-Band RF Spectrogram & Waterfall Analyzer support
+  assert.match(html, /58:\s*"Spectrogram"/);
+  assert.match(html, /data-op="58"/);
+  assert.match(html, /tab-spectrogram/);
+  assert.match(html, /parseSpectrogramRow/);
+  assert.match(html, /spec-waterfall-canvas/);
 });
 
 test('Markdown supports tables, safe HTML, stable unique anchors, and document links', () => {
