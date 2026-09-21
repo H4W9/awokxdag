@@ -336,8 +336,8 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kSpectrogram) {
-    if (y >= kFooterTop) {
-      if (x < kScreenWidth / 2) {
+    if (y >= kFooterTopDesign) {
+      if (x < kDesignWidth / 2) {
         stopSpectrogram();
         drawReconMenu();
       } else {

@@ -259,70 +259,75 @@ void drawSpectrogram() {
   return;
 #endif
 
-  // Touch 240x320 Layout
+  // Touch layout, authored in the 240x320 design grid and scaled to the panel.
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(5, 46);
+  display.setCursor(scaleX(5), scaleY(46));
   display.printf("Ch %-2u (%s)  Peak: %3d dBm  Noise: %3d dBm",
                  specCurrentChannel,
                  (specCurrentChannel <= 14) ? "2.4G" : "5G",
                  curPeak,
                  curNoise);
 
-  // Upper Bar Chart (Instantaneous Spectrum + Peak Hold)
-  constexpr int kChartBaseY = 120;
-  constexpr int kChartMaxH = 64;
+  // Upper Bar Chart (Instantaneous Spectrum + Peak Hold). The baseline/height
+  // are scaled, so bar/peak heights derived from kChartMaxH are already physical.
+  const int kChartBaseY = scaleY(120);
+  const int kChartMaxH = scaleY(64);
   const int totalCh = specTotalChannels();
 
   if (specMode == kSpecMode24) {
-    // 13 channels: 16px pitch
+    // 13 channels: 16px design pitch
     for (int i = 0; i < kSpec24Count; ++i) {
       const int ch = kSpec24Channels[i];
       const int duty = specStats[i].dutyPercent;
       const int barH = max(1, duty * kChartMaxH / 100);
-      const int x = 12 + i * 16;
+      const int x = scaleX(12 + i * 16);
 
       // Active bar
-      display.fillRect(x, kChartBaseY - barH, 12, barH, specThermalColor(duty));
+      display.fillRect(x, kChartBaseY - barH, scaleX(12), barH,
+                       specThermalColor(duty));
 
       // Peak hold line
       const int peakH = max(1, static_cast<int>(specPeakHold[i]) * kChartMaxH / 100);
-      display.drawFastHLine(x, kChartBaseY - peakH, 12, ILI9341_WHITE);
+      display.drawFastHLine(x, kChartBaseY - peakH, scaleX(12), ILI9341_WHITE);
 
       // Active channel marker
       if (ch == specCurrentChannel) {
-        display.drawRect(x - 1, kChartBaseY - kChartMaxH - 2, 14, kChartMaxH + 4, kAccent);
+        display.drawRect(x - scaleX(1), kChartBaseY - kChartMaxH - scaleY(2),
+                         scaleX(14), kChartMaxH + scaleY(4), kAccent);
       }
 
       // Channel text
       display.setTextColor((ch == specCurrentChannel) ? kAccent : kMuted, kBackground);
-      display.setCursor(x + (ch < 10 ? 3 : 0), kChartBaseY + 2);
+      display.setCursor(x + (ch < 10 ? scaleX(3) : 0), kChartBaseY + scaleY(2));
       display.print(ch);
     }
   } else {
-    // All channels (up to 38): 6px pitch
+    // All channels (up to 38): 6px design pitch
     for (int i = 0; i < totalCh; ++i) {
       const int duty = specStats[i].dutyPercent;
       const int barH = max(1, duty * kChartMaxH / 100);
-      const int x = 6 + i * 6;
+      const int x = scaleX(6 + i * 6);
 
-      display.fillRect(x, kChartBaseY - barH, 4, barH, specThermalColor(duty));
+      display.fillRect(x, kChartBaseY - barH, scaleX(4), barH,
+                       specThermalColor(duty));
 
       const int peakH = max(1, static_cast<int>(specPeakHold[i]) * kChartMaxH / 100);
-      display.drawFastHLine(x, kChartBaseY - peakH, 4, ILI9341_WHITE);
+      display.drawFastHLine(x, kChartBaseY - peakH, scaleX(4), ILI9341_WHITE);
 
       if (specIndexToChannel(i) == specCurrentChannel) {
-        display.drawFastVLine(x + 2, kChartBaseY - kChartMaxH - 2, 4, kAccent);
+        display.drawFastVLine(x + scaleX(2), kChartBaseY - kChartMaxH - scaleY(2),
+                              scaleY(4), kAccent);
       }
     }
   }
 
   // Divider
-  display.drawFastHLine(4, 134, 232, 0x3186);
+  display.drawFastHLine(scaleX(4), scaleY(134), scaleX(232), 0x3186);
 
   // Lower Waterfall Heat Map (26 rows, scrolling downward)
-  constexpr int kWaterTopY = 138;
-  constexpr int kWaterRowH = 5;
+  const int kWaterTopY = scaleY(138);
+  const int kWaterRowH = scaleY(5);
   constexpr int kWaterDisplayRows = 26;
 
   for (int r = 0; r < kWaterDisplayRows; ++r) {
@@ -332,14 +337,14 @@ void drawSpectrogram() {
     if (specMode == kSpecMode24) {
       for (int i = 0; i < kSpec24Count; ++i) {
         const uint8_t val = waterfallHistory[rowIdx][i];
-        const int x = 12 + i * 16;
-        display.fillRect(x, y, 12, kWaterRowH - 1, specThermalColor(val));
+        const int x = scaleX(12 + i * 16);
+        display.fillRect(x, y, scaleX(12), kWaterRowH - 1, specThermalColor(val));
       }
     } else {
       for (int i = 0; i < totalCh; ++i) {
         const uint8_t val = waterfallHistory[rowIdx][i];
-        const int x = 6 + i * 6;
-        display.fillRect(x, y, 4, kWaterRowH - 1, specThermalColor(val));
+        const int x = scaleX(6 + i * 6);
+        display.fillRect(x, y, scaleX(4), kWaterRowH - 1, specThermalColor(val));
       }
     }
   }
