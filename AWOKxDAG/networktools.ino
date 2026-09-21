@@ -160,12 +160,16 @@ void drawNetworkMenu() {
   currentView = View::kNetworkMenu;
   display.fillScreen(kBackground);
   drawHeader("NETWORK TOOLS", WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "connect to your test network");
+  int rowsDrawn = 0;
   for (int row = 0; row < 6; ++row) {
     const int item = netMenuPage * 6 + row;
     if (item >= 9) break;
     netButton(20, 50 + row * 32, 200, 30, kNetMenu[item]);
+    rowsDrawn = row + 1;
   }
-  if (netMenuPage) netText(130, clipped(netStatus, 37));
+  // Status sits below the last button on this page (a fixed y overlapped the
+  // shorter final page). Last button bottom = 50 + (rowsDrawn-1)*32 + 30.
+  if (netMenuPage) netText(50 + rowsDrawn * 32 + 4, clipped(netStatus, 37));
   drawThreeButtonFooter("Back", "< Prev", "Next >");
 }
 void openNetworkTools() {
