@@ -36,6 +36,7 @@ enum LinkMsgType : uint8_t {
   kLinkMsgFleetAck = 10,      // coordinator -> member: rows up to seq received
   kLinkMsgFleetHuntObservation = 11,  // member -> coordinator: target hunt observation
   kLinkMsgFleetHuntResult = 12,       // coordinator/screen -> bridge: hunt solution
+  kLinkMsgFleetTopology = 13,         // swarm node -> coordinator: client/AP/probe link
 };
 
 // One ESP-NOW frame. POD, 36 bytes on every supported ABI, copied verbatim.
@@ -179,6 +180,8 @@ enum AxdSource : uint8_t {
   kSourceScreen = 1,
   kSourceWardrive = 2,  // results char carries a WiGLE CSV text row (bridge)
   kSourceHunt = 3,      // results char carries a Fleet Hunter text row
+  kSourceTopo = 4,      // results char carries a Topology Map text row
+  kSourceBleIntel = 5,  // results char carries a BLE Intel telemetry row
 };
 
 // Multi-node Fleet Hunter observation frame (ESP-NOW)
@@ -210,6 +213,19 @@ struct FleetHuntResult {
   float bearingDeg = 0.0f;
   float confidenceM = 0.0f;
   char ssid[33] = {0};
+};
+
+// Multi-node Swarm Topology link frame (ESP-NOW)
+struct FleetTopologyLink {
+  uint32_t magic = kLinkMagic;
+  uint8_t version = kLinkProtoVersion;
+  uint8_t type = kLinkMsgFleetTopology;
+  uint8_t linkType = 0;   // 0 = Client->AP, 1 = Client->Probe
+  int8_t rssi = -127;
+  uint8_t channel = 0;
+  uint8_t clientMac[6] = {0};
+  uint8_t targetMac[6] = {0};  // BSSID for AP
+  char targetName[33] = {0};   // SSID for Probe / AP
 };
 
 enum AxdCommand : uint8_t {
@@ -258,6 +274,8 @@ enum AxdCommand : uint8_t {
   kAxdCmdGrabSel = 53,      // handshake/PMKID grab on the selected AP
   kAxdCmdTrackSel = 54,     // RSSI-track the selected AP
   kAxdCmdFleetHunt = 55,    // multi-node target hunt / trilateration on selected AP
+  kAxdCmdTopology = 56,     // live swarm mesh topology mapping
+  kAxdCmdBleIntel = 57,     // BLE ecosystem intel & continuity decoder
   // Fleet Wardrive control (multi-node; joining is always deliberate).
   kAxdCmdFleetStart = 60,   // become coordinator + start the fleet wardrive
   kAxdCmdFleetJoin = 61,    // arm this chip to auto-join a coordinator's fleet

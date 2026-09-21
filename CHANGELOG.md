@@ -5,6 +5,46 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-20
+
+### Added
+
+- **BLE Ecosystem Intel & Continuity Decoder (`AWOKxDAG/bleintel.ino`):**
+  - **Proprietary Vendor Payload Decoding:** Continuous passive BLE scan that parses manufacturer and service data payloads without active pairing:
+    - **Apple Continuity (0x004C):** Decodes Proximity Pairing (`0x07`) identifying models (AirPods 1/2/3, AirPods Pro 1/2, AirPods Max, Powerbeats Pro, Beats Solo Pro, Studio Buds, Fit Pro) with exact Left, Right, and Case battery percentages and active charging states; parses AirDrop (`0x05`), Nearby Info (`0x10`), Find My (`0x12`), AirPlay Target (`0x09`), Apple Watch tethering (`0x0B`), and Handoff (`0x0C`).
+    - **Google / Android Fast Pair (0xFE2C):** Matches Fast Pair Service Data (0xFE2C), decoding Model ID hex strings and pairing readiness.
+    - **Microsoft Swift Pair (0x0006):** Identifies PC peripheral discovery advertisements.
+    - **Samsung Continuity (0x0075 / 0xFD5A):** Detects Samsung Galaxy continuity beacons and SmartThings Find beacons.
+  - **On-Device Interface (`View::kBleIntel`):** Touch (240×320) and Mini (128×128) scrollable list showing vendor ecosystem color-coded badges, device type, address, RSSI, and decoded battery/status details.
+  - **SD Card CSV Logging:** Exports full telemetry to `/awokxdag/ble_intel.csv` with GPS coordinates, timestamps, battery levels, and sightings.
+  - **Serial & BLE Telemetry Streaming:** Emits `$BLEINTEL,mac,ecosystem,deviceType,rssi,batteryL,batteryR,batteryCase,details` strings via serial monitor and over Web Bluetooth notifications (`kSourceBleIntel = 5`).
+  - **Remote Control Dashboard (`control.html`):** Added dedicated "🎧 BLE Intel" tab with live ecosystem filtering (Apple, Google, Microsoft, Samsung), real-time battery pill indicators with charge indicators, CSV export, and opcode 57 (`kAxdCmdBleIntel`) activation.
+
+## [1.6.1] - 2026-09-20
+
+### Added
+
+- **Swarm Mesh Topology Graph (Client & AP Relationship Map):**
+  - **Promiscuous link sniffer (`AWOKxDAG/topologymap.ino`):** Channel-hopping 802.11 monitor
+    capturing active associations from data frames (`toDs && !fromDs`) and directed probe
+    request leaks (`0x40` subtype) across 2.4 GHz and 5 GHz bands. Detects unencrypted open
+    networks directly from beacon/probe capability flags.
+  - **Multi-node Swarm Protocol (`AWOKxDAG/link_protocol.h` & `link.ino`):**
+    Introduced `kLinkMsgFleetTopology` (type 13, 48 bytes) to stream client-to-AP and client-to-probe
+    links across fleet worker nodes to the coordinator. Opcode 56 (`kAxdCmdTopology`) provides
+    remote activation over ESP-NOW and Web Bluetooth.
+  - **On-device Cluster UI (`View::kTopologyMap`):** Hierarchical cluster matrix on Touch
+    (240×320) and Mini (128×128) screens, displaying APs with channel, encryption badge, and
+    indented connected client stations showing packet count and signal RSSI.
+  - **Interactive Web Bluetooth Force-Directed Physics Graph (`control.html`):**
+    Dedicated "🕸️ Topology" tab featuring real-time HTML5 Canvas particle physics
+    (Coulomb repulsion, Hooke springs, centering gravity), interactive drag-and-drop,
+    node inspector drawer, live metric counters (APs, Clients, Probes, Open Networks),
+    probe leak toggles, and JSON/CSV export.
+  - **Bridge & SD Telemetry (`AxDBridge/AxDBridge.ino` & `topologymap.ino`):**
+    Streams `$TOPO,AP,...`, `$TOPO,CLI,...`, and `$TOPO,PRB,...` telemetry via `kSourceTopo` (4)
+    over BLE and logs to `/awokxdag/topology_map.csv` with GPS coordinates.
+
 ## [1.6.0] - 2026-09-20
 
 ### Added
@@ -837,7 +877,9 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.3...HEAD
+[1.6.3]: https://github.com/dagnazty/awokxdag/compare/v1.6.1...v1.6.3
+[1.6.1]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/dagnazty/awokxdag/compare/v1.5.5...v1.6.0
 [1.5.5]: https://github.com/dagnazty/awokxdag/compare/v1.5.4...v1.5.5
 [1.5.4]: https://github.com/dagnazty/awokxdag/compare/v1.5.3...v1.5.4
