@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.6.1
+- **Version:** 1.6.3
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -57,6 +57,13 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
   each address over time and raises a **FOLLOW** alert when one persists across a
   long enough span with repeat sightings — the planted-tracker privacy case.
   Passive.
+- **BLE Intel** — ecosystem intelligence and continuity decoder. Continuously
+  decodes proprietary vendor advertisement payloads: Apple Continuity (AirPods/Beats
+  model identification, Left/Right/Case battery percentages with real-time charging
+  flags, AirDrop, Nearby Info, Find My), Google / Android Fast Pair (model ID and state),
+  Microsoft Swift Pair, and Samsung Continuity / SmartThings. Supports on-device
+  scrolling inspection, SD CSV logging to `/awokxdag/ble_intel.csv`, live `$BLEINTEL`
+  serial streaming, and a dedicated Web Bluetooth dashboard tab with real-time battery indicators.
 - **Harvester** — all-channel passive EAPOL / PMKID collector. Hops every channel
   recording WPA key frames already in the air (plus one beacon per BSSID for the
   ESSID) to `harvest.pcap`, and writes hashcat-ready PMKID lines. **No deauth is

@@ -1027,6 +1027,7 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
     case kAxdCmdCameras: startCameraScan(); break;
     case kAxdCmdSecurityAudit: startSecurityAudit(); break;
     case kAxdCmdTrackers: startTrackerScan(); break;
+    case kAxdCmdBleIntel: startBleIntel(); break;
     case kAxdCmdHarvester: startHarvester(); break;
     case kAxdCmdProbeIntel: startProbeIntel(); break;
     case kAxdCmdSaved: drawSavedNetworks(); break;
