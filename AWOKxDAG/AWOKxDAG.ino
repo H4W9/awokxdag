@@ -1277,11 +1277,41 @@ String auditRecommendation(const WifiEntry& selected) {
   return "No obvious issue in advertised metadata.";
 }
 
+// Size-1 characters that fit from design-x `x` to the right edge of the panel
+// (the built-in font is 6 px per character). Lets text fill the actual display.
+int charsForWidth(int x) {
+  return max(1, (kScreenWidth - scaleX(x) - scaleX(4)) / 6);
+}
+
+// Word-wrap `text` from design (x, y) across up to `maxLines` lines, each
+// stepping down `stepDesign` design px. Line width fills the panel (see
+// charsForWidth), so on the wider Pancake screen long text shows in full,
+// wrapping under the first row when it still overflows. Returns lines drawn.
+int drawWrappedText(int x, int y, uint16_t color, const String& text,
+                    int maxLines, int stepDesign) {
+  display.setTextColor(color, kBackground);
+  const int perLine = charsForWidth(x);
+  int line = 0, start = 0;
+  const int n = text.length();
+  while (start < n && line < maxLines) {
+    int end = (n - start > perLine) ? start + perLine : n;
+    if (end < n) {  // break on a word boundary when possible
+      int space = end;
+      while (space > start && text.charAt(space) != ' ') --space;
+      if (space > start) end = space;
+    }
+    display.setCursor(scaleX(x), scaleY(y + line * stepDesign));
+    display.print(text.substring(start, end));
+    start = end;
+    while (start < n && text.charAt(start) == ' ') ++start;
+    ++line;
+  }
+  return line;
+}
+
 void drawAuditFinding(int y, uint16_t color, const String& text) {
   display.fillCircle(scaleX(9), scaleY(y + 3), 3, color);
-  display.setTextColor(color, kBackground);
-  display.setCursor(scaleX(17), scaleY(y));
-  display.print(clipped(text, 36));
+  drawWrappedText(17, y, color, text, 2, 9);
 }
 
 void drawWifiAudit() {
@@ -1347,15 +1377,28 @@ void drawWifiAudit() {
   display.setTextColor(kAccent, kBackground);
   display.setCursor(scaleX(6), scaleY(221));
   display.print("RECOMMEND: ");
+  // Fill the line after the label, then wrap the remainder underneath.
+  const String rec = auditRecommendation(selectedWifi);
+  const int firstCap = max(1, charsForWidth(6) - 11);  // "RECOMMEND: " = 11 chars
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.print(clipped(auditRecommendation(selectedWifi), 27));
+  if (static_cast<int>(rec.length()) <= firstCap) {
+    display.print(rec);
+  } else {
+    int brk = firstCap;
+    while (brk > 0 && rec.charAt(brk) != ' ') --brk;
+    if (brk == 0) brk = firstCap;
+    display.print(rec.substring(0, brk));
+    int rest = brk;
+    while (rest < static_cast<int>(rec.length()) && rec.charAt(rest) == ' ') ++rest;
+    drawWrappedText(6, 233, ILI9341_WHITE, rec.substring(rest), 1, 9);
+  }
   display.setTextColor(kMuted, kBackground);
   display.setCursor(scaleX(6), scaleY(242));
   display.print("Metadata only; no connection attempted.");
   if (auditStatus.length()) {
     display.setTextColor(kAccent, kBackground);
     display.setCursor(scaleX(6), scaleY(257));
-    display.print(clipped(auditStatus, 37));
+    display.print(clipped(auditStatus, charsForWidth(6)));
   }
   drawFiveButtonFooter("Back", "Signal",
                        isSaved(selectedWifi) ? "Remove" : "Save", "Deauth",
