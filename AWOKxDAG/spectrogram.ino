@@ -255,7 +255,7 @@ void drawSpectrogram() {
     const int x = 4 + i * 9;
     display.fillRect(x, barBaseY - h, 7, h, specThermalColor(val));
   }
-  drawFooter("Back", lastSpectrogramCsvOk ? "Saved" : "Save");
+  drawFooter("Back", "Mode");
   return;
 #endif
 
@@ -349,7 +349,7 @@ void drawSpectrogram() {
     }
   }
 
-  drawFooter("Back", lastSpectrogramCsvOk ? "Saved" : "Save");
+  drawFooter("Back", "Mode");
 }
 
 void startSpectrogram() {
