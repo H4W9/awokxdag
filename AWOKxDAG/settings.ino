@@ -61,7 +61,7 @@ void drawConfirmBanner() {
   }
   display.setTextSize(1);
   display.setTextColor(kBad, kBackground);
-  display.setCursor(6, 250);
+  display.setCursor(scaleX(6), scaleY(250));
   display.print("Tap again: ");
   display.print(attackConfirmLabel);
 }
@@ -252,8 +252,8 @@ void drawSettings() {
 }
 
 void handleSettingsTouch(int x, int y) {
-  if (y >= kFooterTop) {
-    if (x < kScreenWidth / 2) {
+  if (y >= kFooterTopDesign) {
+    if (x < kDesignWidth / 2) {
       drawStatus();
     } else {
       resetDeviceSettings();

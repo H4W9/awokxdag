@@ -452,22 +452,22 @@ void drawGps() {
   drawHeader("GPS", gpsHasFix() ? "fix acquired" : "searching for satellites");
   display.setTextSize(2);
   display.setTextColor(gpsHasFix() ? kGood : kWarn, kBackground);
-  display.setCursor(6, 54);
+  display.setCursor(scaleX(6), scaleY(54));
   display.print(gpsHasFix() ? "FIX" : "NO FIX");
 
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(6, 90);
+  display.setCursor(scaleX(6), scaleY(90));
   display.printf("Satellites: %d", gpsSats());
   if (gpsHasFix()) {
-    display.setCursor(6, 104);
+    display.setCursor(scaleX(6), scaleY(104));
     display.printf("Lat: %.6f", gps.location.lat());
-    display.setCursor(6, 116);
+    display.setCursor(scaleX(6), scaleY(116));
     display.printf("Lon: %.6f", gps.location.lng());
-    display.setCursor(6, 128);
+    display.setCursor(scaleX(6), scaleY(128));
     display.printf("Alt: %.1f m  Spd: %.1f km/h", gps.altitude.meters(),
                    gps.speed.kmph());
-    display.setCursor(6, 140);
+    display.setCursor(scaleX(6), scaleY(140));
     display.print("UTC: ");
     display.print(gpsTimestamp());
   }
@@ -477,26 +477,26 @@ void drawGps() {
   const uint32_t failed = gps.failedChecksum();
   const uint32_t passedHere =
       passed >= gpsBaudBaselinePassed ? passed - gpsBaudBaselinePassed : passed;
-  display.drawFastHLine(6, 154, 228, kPanel);
+  display.drawFastHLine(scaleX(6), scaleY(154), scaleX(228), kPanel);
   display.setTextColor(kAccent, kBackground);
-  display.setCursor(6, 160);
+  display.setCursor(scaleX(6), scaleY(160));
   display.print("LINK DIAGNOSTICS");
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(6, 174);
+  display.setCursor(scaleX(6), scaleY(174));
   display.printf("Baud %lu  chars %lu", gpsCurrentBaud,
                  static_cast<unsigned long>(gps.charsProcessed()));
-  display.setCursor(6, 186);
+  display.setCursor(scaleX(6), scaleY(186));
   display.setTextColor(passedHere > 0 ? kGood : kBad, kBackground);
   display.printf("NMEA ok %lu (this baud %lu)  bad %lu",
                  static_cast<unsigned long>(passed),
                  static_cast<unsigned long>(passedHere),
                  static_cast<unsigned long>(failed));
   display.setTextColor(kMuted, kBackground);
-  display.setCursor(6, 200);
+  display.setCursor(scaleX(6), scaleY(200));
   display.print("Last: ");
   display.print(clipped(String(gpsLastSentence), 32));
   display.setTextColor(passedHere > 0 ? kMuted : kWarn, kBackground);
-  display.setCursor(6, 214);
+  display.setCursor(scaleX(6), scaleY(214));
   if (passedHere == 0) {
     display.print("No valid NMEA: tap Baud to retry.");
   } else if (!gpsHasFix()) {
@@ -514,12 +514,12 @@ void drawWardrive() {
              gpsHasFix() ? "logging to WiGLE CSV" : "waiting for GPS fix");
   display.setTextSize(2);
   display.setTextColor(gpsHasFix() ? kGood : kWarn, kBackground);
-  display.setCursor(6, 54);
+  display.setCursor(scaleX(6), scaleY(54));
   display.print(gpsHasFix() ? "LOGGING" : "NO FIX");
 
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(6, 92);
+  display.setCursor(scaleX(6), scaleY(92));
   if (radiosCoexist) {
     const bool bleNow = wardriveSched.phase == RadioPhase::kBle;
     display.printf("Wi-Fi: %lu   BLE: %lu   [%s]",
@@ -530,35 +530,35 @@ void drawWardrive() {
     display.printf("Wi-Fi: %lu   BLE: off",
                    static_cast<unsigned long>(wardriveNetworks));
   }
-  display.setCursor(6, 106);
+  display.setCursor(scaleX(6), scaleY(106));
   display.printf("Scans: %lu   Sats: %d",
                  static_cast<unsigned long>(wardriveScans), gpsSats());
   const uint32_t elapsed = (millis() - wardriveStartMs) / 1000;
-  display.setCursor(6, 120);
+  display.setCursor(scaleX(6), scaleY(120));
   display.printf("Elapsed: %lus", static_cast<unsigned long>(elapsed));
   display.setTextColor(kMuted, kBackground);
-  display.setCursor(6, 140);
+  display.setCursor(scaleX(6), scaleY(140));
   if (gpsHasFix()) {
     display.printf("At: %.5f, %.5f", gps.location.lat(), gps.location.lng());
   } else {
     display.print("Networks are only logged with a");
-    display.setCursor(6, 152);
+    display.setCursor(scaleX(6), scaleY(152));
     display.print("valid fix; keep moving.");
   }
   display.setTextColor(wardriveCsvReady ? kAccent : kWarn, kBackground);
-  display.setCursor(6, 176);
+  display.setCursor(scaleX(6), scaleY(176));
   if (wardriveCsvReady) display.print("SD: " + wardriveCsvName());
   else display.print("SD unavailable; not logging");
   display.setTextColor(kMuted, kBackground);
   if (radiosCoexist) {
-    display.setCursor(6, 196);
+    display.setCursor(scaleX(6), scaleY(196));
     display.print("Wi-Fi and BLE alternate windows");
-    display.setCursor(6, 208);
+    display.setCursor(scaleX(6), scaleY(208));
     display.print("(one radio at a time on C5).");
   } else {
-    display.setCursor(6, 196);
+    display.setCursor(scaleX(6), scaleY(196));
     display.print("BLE unavailable on this board;");
-    display.setCursor(6, 208);
+    display.setCursor(scaleX(6), scaleY(208));
     display.print("logging Wi-Fi APs only.");
   }
   drawFooter("Back", "Home");

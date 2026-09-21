@@ -149,7 +149,7 @@ void netFooter(const char* left, const char* right) {
 }
 void netText(int y, const String& value) {
   display.setTextSize(1); display.setTextColor(kMuted, kBackground);
-  display.setCursor(6, y);
+  display.setCursor(scaleX(6), scaleY(y));
 #ifdef AWOK_MINI_DISPLAY
   display.print(value);
 #else
@@ -714,7 +714,7 @@ void handleNetworkTouch(int x, int y) {
     return;
   }
   if (currentView == View::kNetworkEdit) {
-    if (y >= kFooterTop) {
+    if (y >= kFooterTopDesign) {
       if (x < 48) { netWipe(netEdit); drawNetworkSetup(); }
       else if (x < 96) { netKeyPage = (netKeyPage + 7) % 8; drawNetworkEditor(); }
       else if (x < 144) { netKeyPage = (netKeyPage + 1) % 8; drawNetworkEditor(); }
@@ -734,10 +734,10 @@ void handleNetworkTouch(int x, int y) {
   }
   if (currentView == View::kNetworkSetup) {
     if (netJob == NetJob::Join) {
-      if (y >= kFooterTop) { netDisconnect(); drawNetworkSetup(); }
+      if (y >= kFooterTopDesign) { netDisconnect(); drawNetworkSetup(); }
       return;
     }
-    if (y >= kFooterTop) {
+    if (y >= kFooterTopDesign) {
       if (x < 120) {
         if (netSetupReturnUpload) drawWardriveUpload();
         else drawNetworkMenu();
@@ -750,7 +750,7 @@ void handleNetworkTouch(int x, int y) {
     return;
   }
   if (currentView == View::kNetworkAps) {
-    if (y >= kFooterTop) {
+    if (y >= kFooterTopDesign) {
       if (x < 60) drawNetworkSetup();
       else if (x < 120) { --netApPage; drawNetworkAps(); }
       else if (x < 180) { ++netApPage; drawNetworkAps(); }
@@ -769,7 +769,7 @@ void handleNetworkTouch(int x, int y) {
     return;
   }
   if (currentView == View::kNetworkMenu) {
-    if (y >= kFooterTop) {
+    if (y >= kFooterTopDesign) {
       if (x < 80) { closeNetworkTools(); drawReconMenu(); }
       else { netMenuPage = 1 - netMenuPage; drawNetworkMenu(); }
     } else if (y >= 50 && y < 242 && (y - 50) % 32 < 30) {
@@ -787,7 +787,7 @@ void handleNetworkTouch(int x, int y) {
     return;
   }
   if (currentView == View::kNetworkResults) {
-    if (y >= kFooterTop) {
+    if (y >= kFooterTopDesign) {
       if (x < 48) {
         if (netJob != NetJob::None) netFinish("Cancelled (partial)");
         drawNetworkMenu();
@@ -805,14 +805,14 @@ void handleNetworkTouch(int x, int y) {
     return;
   }
   if (currentView == View::kNetworkHost) {
-    if (y >= kFooterTop) drawNetworkResults();
+    if (y >= kFooterTopDesign) drawNetworkResults();
     else if (y >= 80 && y < 240 && (y - 80) % 40 < 32) {
       const NetJob jobs[] = {NetJob::Ports, NetJob::Cameras, NetJob::Printers, NetJob::Sip};
       netStartJob(jobs[(y - 80) / 40], netSelectedHost);
     }
     return;
   }
-  if (currentView == View::kNetworkDetail && y >= kFooterTop) drawNetworkResults();
+  if (currentView == View::kNetworkDetail && y >= kFooterTopDesign) drawNetworkResults();
 }
 void handleNetworkSerial() {
   // Existing serial shortcuts cannot switch radios out from under a LAN job.

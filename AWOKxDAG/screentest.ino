@@ -280,6 +280,10 @@ void screenTestAdvance() {
 }
 
 void handleScreenTestTouch(int x, int y) {
+  // The screen test draws in the panel's physical space (kTestW/kTestH); taps
+  // arrive in the 240x320 design grid, so scale them up to match its zones.
+  x = scaleX(x);
+  y = scaleY(y);
   if (screenTestStep == kScreenTestIntro) {
     if (x < kTestW / 2) {
       stopScreenTest();

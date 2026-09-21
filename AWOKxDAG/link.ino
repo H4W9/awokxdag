@@ -1522,25 +1522,25 @@ void drawFleetMenu() {
   drawHeader("FLEET", "multi-node wardrive");
   display.setTextSize(2);
   display.setTextColor(kAccent, kBackground);
-  display.setCursor(6, 54);
+  display.setCursor(scaleX(6), scaleY(54));
   display.print("FLEET");
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(6, 88);
+  display.setCursor(scaleX(6), scaleY(88));
   display.print("Link several AxD chips to split");
-  display.setCursor(6, 100);
+  display.setCursor(scaleX(6), scaleY(100));
   display.print("the channels into ONE merged CSV.");
   display.setTextColor(kMuted, kBackground);
-  display.setCursor(6, 124);
+  display.setCursor(scaleX(6), scaleY(124));
   display.print("Start - be the coordinator; others");
-  display.setCursor(6, 136);
+  display.setCursor(scaleX(6), scaleY(136));
   display.print("        join and it deals the plan.");
-  display.setCursor(6, 152);
+  display.setCursor(scaleX(6), scaleY(152));
   display.print("Join  - listen for a coordinator's");
-  display.setCursor(6, 164);
+  display.setCursor(scaleX(6), scaleY(164));
   display.print("        invite and auto-join it.");
   display.setTextColor(linkEspNowReady ? kGood : kBad, kBackground);
-  display.setCursor(6, 188);
+  display.setCursor(scaleX(6), scaleY(188));
   display.print(linkEspNowReady ? "ESP-NOW ready" : "ESP-NOW unavailable");
   drawThreeButtonFooter("Back", "Start", "Join");
 }
@@ -1557,13 +1557,13 @@ void drawFleetStatus() {
   if (joining) {
     display.setTextSize(2);
     display.setTextColor(kWarn, kBackground);
-    display.setCursor(6, 60);
+    display.setCursor(scaleX(6), scaleY(60));
     display.print("LISTENING");
     display.setTextSize(1);
     display.setTextColor(ILI9341_WHITE, kBackground);
-    display.setCursor(6, 96);
+    display.setCursor(scaleX(6), scaleY(96));
     display.print("Waiting for a coordinator invite.");
-    display.setCursor(6, 108);
+    display.setCursor(scaleX(6), scaleY(108));
     display.print("Start a fleet on another chip.");
     drawFooter("Leave", "Home");
     return;
@@ -1571,28 +1571,28 @@ void drawFleetStatus() {
 
   display.setTextSize(1);
   display.setTextColor(kMuted, kBackground);
-  display.setCursor(6, 46);
+  display.setCursor(scaleX(6), scaleY(46));
   display.print("Code");
   display.setTextSize(2);
   display.setTextColor(kAccent, kBackground);
-  display.setCursor(6, 58);
+  display.setCursor(scaleX(6), scaleY(58));
   char code[8];
   snprintf(code, sizeof(code), "%04u", fleetCode);
   display.print(code);
 
   display.setTextSize(1);
   display.setTextColor(fleetWardriveOn ? kGood : kWarn, kBackground);
-  display.setCursor(120, 52);
+  display.setCursor(scaleX(120), scaleY(52));
   display.print(fleetWardriveOn ? (gpsHasFix() ? "LOGGING" : "NO FIX") : "READY");
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(120, 68);
+  display.setCursor(scaleX(120), scaleY(68));
   display.printf("Nodes: %d", fleetMemberCount);
 
   int y = 92;
   for (int i = 0; i < fleetMemberCount && i < kFleetMaxNodes; ++i) {
     const bool me = (i == fleetMyIndex);
     display.setTextColor(me ? ILI9341_WHITE : kMuted, kBackground);
-    display.setCursor(6, y);
+    display.setCursor(scaleX(6), scaleY(y));
     display.printf("M%d %-5s %02x%02x %lu%s", i, fleetRoleLabel(i),
                    fleetMembers[i].mac[4], fleetMembers[i].mac[5],
                    static_cast<unsigned long>(fleetMembers[i].rows),
@@ -1601,12 +1601,12 @@ void drawFleetStatus() {
   }
 
   display.setTextColor(kAccent, kBackground);
-  display.setCursor(6, y + 6);
+  display.setCursor(scaleX(6), scaleY(y + 6));
   display.printf("Agg: %lu wifi  %lu ble",
                  static_cast<unsigned long>(wardriveNetworks),
                  static_cast<unsigned long>(wardriveBleCount));
   display.setTextColor(kMuted, kBackground);
-  display.setCursor(6, y + 22);
+  display.setCursor(scaleX(6), scaleY(y + 22));
   display.print("CSV -> SD + phone (merged).");
 
   if (fleetCoordinator) {
@@ -1627,18 +1627,18 @@ void drawLinkWardrive() {
     drawHeader("SPLIT WD", paired ? "linked drive" : "solo (unpaired)");
     display.setTextSize(2);
     display.setTextColor(gpsHasFix() ? kGood : kWarn, kBackground);
-    display.setCursor(6, 52);
+    display.setCursor(scaleX(6), scaleY(52));
     display.print(gpsHasFix() ? "LOGGING" : "NO FIX");
 
     display.setTextSize(1);
     display.setTextColor(ILI9341_WHITE, kBackground);
-    display.setCursor(6, 86);
+    display.setCursor(scaleX(6), scaleY(86));
     display.printf("Mine:    %lu APs", static_cast<unsigned long>(wardriveNetworks));
-    display.setCursor(6, 98);
+    display.setCursor(scaleX(6), scaleY(98));
     if (paired) {
       display.printf("Partner: %lu APs", static_cast<unsigned long>(linkPartnerNetworks));
       display.setTextColor(kAccent, kBackground);
-      display.setCursor(6, 110);
+      display.setCursor(scaleX(6), scaleY(110));
       display.printf("Combined: %lu APs",
                      static_cast<unsigned long>(wardriveNetworks + linkPartnerNetworks));
     } else {
@@ -1646,12 +1646,12 @@ void drawLinkWardrive() {
     }
 
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(6, 130);
+    display.setCursor(scaleX(6), scaleY(130));
     display.printf("My ch %d (%d of %d)  scans %lu", linkScanChannel,
                    linkAssignedChannelCount(), linkPlanCount(),
                    static_cast<unsigned long>(wardriveScans));
     if (paired) {
-      display.setCursor(6, 142);
+      display.setCursor(scaleX(6), scaleY(142));
       display.printf("Role: %s  Partner ch %d",
                      linkRoleMaster ? "master" : "slave", linkPartnerChannel);
     }
@@ -1659,7 +1659,7 @@ void drawLinkWardrive() {
     if (paired) {
       const bool lost = millis() - linkPartnerLastSeenMs > kLinkPeerTimeoutMs;
       display.setTextColor(lost ? kBad : kGood, kBackground);
-      display.setCursor(6, 162);
+      display.setCursor(scaleX(6), scaleY(162));
       if (lost) {
         display.print("PARTNER LOST - out of range?");
       } else {
@@ -1668,14 +1668,14 @@ void drawLinkWardrive() {
     }
 
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(6, 182);
+    display.setCursor(scaleX(6), scaleY(182));
     display.printf("Session %lu", static_cast<unsigned long>(linkSessionId));
     display.setTextColor(wardriveCsvReady ? kAccent : kWarn, kBackground);
-    display.setCursor(6, 196);
+    display.setCursor(scaleX(6), scaleY(196));
     if (wardriveCsvReady) display.print("SD: " + wardriveCsvName());
     else display.print("SD unavailable; not logging");
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(6, 216);
+    display.setCursor(scaleX(6), scaleY(216));
     display.print("Wi-Fi only in Link mode (no BLE).");
     drawFooter("Stop", "Home");
     return;
@@ -1685,23 +1685,23 @@ void drawLinkWardrive() {
   if (linkState == kLinkAwaitConfirm) {
     drawHeader("LINK", "confirm this code matches");
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(6, 60);
+    display.setCursor(scaleX(6), scaleY(60));
     display.print("Both units should show the same");
-    display.setCursor(6, 72);
+    display.setCursor(scaleX(6), scaleY(72));
     display.print("4-digit code. Confirm on each.");
     display.setTextSize(4);
     display.setTextColor(kAccent, kBackground);
     char code[8];
     snprintf(code, sizeof(code), "%04u", linkCode);
-    display.setCursor(64, 110);
+    display.setCursor(scaleX(64), scaleY(110));
     display.print(code);
     display.setTextSize(1);
     display.setTextColor(linkConfirmedLocal ? kGood : kWarn, kBackground);
-    display.setCursor(6, 168);
+    display.setCursor(scaleX(6), scaleY(168));
     display.print(linkConfirmedLocal ? "Confirmed here; waiting for partner."
                                      : "Press Confirm when codes match.");
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(6, 188);
+    display.setCursor(scaleX(6), scaleY(188));
     display.printf("You are the %s (lower MAC wins).",
                    linkRoleMaster ? "master" : "slave");
     drawFooter("Cancel", "Confirm");
@@ -1712,18 +1712,18 @@ void drawLinkWardrive() {
     drawHeader("LINK", "searching for a partner");
     display.setTextSize(2);
     display.setTextColor(kWarn, kBackground);
-    display.setCursor(6, 60);
+    display.setCursor(scaleX(6), scaleY(60));
     display.print("PAIRING...");
     display.setTextSize(1);
     display.setTextColor(ILI9341_WHITE, kBackground);
-    display.setCursor(6, 96);
+    display.setCursor(scaleX(6), scaleY(96));
     display.print("Put the other unit into Pair too.");
-    display.setCursor(6, 110);
+    display.setCursor(scaleX(6), scaleY(110));
     display.print("Both broadcast on channel 1.");
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(6, 134);
+    display.setCursor(scaleX(6), scaleY(134));
     display.print("A 4-digit code appears once they");
-    display.setCursor(6, 146);
+    display.setCursor(scaleX(6), scaleY(146));
     display.print("find each other.");
     drawFooter("Cancel", "Cancel");
     return;
@@ -1733,21 +1733,21 @@ void drawLinkWardrive() {
     drawHeader("LINK", "paired");
     display.setTextSize(2);
     display.setTextColor(kGood, kBackground);
-    display.setCursor(6, 56);
+    display.setCursor(scaleX(6), scaleY(56));
     display.print("PAIRED");
     display.setTextSize(1);
     display.setTextColor(ILI9341_WHITE, kBackground);
-    display.setCursor(6, 92);
+    display.setCursor(scaleX(6), scaleY(92));
     display.printf("Role: %s", linkRoleMaster ? "master" : "slave");
-    display.setCursor(6, 106);
+    display.setCursor(scaleX(6), scaleY(106));
     display.printf("Session: %lu", static_cast<unsigned long>(linkSessionId));
-    display.setCursor(6, 120);
+    display.setCursor(scaleX(6), scaleY(120));
     display.printf("My set: %d of %d channels", linkAssignedChannelCount(),
                    linkPlanCount());
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(6, 144);
+    display.setCursor(scaleX(6), scaleY(144));
     display.print("Start launches the split wardrive.");
-    display.setCursor(6, 156);
+    display.setCursor(scaleX(6), scaleY(156));
     display.print("Each unit logs its own WiGLE CSV.");
     drawThreeButtonFooter("Back", "Unpair", "Start");
     return;
@@ -1757,22 +1757,22 @@ void drawLinkWardrive() {
   drawHeader("LINK", linkEspNowReady ? "two-unit mode" : "ESP-NOW unavailable");
   display.setTextSize(2);
   display.setTextColor(kAccent, kBackground);
-  display.setCursor(6, 54);
+  display.setCursor(scaleX(6), scaleY(54));
   display.print("LINK MODE");
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(6, 86);
+  display.setCursor(scaleX(6), scaleY(86));
   display.print("Pair with a second AxD to");
-  display.setCursor(6, 98);
+  display.setCursor(scaleX(6), scaleY(98));
   display.print("split-channel wardrive together.");
   display.setTextColor(kMuted, kBackground);
-  display.setCursor(6, 122);
+  display.setCursor(scaleX(6), scaleY(122));
   display.print("Fleet - link 2+ chips, one CSV");
-  display.setCursor(6, 134);
+  display.setCursor(scaleX(6), scaleY(134));
   display.print("Solo  - wardrive all channels now");
-  display.setCursor(6, 158);
+  display.setCursor(scaleX(6), scaleY(158));
   display.print("A fleet splits the channel plan N");
-  display.setCursor(6, 170);
+  display.setCursor(scaleX(6), scaleY(170));
   display.print("ways so you cover the band faster.");
   drawThreeButtonFooter("Back", "Fleet", "Solo");
 }

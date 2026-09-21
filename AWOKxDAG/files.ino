@@ -54,10 +54,10 @@ void drawFilesManager() {
     const int y = 48 + row * 22;
     display.setTextColor(idx == fileSelected ? kAccent : ILI9341_WHITE,
                          kBackground);
-    display.setCursor(5, y);
+    display.setCursor(scaleX(5), scaleY(y));
     display.print(clipped(fileBaseName(fileRows[idx].name), 26));
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(5, y + 11);
+    display.setCursor(scaleX(5), scaleY(y + 11));
     if (fileRows[idx].size >= 1024) {
       display.printf("%lu KB",
                      static_cast<unsigned long>(fileRows[idx].size / 1024));
@@ -67,7 +67,7 @@ void drawFilesManager() {
   }
   if (fileRowCount == 0) {
     display.setTextColor(kMuted, kBackground);
-    display.setCursor(40, 140);
+    display.setCursor(scaleX(40), scaleY(140));
     display.print(sdReady ? "No files in /awokxdag" : "SD not mounted");
   }
   const char* action =
@@ -101,7 +101,7 @@ void openFilesManager() {
 }
 
 void handleFilesTouch(int x, int y) {
-  if (y < kFooterTop) {
+  if (y < kFooterTopDesign) {
     if (y >= 48) {
       const int row = (y - 48) / 22;
       const int idx = filePage * kVisibleRows + row;
