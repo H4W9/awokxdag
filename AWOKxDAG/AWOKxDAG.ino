@@ -108,11 +108,15 @@ bool authFloodActive = false;      // auth/assoc flood watch (authflood.ino)
 bool advancedWatchActive = false;  // combined Wi-Fi/BLE anomaly watch
 bool locatorActive = false;        // RSSI fox-hunt (state in locator.ino)
 bool fleetHuntActive = false;      // multi-node trilateration hunt (locator.ino)
+bool topologyActive = false;       // live swarm mesh topology mapping (topologymap.ino)
+bool bleIntelActive = false;       // BLE ecosystem intel & continuity decoder (bleintel.ino)
 // SD export status for the new recon tabs (read by input.ino, which is
 // concatenated before those tabs, so the flags must live in the main sketch).
 bool lastAuditCsvOk = false;
 bool lastTrackerCsvOk = false;
 bool lastProbeIntelCsvOk = false;
+bool lastTopologyCsvOk = false;
+bool lastBleIntelCsvOk = false;
 bool sdReady = false;
 bool lastSavedSdWriteOk = false;
 bool lastScanSdWriteOk = false;
@@ -1568,8 +1572,9 @@ void updateWifiSignalMonitor() {
 const char* const kReconItems[] = {
     "Wi-Fi Scan",   "Channel Map",  "BLE Scan",     "Clients",
     "Packet Mon",   "WPS Scan",     "Hidden SSID",  "Cameras",
-    "Security Audit", "BLE Trackers", "Harvester",  "Probe Intel",
-    "Saved", "Fleet Hunter", "Network Tools"};
+    "Security Audit", "BLE Trackers", "BLE Intel",   "Harvester",
+    "Probe Intel",  "Saved",        "Fleet Hunter", "Topology Map",
+    "Network Tools"};
 constexpr int kReconItemCount =
     static_cast<int>(sizeof(kReconItems) / sizeof(kReconItems[0]));
 constexpr int kMenuPerPage = 6;
@@ -1614,6 +1619,8 @@ void launchReconItem(int index) {
     startSecurityAudit();
   } else if (label == "BLE Trackers") {
     startTrackerScan();
+  } else if (label == "BLE Intel") {
+    startBleIntel();
   } else if (label == "Harvester") {
     startHarvester();
   } else if (label == "Probe Intel") {
@@ -1624,6 +1631,8 @@ void launchReconItem(int index) {
     } else {
       startWifiScanContinuous();
     }
+  } else if (label == "Topology Map") {
+    startTopologyMap();
   } else if (label == "Network Tools") {
     openNetworkTools();
   } else if (label == "Saved") {
@@ -2331,11 +2340,13 @@ void loop() {
   updateProbeLure();
   updateLocator();
   updateFleetHunt();
+  updateTopologyMap();
   updateWps();
   updateRogueWatch();
   updateHiddenReveal();
   updateSecurityAudit();
   updateTrackerScan();
+  updateBleIntel();
   updateHarvester();
   updateProbeIntel();
   updateKarmaWatch();

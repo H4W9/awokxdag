@@ -118,7 +118,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.6.0";
+constexpr char kVersion[] = "1.6.3";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -160,6 +160,45 @@ constexpr uint32_t kTrackerRedrawMs = 700;
 constexpr uint32_t kTrackerFollowMs = 45000;
 constexpr uint32_t kTrackerMinSightings = 4;
 
+// BLE Intel: ecosystem decoder (Apple Continuity, Fast Pair, Swift Pair, Samsung).
+constexpr char kBleIntelCsvPath[] = "/awokxdag/ble_intel.csv";
+constexpr int kMaxBleIntel = kResultCapacity;
+constexpr int kBleIntelHitQueueSlots = AwokPins::kDualBand ? 32 : 16;
+constexpr uint32_t kBleIntelRedrawMs = 800;
+
+enum BleIntelEcosystem : uint8_t {
+  kBleEcoUnknown = 0,
+  kBleEcoApple = 1,
+  kBleEcoGoogle = 2,
+  kBleEcoMicrosoft = 3,
+  kBleEcoSamsung = 4,
+};
+
+struct BleIntelHit {
+  char addr[18] = {0};
+  int8_t rssi = -127;
+  uint8_t ecosystem = 0;
+  char deviceType[20] = {0};
+  char details[36] = {0};
+  int8_t batteryLeft = -1;
+  int8_t batteryRight = -1;
+  int8_t batteryCase = -1;
+};
+
+struct BleIntelEntry {
+  String addr;
+  int32_t rssi = -127;
+  uint8_t ecosystem = 0;
+  String deviceType;
+  String details;
+  int8_t batteryLeft = -1;
+  int8_t batteryRight = -1;
+  int8_t batteryCase = -1;
+  uint32_t firstSeenMs = 0;
+  uint32_t lastSeenMs = 0;
+  uint32_t sightings = 0;
+};
+
 // Harvester: all-channel passive EAPOL/PMKID collection (no deauth).
 constexpr char kHarvestPcapPath[] = "/awokxdag/harvest.pcap";
 constexpr char kHarvestPmkidPath[] = "/awokxdag/harvest_pmkid.txt";
@@ -175,6 +214,9 @@ constexpr int kProbeMacsPerSsid = 8;
 constexpr int kProbeHitQueueSlots = AwokPins::kDualBand ? 32 : 16;
 constexpr uint32_t kProbeHopIntervalMs = 300;
 constexpr uint32_t kProbeRedrawMs = 700;
+
+// Topology Map: Swarm client/AP association & probe graph
+constexpr char kTopologyCsvPath[] = "/awokxdag/topology_map.csv";
 
 // Karma Watch: one BSSID answering many SSIDs (WiFi Pineapple / Karma / MANA).
 constexpr char kKarmaLogCsvPath[] = "/awokxdag/karma_log.csv";
@@ -358,7 +400,9 @@ enum class View {
   kNetworkDetail,
   kWardriveUpload,
   kWardriveUploadFiles,
-  kFleetHunt
+  kFleetHunt,
+  kTopologyMap,
+  kBleIntel
 };
 
 // ---- Link Mode (ESP-NOW pairing of two AxD units) -----------------------
@@ -707,6 +751,17 @@ struct BssidHit {
   uint8_t bssid[6];
   uint8_t channel;
   int8_t rssi;
+};
+
+// Minimal POD link observation for Swarm Topology Map.
+struct TopoHit {
+  uint8_t type;  // 0 = Station->AP Data, 1 = Probe Request, 2 = Beacon/ProbeResp
+  uint8_t clientMac[6];
+  uint8_t bssid[6];
+  int8_t rssi;
+  uint8_t channel;
+  bool isOpen;
+  char ssid[33];
 };
 
 struct BleEntry {

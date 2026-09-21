@@ -325,6 +325,16 @@ void handleTouch() {
     }
     return;
   }
+  if (currentView == View::kBleIntel) {
+    if (x < kScreenWidth / 2) {
+      stopBleIntel();
+      drawReconMenu();
+    } else {
+      lastBleIntelCsvOk = exportBleIntelToSd();
+      drawBleIntel();
+    }
+    return;
+  }
   if (currentView == View::kHarvester) {
     if (x < kScreenWidth / 2) {
       stopHarvester();
@@ -342,6 +352,16 @@ void handleTouch() {
     } else {
       lastProbeIntelCsvOk = exportProbeIntelToSd();
       drawProbeIntel();
+    }
+    return;
+  }
+  if (currentView == View::kTopologyMap) {
+    if (x < kScreenWidth / 2) {
+      stopTopologyMap();
+      drawReconMenu();
+    } else {
+      lastTopologyCsvOk = exportTopologyToSd();
+      drawTopologyMap();
     }
     return;
   }
@@ -728,9 +748,9 @@ bool toolBlocksSerialShortcuts() {
          wardriveActive || pktmonActive || wpsScanActive || rogueWatchActive ||
          hiddenRevealActive || cameraActive || bleDetectActive ||
          probeLureActive || securityAuditActive || trackerScanActive ||
-         harvesterActive || probeIntelActive || karmaWatchActive ||
+         bleIntelActive || harvesterActive || probeIntelActive || karmaWatchActive ||
          beaconWatchActive || authFloodActive || advancedWatchActive ||
-         locatorActive || fleetHuntActive || linkWardriveActive ||
+         locatorActive || fleetHuntActive || topologyActive || linkWardriveActive ||
          linkState == kLinkDiscovering || linkState == kLinkAwaitConfirm;
 }
 
@@ -752,6 +772,7 @@ void stopActiveTools() {
   if (probeLureActive) stopProbeLure();
   if (securityAuditActive) stopSecurityAudit();
   if (trackerScanActive) stopTrackerScan();
+  if (bleIntelActive) stopBleIntel();
   if (harvesterActive) stopHarvester();
   if (probeIntelActive) stopProbeIntel();
   if (karmaWatchActive) stopKarmaWatch();
@@ -760,6 +781,7 @@ void stopActiveTools() {
   if (advancedWatchActive) stopAdvancedWatch();
   if (locatorActive) stopLocator();
   if (fleetHuntActive) stopFleetHunt();
+  if (topologyActive) stopTopologyMap();
   if (linkWardriveActive) stopLinkWardrive();
   if (linkState == kLinkDiscovering || linkState == kLinkAwaitConfirm) {
     linkCancelPairing();

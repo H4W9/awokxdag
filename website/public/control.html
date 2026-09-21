@@ -419,6 +419,8 @@
     <button class="tab-btn" data-tab="tab-wardrive">🚗 Wardrive</button>
     <button class="tab-btn" data-tab="tab-tools">⚡ Tools &amp; Ops</button>
     <button class="tab-btn" data-tab="tab-fleet">🤝 Fleet</button>
+    <button class="tab-btn" data-tab="tab-topology">🕸️ Topology</button>
+    <button class="tab-btn" data-tab="tab-bleintel">🎧 BLE Intel</button>
     <button class="tab-btn" data-tab="tab-logs">📜 Terminal</button>
   </div>
 
@@ -642,9 +644,11 @@
         <button data-op="12">Cameras</button>
         <button data-op="13">Security Audit</button>
         <button data-op="14">BLE Trackers</button>
+        <button data-op="57">BLE Intel</button>
         <button data-op="15">Harvester</button>
         <button data-op="16">Probe Intel</button>
         <button data-op="17">Saved</button>
+        <button data-op="56">Topology Map</button>
       </div>
     </div>
 
@@ -729,7 +733,119 @@
     </div>
   </div>
 
-  <!-- TAB 6: TERMINAL LOG -->
+  <!-- TAB 6: SWARM TOPOLOGY GRAPH -->
+  <div id="tab-topology" class="tab-content" hidden>
+    <div class="card">
+      <div class="card-title">
+        <span>🕸️ Swarm Mesh Topology Graph</span>
+        <div class="row" style="gap:6px; flex-wrap:wrap;">
+          <button data-op="56" class="btn-sm primary">▶️ Start Mapping</button>
+          <button data-op="255" class="btn-sm stop">⏹️ Stop</button>
+          <button id="topo-btn-clear" class="btn-sm">Clear Graph</button>
+          <button id="topo-btn-reset-physics" class="btn-sm">Reset Physics</button>
+          <button id="topo-btn-export-json" class="btn-sm">Export JSON</button>
+          <button id="topo-btn-export-csv" class="btn-sm">Export CSV</button>
+        </div>
+      </div>
+
+      <div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom:12px;">
+        <div class="stat-box">
+          <div class="k">Access Points</div>
+          <div id="topo-ap-count" class="v" style="color:var(--accent);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Active Clients</div>
+          <div id="topo-cli-count" class="v" style="color:var(--good);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Probe Requests</div>
+          <div id="topo-prb-count" class="v" style="color:#bc8cff;">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Open Networks</div>
+          <div id="topo-open-count" class="v" style="color:var(--warn);">0</div>
+        </div>
+      </div>
+
+      <div class="row" style="justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div class="row" style="gap:12px;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+            <input type="checkbox" id="topo-filter-hide-probes"> Hide Probes
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+            <input type="checkbox" id="topo-filter-open-only"> Open APs Only
+          </label>
+        </div>
+        <div class="k" style="font-size:11px;">
+          💡 Drag nodes to reposition · Click any node to inspect relationship details
+        </div>
+      </div>
+
+      <div style="position:relative; width:100%; height:480px; background:#0d1117; border:1px solid var(--border); border-radius:8px; overflow:hidden;">
+        <canvas id="topo-canvas" width="800" height="480" style="width:100%; height:100%; display:block; cursor:grab;"></canvas>
+        <div id="topo-inspector" style="display:none; position:absolute; right:12px; top:12px; width:260px; max-height:456px; overflow-y:auto; background:rgba(22,27,34,0.92); backdrop-filter:blur(8px); border:1px solid var(--border); border-radius:6px; padding:12px; font-size:12px; box-shadow:0 4px 12px rgba(0,0,0,0.5); z-index:10;">
+          <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+            <b id="topo-insp-title" style="color:var(--accent);">Node Details</b>
+            <button id="topo-insp-close" class="btn-sm" style="padding:2px 6px;">✕</button>
+          </div>
+          <div id="topo-insp-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 7: BLE ECOSYSTEM INTEL & CONTINUITY -->
+  <div id="tab-bleintel" class="tab-content" hidden>
+    <div class="card">
+      <div class="card-title">
+        <span>🎧 BLE Ecosystem Intel &amp; Continuity Decoder</span>
+        <div class="row" style="gap:6px; flex-wrap:wrap;">
+          <button data-op="57" class="btn-sm primary">▶️ Start BLE Intel</button>
+          <button data-op="255" class="btn-sm stop">⏹️ Stop</button>
+          <button id="bleintel-btn-clear" class="btn-sm">Clear</button>
+          <button id="bleintel-btn-export-csv" class="btn-sm">Export CSV</button>
+        </div>
+      </div>
+
+      <div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom:12px;">
+        <div class="stat-box">
+          <div class="k">Total Decoded</div>
+          <div id="intel-total-count" class="v" style="color:var(--accent);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Apple Continuity</div>
+          <div id="intel-apple-count" class="v" style="color:#58a6ff;">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Google Fast Pair</div>
+          <div id="intel-google-count" class="v" style="color:var(--warn);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Microsoft / Samsung</div>
+          <div id="intel-other-count" class="v" style="color:var(--purple);">0</div>
+        </div>
+      </div>
+
+      <div class="row" style="justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div class="seg" id="bleintel-filter-seg">
+          <button data-filter="all" class="on">All</button>
+          <button data-filter="Apple">Apple</button>
+          <button data-filter="Google">Google</button>
+          <button data-filter="Microsoft">Microsoft</button>
+          <button data-filter="Samsung">Samsung</button>
+        </div>
+        <div class="k" style="font-size:11px;">
+          Decodes AirPods/Beats battery &amp; charging, AirDrop, Nearby Info, FindMy, Fast Pair, Swift Pair
+        </div>
+      </div>
+
+      <div id="bleintel-list" class="net-list-scroll" style="min-height:280px; max-height:480px;">
+        <div class="k" style="padding:14px; text-align:center;">Run BLE Intel to decode nearby ecosystem broadcasts.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 8: TERMINAL LOG -->
   <div id="tab-logs" class="tab-content" hidden>
     <div class="card">
       <div class="card-title">
@@ -764,7 +880,7 @@ const TOOL_NAMES = {
   31: "BLE Spam Watch", 32: "Karma Watch", 33: "Beacon Watch", 34: "Advanced Watch",
   40: "Locator", 41: "Status", 42: "Files", 43: "Fleet Wardrive", 50: "List Wi-Fi",
   51: "Select Wi-Fi", 52: "Deauth", 53: "Grab Handshake", 54: "Track RSSI", 55: "Fleet Hunter",
-  60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
+  56: "Topology Map", 57: "BLE Intel", 60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1057,6 +1173,779 @@ function parseHuntRow(rowStr) {
   }
 }
 
+// ---- Swarm Mesh Topology Map ----
+const topoData = {
+  aps: new Map(),      // bssid -> { id, type:'ap', bssid, ssid, ch, rssi, isOpen, clients: Set, x, y, vx, vy, radius:16 }
+  clients: new Map(),  // mac -> { id, type:'client', mac, bssid, rssi, packets, probes: Set, x, y, vx, vy, radius:10 }
+  probes: new Map(),   // ssid -> { id, type:'probe', ssid, clients: Set, rssi, count, x, y, vx, vy, radius:8 }
+  links: [],           // { source: id, target: id, type: 'assoc'|'probe' }
+  selectedNode: null,
+  dragNode: null,
+  dragMoved: false,
+  dragStart: { x: 0, y: 0 },
+  animating: false,
+  animFrame: null,
+  hideProbes: false,
+  openOnly: false
+};
+
+function upsertTopoAp(bssid, ssid, ch, rssi, isOpen) {
+  let ap = topoData.aps.get(bssid);
+  const canvas = $("topo-canvas");
+  const cw = canvas ? canvas.width : 800;
+  const ch_h = canvas ? canvas.height : 480;
+  if (!ap) {
+    ap = {
+      id: bssid,
+      type: "ap",
+      bssid,
+      ssid: (ssid && ssid !== "<hidden>") ? ssid : "",
+      ch: ch || 1,
+      rssi: rssi || -127,
+      isOpen: !!isOpen,
+      clients: new Set(),
+      x: cw / 2 + (Math.random() - 0.5) * 160,
+      y: ch_h / 2 + (Math.random() - 0.5) * 160,
+      vx: (Math.random() - 0.5) * 2,
+      vy: (Math.random() - 0.5) * 2,
+      radius: 16
+    };
+    topoData.aps.set(bssid, ap);
+  } else {
+    if (ssid && ssid !== "<hidden>") ap.ssid = ssid;
+    if (ch) ap.ch = ch;
+    if (rssi) ap.rssi = rssi;
+    ap.isOpen = !!isOpen;
+  }
+}
+
+function upsertTopoClient(mac, bssid, rssi, pkts) {
+  let cli = topoData.clients.get(mac);
+  const canvas = $("topo-canvas");
+  const cw = canvas ? canvas.width : 800;
+  const ch_h = canvas ? canvas.height : 480;
+
+  if (!cli) {
+    cli = {
+      id: mac,
+      type: "client",
+      mac,
+      bssid: bssid || "",
+      rssi: rssi || -127,
+      packets: pkts || 1,
+      probes: new Set(),
+      x: cw / 2 + (Math.random() - 0.5) * 200,
+      y: ch_h / 2 + (Math.random() - 0.5) * 200,
+      vx: (Math.random() - 0.5) * 2,
+      vy: (Math.random() - 0.5) * 2,
+      radius: 10
+    };
+    topoData.clients.set(mac, cli);
+  } else {
+    if (bssid) cli.bssid = bssid;
+    if (rssi) cli.rssi = rssi;
+    cli.packets = (cli.packets || 0) + (pkts || 1);
+  }
+
+  if (bssid) {
+    if (!topoData.aps.has(bssid)) {
+      upsertTopoAp(bssid, "", 0, rssi, false);
+    }
+    const ap = topoData.aps.get(bssid);
+    if (ap) ap.clients.add(mac);
+
+    const hasLink = topoData.links.some(l => l.source === mac && l.target === bssid && l.type === "assoc");
+    if (!hasLink) {
+      topoData.links.push({ source: mac, target: bssid, type: "assoc" });
+    }
+  }
+}
+
+function upsertTopoProbe(mac, ssid, rssi, count) {
+  if (!ssid) return;
+  let prb = topoData.probes.get(ssid);
+  const canvas = $("topo-canvas");
+  const cw = canvas ? canvas.width : 800;
+  const ch_h = canvas ? canvas.height : 480;
+
+  if (!prb) {
+    prb = {
+      id: "prb:" + ssid,
+      type: "probe",
+      ssid,
+      clients: new Set(),
+      rssi: rssi || -127,
+      count: count || 1,
+      x: cw / 2 + (Math.random() - 0.5) * 220,
+      y: ch_h / 2 + (Math.random() - 0.5) * 220,
+      vx: (Math.random() - 0.5) * 2,
+      vy: (Math.random() - 0.5) * 2,
+      radius: 8
+    };
+    topoData.probes.set(ssid, prb);
+  } else {
+    if (rssi) prb.rssi = rssi;
+    prb.count = (prb.count || 0) + (count || 1);
+  }
+  prb.clients.add(mac);
+
+  let cli = topoData.clients.get(mac);
+  if (!cli) {
+    upsertTopoClient(mac, "", rssi, 1);
+    cli = topoData.clients.get(mac);
+  }
+  if (cli) cli.probes.add(ssid);
+
+  const hasLink = topoData.links.some(l => l.source === mac && l.target === prb.id && l.type === "probe");
+  if (!hasLink) {
+    topoData.links.push({ source: mac, target: prb.id, type: "probe" });
+  }
+}
+
+function updateTopoCounts() {
+  const apCount = topoData.aps.size;
+  const cliCount = topoData.clients.size;
+  const prbCount = topoData.probes.size;
+  let openCount = 0;
+  topoData.aps.forEach(ap => { if (ap.isOpen) openCount++; });
+
+  if ($("topo-ap-count")) $("topo-ap-count").textContent = apCount;
+  if ($("topo-cli-count")) $("topo-cli-count").textContent = cliCount;
+  if ($("topo-prb-count")) $("topo-prb-count").textContent = prbCount;
+  if ($("topo-open-count")) $("topo-open-count").textContent = openCount;
+}
+
+function parseTopologyRow(rowStr) {
+  try {
+    const parts = rowStr.trim().split(",");
+    if (parts.length < 5 || parts[0] !== "$TOPO") return;
+    const kind = parts[1];
+    if (kind === "AP") {
+      const bssid = parts[2];
+      const ssid = parts[3] || "<hidden>";
+      const ch = parseInt(parts[4], 10) || 1;
+      const rssi = parseInt(parts[5], 10) || -127;
+      const isOpen = (parts[6] === "1");
+      upsertTopoAp(bssid, ssid, ch, rssi, isOpen);
+    } else if (kind === "CLI") {
+      const mac = parts[2];
+      const bssid = parts[3];
+      const rssi = parseInt(parts[4], 10) || -127;
+      const pkts = parseInt(parts[5], 10) || 1;
+      upsertTopoClient(mac, bssid, rssi, pkts);
+    } else if (kind === "PRB") {
+      const mac = parts[2];
+      const probedSsid = parts[3];
+      const rssi = parseInt(parts[4], 10) || -127;
+      const count = parseInt(parts[5], 10) || 1;
+      upsertTopoProbe(mac, probedSsid, rssi, count);
+    }
+    updateTopoCounts();
+  } catch(e) {
+    console.error("Failed to parse topology row:", e);
+  }
+}
+
+function renderTopoInspector(node) {
+  const panel = $("topo-inspector");
+  const body = $("topo-insp-body");
+  const title = $("topo-insp-title");
+  if (!panel || !body || !title) return;
+  if (!node) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "block";
+  if (node.type === "ap") {
+    title.textContent = "Access Point";
+    title.style.color = node.isOpen ? "var(--warn)" : "var(--accent)";
+    let cliHtml = "";
+    if (node.clients.size > 0) {
+      cliHtml = `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">
+        <div style="color:var(--good); font-weight:600; margin-bottom:4px;">Connected Clients (${node.clients.size}):</div>`;
+      node.clients.forEach(cMac => {
+        const c = topoData.clients.get(cMac);
+        cliHtml += `<div style="font-family:monospace; font-size:11px; margin-bottom:2px;">• ${cMac} ${c ? '(' + c.rssi + ' dBm)' : ''}</div>`;
+      });
+      cliHtml += `</div>`;
+    }
+    body.innerHTML = `
+      <div><b>SSID:</b> ${node.ssid ? node.ssid : '<i>&lt;hidden&gt;</i>'}</div>
+      <div><b>BSSID:</b> <span style="font-family:monospace;">${node.bssid}</span></div>
+      <div><b>Channel:</b> ${node.ch}</div>
+      <div><b>Signal:</b> ${node.rssi} dBm</div>
+      <div><b>Security:</b> ${node.isOpen ? '<span class="badge" style="background:#f8514922; color:#f85149; border:1px solid #f85149;">⚠️ OPEN</span>' : '<span class="badge badge-purple">Encrypted</span>'}</div>
+      ${cliHtml}
+    `;
+  } else if (node.type === "client") {
+    title.textContent = "Client Station";
+    title.style.color = "var(--good)";
+    let prbHtml = "";
+    if (node.probes.size > 0) {
+      prbHtml = `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">
+        <div style="color:#bc8cff; font-weight:600; margin-bottom:4px;">Probed Networks (${node.probes.size}):</div>`;
+      node.probes.forEach(pssid => {
+        prbHtml += `<div style="font-size:11px; margin-bottom:2px;">• "${pssid}"</div>`;
+      });
+      prbHtml += `</div>`;
+    }
+    const ap = node.bssid ? topoData.aps.get(node.bssid) : null;
+    body.innerHTML = `
+      <div><b>MAC:</b> <span style="font-family:monospace;">${node.mac}</span></div>
+      <div><b>Signal:</b> ${node.rssi} dBm</div>
+      <div><b>Packets:</b> ${node.packets}</div>
+      <div><b>Associated AP:</b> ${node.bssid ? (ap && ap.ssid ? ap.ssid + ' (' + node.bssid + ')' : node.bssid) : '<i>Unassociated / Roaming</i>'}</div>
+      ${prbHtml}
+    `;
+  } else if (node.type === "probe") {
+    title.textContent = "Probed SSID Leak";
+    title.style.color = "#bc8cff";
+    let devHtml = "";
+    if (node.clients.size > 0) {
+      devHtml = `<div style="margin-top:8px; border-top:1px solid var(--border); padding-top:6px;">
+        <div style="color:var(--good); font-weight:600; margin-bottom:4px;">Requesting Devices (${node.clients.size}):</div>`;
+      node.clients.forEach(cMac => {
+        devHtml += `<div style="font-family:monospace; font-size:11px; margin-bottom:2px;">• ${cMac}</div>`;
+      });
+      devHtml += `</div>`;
+    }
+    body.innerHTML = `
+      <div><b>SSID:</b> "${node.ssid}"</div>
+      <div><b>Probe Count:</b> ${node.count}</div>
+      <div><b>Last RSSI:</b> ${node.rssi} dBm</div>
+      ${devHtml}
+    `;
+  }
+}
+
+function stepPhysics() {
+  const canvas = $("topo-canvas");
+  if (!canvas) return;
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2, cy = h / 2;
+
+  const visibleNodes = [];
+  if (!topoData.hideProbes) topoData.probes.forEach(p => visibleNodes.push(p));
+  topoData.clients.forEach(c => visibleNodes.push(c));
+  topoData.aps.forEach(a => {
+    if (!topoData.openOnly || a.isOpen) visibleNodes.push(a);
+  });
+
+  const nodeMap = new Map();
+  visibleNodes.forEach(n => nodeMap.set(n.id, n));
+
+  // Coulomb repulsion
+  for (let i = 0; i < visibleNodes.length; i++) {
+    const a = visibleNodes[i];
+    for (let j = i + 1; j < visibleNodes.length; j++) {
+      const b = visibleNodes[j];
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const distSq = dx * dx + dy * dy + 1.0;
+      const dist = Math.sqrt(distSq);
+      if (dist < 260) {
+        const force = 500.0 / distSq;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        a.vx += fx;
+        a.vy += fy;
+        b.vx -= fx;
+        b.vy -= fy;
+      }
+    }
+  }
+
+  // Hooke's Law spring attraction along active edges
+  for (const l of topoData.links) {
+    const a = nodeMap.get(l.source);
+    const b = nodeMap.get(l.target);
+    if (!a || !b) continue;
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) + 0.1;
+    const targetDist = (l.type === "assoc") ? 65 : 95;
+    const force = (dist - targetDist) * 0.035;
+    const fx = (dx / dist) * force;
+    const fy = (dy / dist) * force;
+    a.vx += fx;
+    a.vy += fy;
+    b.vx -= fx;
+    b.vy -= fy;
+  }
+
+  // Centering gravity & damping
+  for (const n of visibleNodes) {
+    n.vx += (cx - n.x) * 0.004;
+    n.vy += (cy - n.y) * 0.004;
+    n.vx *= 0.85;
+    n.vy *= 0.85;
+
+    if (n !== topoData.dragNode) {
+      n.x += n.vx;
+      n.y += n.vy;
+    }
+    n.x = Math.max(n.radius + 4, Math.min(w - n.radius - 4, n.x));
+    n.y = Math.max(n.radius + 4, Math.min(h - n.radius - 4, n.y));
+  }
+}
+
+function drawTopologyGraph() {
+  const canvas = $("topo-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  stepPhysics();
+
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Background grid
+  ctx.strokeStyle = "rgba(48, 54, 61, 0.3)";
+  ctx.lineWidth = 1;
+  const gridStep = 40;
+  for (let x = 0; x < w; x += gridStep) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = 0; y < h; y += gridStep) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  const visibleNodes = [];
+  if (!topoData.hideProbes) topoData.probes.forEach(p => visibleNodes.push(p));
+  topoData.clients.forEach(c => visibleNodes.push(c));
+  topoData.aps.forEach(a => {
+    if (!topoData.openOnly || a.isOpen) visibleNodes.push(a);
+  });
+  const nodeMap = new Map();
+  visibleNodes.forEach(n => nodeMap.set(n.id, n));
+
+  // Draw links
+  for (const l of topoData.links) {
+    const a = nodeMap.get(l.source);
+    const b = nodeMap.get(l.target);
+    if (!a || !b) continue;
+
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+
+    if (l.type === "assoc") {
+      ctx.strokeStyle = "rgba(57, 211, 83, 0.45)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = "rgba(188, 140, 255, 0.4)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Draw nodes
+  for (const n of visibleNodes) {
+    const isSel = (topoData.selectedNode && topoData.selectedNode.id === n.id);
+
+    if (isSel) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.radius + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+
+    if (n.type === "ap") {
+      ctx.fillStyle = n.isOpen ? "#f85149" : "#58a6ff";
+      ctx.shadowColor = n.isOpen ? "#f85149" : "#58a6ff";
+      ctx.shadowBlur = isSel ? 14 : 6;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = "#e6edf3";
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "center";
+      const lbl = (n.ssid && n.ssid !== "<hidden>") ? n.ssid : n.bssid.slice(-8);
+      ctx.fillText(lbl.length > 12 ? lbl.slice(0, 11) + "…" : lbl, n.x, n.y + n.radius + 12);
+      if (n.ch) {
+        ctx.fillStyle = "#8b949e";
+        ctx.font = "9px sans-serif";
+        ctx.fillText("CH " + n.ch + (n.isOpen ? " · OPEN" : ""), n.x, n.y + n.radius + 22);
+      }
+    } else if (n.type === "client") {
+      ctx.fillStyle = "#39d353";
+      ctx.shadowColor = "#39d353";
+      ctx.shadowBlur = isSel ? 12 : 4;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = "#8b949e";
+      ctx.font = "9px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(n.id.slice(-8), n.x, n.y + n.radius + 11);
+    } else if (n.type === "probe") {
+      ctx.fillStyle = "#bc8cff";
+      ctx.shadowColor = "#bc8cff";
+      ctx.shadowBlur = isSel ? 10 : 3;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = "#d2a8ff";
+      ctx.font = "9px sans-serif";
+      ctx.textAlign = "center";
+      const lbl = '"' + (n.ssid.length > 10 ? n.ssid.slice(0, 9) + '…' : n.ssid) + '"';
+      ctx.fillText(lbl, n.x, n.y + n.radius + 11);
+    }
+  }
+
+  if (visibleNodes.length === 0) {
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Listening for 802.11 client-AP associations and probe leaks...", w / 2, h / 2);
+    ctx.font = "11px sans-serif";
+    ctx.fillText("Click 'Start Mapping' or run Topology Map from the device.", w / 2, h / 2 + 22);
+  }
+
+  if (topoData.animating) {
+    topoData.animFrame = requestAnimationFrame(drawTopologyGraph);
+  }
+}
+
+function exportTopoJson() {
+  const data = {
+    timestamp: new Date().toISOString(),
+    aps: Array.from(topoData.aps.values()).map(a => ({
+      bssid: a.bssid, ssid: a.ssid, channel: a.ch, rssi: a.rssi, isOpen: a.isOpen, clientCount: a.clients.size
+    })),
+    clients: Array.from(topoData.clients.values()).map(c => ({
+      mac: c.mac, bssid: c.bssid, rssi: c.rssi, packets: c.packets, probes: Array.from(c.probes)
+    })),
+    probes: Array.from(topoData.probes.values()).map(p => ({
+      ssid: p.ssid, count: p.count, rssi: p.rssi, devices: Array.from(p.clients)
+    }))
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `topology-${Date.now()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  log("exported topology to JSON");
+}
+
+function exportTopoCsv() {
+  let csv = "type,mac_or_bssid,ssid_or_target,channel,rssi,packets_or_count,extra\n";
+  topoData.aps.forEach(a => {
+    csv += `AP,${a.bssid},"${a.ssid.replace(/"/g, '""')}",${a.ch},${a.rssi},${a.clients.size},${a.isOpen ? 'OPEN' : 'ENCRYPTED'}\n`;
+  });
+  topoData.clients.forEach(c => {
+    csv += `CLIENT,${c.mac},${c.bssid},,${c.rssi},${c.packets},\n`;
+  });
+  topoData.probes.forEach(p => {
+    csv += `PROBE,, "${p.ssid.replace(/"/g, '""')}",,${p.rssi},${p.count},${p.clients.size} devices\n`;
+  });
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `topology-${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  log("exported topology to CSV");
+}
+
+function initTopoCanvas() {
+  const canvas = $("topo-canvas");
+  if (!canvas) return;
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  function getPos(e) {
+    const r = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
+
+  function findNode(pos) {
+    const all = [];
+    if (!topoData.hideProbes) topoData.probes.forEach(p => all.push(p));
+    topoData.clients.forEach(c => all.push(c));
+    topoData.aps.forEach(a => {
+      if (!topoData.openOnly || a.isOpen) all.push(a);
+    });
+
+    for (let i = all.length - 1; i >= 0; i--) {
+      const n = all[i];
+      const dx = n.x - pos.x;
+      const dy = n.y - pos.y;
+      if (dx * dx + dy * dy <= (n.radius + 8) * (n.radius + 8)) {
+        return n;
+      }
+    }
+    return null;
+  }
+
+  canvas.addEventListener("mousedown", (e) => {
+    const pos = getPos(e);
+    const node = findNode(pos);
+    topoData.dragMoved = false;
+    topoData.dragStart = pos;
+    if (node) {
+      topoData.dragNode = node;
+      canvas.style.cursor = "grabbing";
+    }
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!topoData.dragNode) return;
+    const pos = getPos(e);
+    const dx = pos.x - topoData.dragStart.x;
+    const dy = pos.y - topoData.dragStart.y;
+    if (dx * dx + dy * dy > 16) topoData.dragMoved = true;
+    topoData.dragNode.x = pos.x;
+    topoData.dragNode.y = pos.y;
+    topoData.dragNode.vx = 0;
+    topoData.dragNode.vy = 0;
+  });
+
+  window.addEventListener("mouseup", (e) => {
+    if (topoData.dragNode) {
+      if (!topoData.dragMoved) {
+        topoData.selectedNode = topoData.dragNode;
+        renderTopoInspector(topoData.selectedNode);
+      }
+      topoData.dragNode = null;
+      canvas.style.cursor = "grab";
+    }
+  });
+
+  canvas.addEventListener("touchstart", (e) => {
+    const pos = getPos(e);
+    const node = findNode(pos);
+    topoData.dragMoved = false;
+    topoData.dragStart = pos;
+    if (node) {
+      topoData.dragNode = node;
+    }
+  }, { passive: true });
+
+  canvas.addEventListener("touchmove", (e) => {
+    if (!topoData.dragNode) return;
+    const pos = getPos(e);
+    const dx = pos.x - topoData.dragStart.x;
+    const dy = pos.y - topoData.dragStart.y;
+    if (dx * dx + dy * dy > 16) topoData.dragMoved = true;
+    topoData.dragNode.x = pos.x;
+    topoData.dragNode.y = pos.y;
+    topoData.dragNode.vx = 0;
+    topoData.dragNode.vy = 0;
+  }, { passive: true });
+
+  canvas.addEventListener("touchend", () => {
+    if (topoData.dragNode) {
+      if (!topoData.dragMoved) {
+        topoData.selectedNode = topoData.dragNode;
+        renderTopoInspector(topoData.selectedNode);
+      }
+      topoData.dragNode = null;
+    }
+  });
+
+  $("topo-insp-close").addEventListener("click", () => {
+    topoData.selectedNode = null;
+    renderTopoInspector(null);
+  });
+  $("topo-btn-clear").addEventListener("click", () => {
+    topoData.aps.clear();
+    topoData.clients.clear();
+    topoData.probes.clear();
+    topoData.links = [];
+    topoData.selectedNode = null;
+    renderTopoInspector(null);
+    updateTopoCounts();
+    log("topology graph cleared");
+  });
+  $("topo-btn-reset-physics").addEventListener("click", () => {
+    const cw = canvas.width, ch = canvas.height;
+    topoData.aps.forEach(a => { a.x = cw / 2 + (Math.random() - 0.5) * 160; a.y = ch / 2 + (Math.random() - 0.5) * 160; a.vx = 0; a.vy = 0; });
+    topoData.clients.forEach(c => { c.x = cw / 2 + (Math.random() - 0.5) * 200; c.y = ch / 2 + (Math.random() - 0.5) * 200; c.vx = 0; c.vy = 0; });
+    topoData.probes.forEach(p => { p.x = cw / 2 + (Math.random() - 0.5) * 220; p.y = ch / 2 + (Math.random() - 0.5) * 220; p.vx = 0; p.vy = 0; });
+  });
+  $("topo-btn-export-json").addEventListener("click", exportTopoJson);
+  $("topo-btn-export-csv").addEventListener("click", exportTopoCsv);
+  $("topo-filter-hide-probes").addEventListener("change", (e) => {
+    topoData.hideProbes = e.target.checked;
+  });
+  $("topo-filter-open-only").addEventListener("change", (e) => {
+    topoData.openOnly = e.target.checked;
+  });
+}
+
+function startTopoAnimation() {
+  if (topoData.animating) return;
+  topoData.animating = true;
+  const canvas = $("topo-canvas");
+  if (canvas) {
+    const r = canvas.parentElement.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      canvas.width = r.width;
+      canvas.height = r.height;
+    }
+  }
+  topoData.animFrame = requestAnimationFrame(drawTopologyGraph);
+}
+
+function stopTopoAnimation() {
+  topoData.animating = false;
+  if (topoData.animFrame) cancelAnimationFrame(topoData.animFrame);
+}
+
+// ---- BLE Ecosystem Intel State & Rendering ----
+const bleIntelMap = new Map();
+let bleIntelFilter = "all";
+
+function parseBleIntelRow(rowStr) {
+  try {
+    const p = rowStr.trim().split(",");
+    // $BLEINTEL,mac,ecosystem,deviceType,rssi,batteryL,batteryR,batteryCase,details
+    if (p.length < 9 || p[0] !== "$BLEINTEL") return;
+    const prev = bleIntelMap.get(p[1]);
+    const item = {
+      mac: p[1],
+      ecosystem: p[2],
+      deviceType: p[3],
+      rssi: parseInt(p[4], 10) || -127,
+      batteryL: parseInt(p[5], 10),
+      batteryR: parseInt(p[6], 10),
+      batteryCase: parseInt(p[7], 10),
+      details: p.slice(8).join(","),
+      lastSeen: Date.now(),
+      sightings: prev ? prev.sightings + 1 : 1
+    };
+    bleIntelMap.set(item.mac, item);
+    updateBleIntelCounts();
+    renderBleIntel();
+  } catch (e) {
+    console.error("Failed to parse BLE intel row:", e);
+  }
+}
+
+function updateBleIntelCounts() {
+  let apple = 0, google = 0, other = 0;
+  bleIntelMap.forEach(d => {
+    if (d.ecosystem === "Apple") apple++;
+    else if (d.ecosystem === "Google") google++;
+    else other++;
+  });
+  if ($("intel-total-count")) $("intel-total-count").textContent = bleIntelMap.size;
+  if ($("intel-apple-count")) $("intel-apple-count").textContent = apple;
+  if ($("intel-google-count")) $("intel-google-count").textContent = google;
+  if ($("intel-other-count")) $("intel-other-count").textContent = other;
+}
+
+function renderBleIntel() {
+  const container = $("bleintel-list");
+  if (!container) return;
+  if (bleIntelMap.size === 0) {
+    container.innerHTML = '<div class="k" style="padding:14px; text-align:center;">Run BLE Intel to decode nearby ecosystem broadcasts.</div>';
+    return;
+  }
+  const items = Array.from(bleIntelMap.values()).filter(d => {
+    if (bleIntelFilter === "all") return true;
+    return d.ecosystem.toLowerCase() === bleIntelFilter.toLowerCase();
+  });
+  items.sort((a, b) => b.rssi - a.rssi);
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="k" style="padding:14px; text-align:center;">No devices matching filter "' + bleIntelFilter + '".</div>';
+    return;
+  }
+
+  let html = "";
+  for (const it of items) {
+    let ecoBadge = "badge-blue";
+    if (it.ecosystem === "Apple") ecoBadge = "badge-blue";
+    else if (it.ecosystem === "Google") ecoBadge = "badge-warn";
+    else if (it.ecosystem === "Microsoft") ecoBadge = "badge-lime";
+    else if (it.ecosystem === "Samsung") ecoBadge = "badge-purple";
+
+    let batteryGauges = "";
+    if (it.batteryL >= 0 || it.batteryR >= 0 || it.batteryCase >= 0) {
+      const pill = (label, pct) => {
+        if (pct < 0) return "";
+        let col = "var(--good)";
+        if (pct <= 20) col = "var(--bad)";
+        else if (pct <= 50) col = "var(--warn)";
+        return `<span style="background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; font-size:11px; border-left:3px solid ${col};"><b>${label}:</b> ${pct}%</span>`;
+      };
+      batteryGauges = `<div class="row" style="gap:6px; margin:4px 0;">
+        ${pill("Left", it.batteryL)}
+        ${pill("Right", it.batteryR)}
+        ${pill("Case", it.batteryCase)}
+      </div>`;
+    }
+
+    const agoSec = Math.max(0, Math.round((Date.now() - it.lastSeen) / 1000));
+    html += `
+      <div style="background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:8px;">
+        <div class="row" style="justify-content:space-between; margin-bottom:4px;">
+          <div class="row" style="gap:8px;">
+            <span class="badge ${ecoBadge}">${it.ecosystem}</span>
+            <b style="color:#fff; font-size:13px;">${it.deviceType}</b>
+          </div>
+          <span style="color:var(--accent); font-weight:600; font-size:12px;">${it.rssi} dBm</span>
+        </div>
+        <div class="row" style="justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:4px;">
+          <span style="font-family:monospace;">${it.mac}</span>
+          <span>Seen ${it.sightings}x · ${agoSec}s ago</span>
+        </div>
+        ${batteryGauges}
+        <div class="k" style="font-size:12px; color:#c9d1d9;">${it.details}</div>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function exportBleIntelCsv() {
+  if (bleIntelMap.size === 0) { log("no BLE intel data to export"); return; }
+  const header = "address,ecosystem,device_type,rssi,battery_l,battery_r,battery_case,details,sightings\n";
+  const rows = Array.from(bleIntelMap.values()).map(d =>
+    `"${d.mac}","${d.ecosystem}","${d.deviceType}",${d.rssi},${d.batteryL},${d.batteryR},${d.batteryCase},"${d.details}",${d.sightings}`
+  );
+  const text = header + rows.join("\n") + "\n";
+  const blob = new Blob([text], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ble_intel-" + Date.now() + ".csv";
+  a.click();
+  log("exported " + bleIntelMap.size + " BLE intel devices to CSV");
+}
+
 function parseResult(dv, c){
   if (dv.byteLength >= 1 && dv.getUint8(0) === 2) {  // wardrive WiGLE CSV row (text)
     let row = "";
@@ -1072,10 +1961,34 @@ function parseResult(dv, c){
     parseHuntRow(row);
     return;
   }
-  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x48 && dv.getUint8(2) === 0x55 && dv.getUint8(3) === 0x4E && dv.getUint8(4) === 0x54) {
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 4) {  // Swarm Topology telemetry (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseTopologyRow(row);
+    return;
+  }
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 5) {  // BLE Intel telemetry (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseBleIntelRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x48 && dv.getUint8(2) === 0x55 && dv.getUint8(3) === 0x4E && dv.getUint8(4) === 0x4E) {
     let row = "";
     for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
     parseHuntRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x54 && dv.getUint8(2) === 0x4F && dv.getUint8(3) === 0x50 && dv.getUint8(4) === 0x4F) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseTopologyRow(row);
+    return;
+  }
+  if (dv.byteLength >= 9 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x42 && dv.getUint8(2) === 0x4C && dv.getUint8(3) === 0x45 && dv.getUint8(4) === 0x49) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseBleIntelRow(row);
     return;
   }
   if (dv.byteLength < 12) return;            // [source][index][count][rssi][ch][auth][bssid6][ssid]
@@ -1471,6 +2384,11 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.classList.add("active");
     const targetTab = $(btn.dataset.tab);
     if (targetTab) targetTab.hidden = false;
+    if (btn.dataset.tab === "tab-topology") {
+      startTopoAnimation();
+    } else {
+      stopTopoAnimation();
+    }
   });
 });
 
@@ -1479,12 +2397,12 @@ $("net-search").addEventListener("input", renderNets);
 $("net-sort-rssi").addEventListener("click", () => { sortMode = "rssi"; renderNets(); });
 $("net-sort-ch").addEventListener("click", () => { sortMode = "ch"; renderNets(); });
 
-updateEnabled(); renderConns(); renderStats();
+updateEnabled(); renderConns(); renderStats(); initTopoCanvas();
 
 async function downloadWardriveCsv(){
   if (!wardriveRows.length){ log("no wardrive rows yet"); return; }
   const header =
-    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.0,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
+    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.3,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
     "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\n";
   const text = header + wardriveRows.join("\n") + "\n";
   const fname = "wardrive-" + Date.now() + ".csv";
@@ -1516,6 +2434,21 @@ $("wd-clear").addEventListener("click", () => {
   $("wd-count").textContent = "0";
   renderWardriveTable();
   log("wardrive rows cleared");
+});
+$("bleintel-btn-clear").addEventListener("click", () => {
+  bleIntelMap.clear();
+  updateBleIntelCounts();
+  renderBleIntel();
+  log("BLE intel cleared");
+});
+$("bleintel-btn-export-csv").addEventListener("click", exportBleIntelCsv);
+document.querySelectorAll("#bleintel-filter-seg button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#bleintel-filter-seg button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    bleIntelFilter = btn.dataset.filter;
+    renderBleIntel();
+  });
 });
 $("clear-log").addEventListener("click", () => {
   $("log").textContent = "";
