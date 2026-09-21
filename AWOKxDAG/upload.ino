@@ -570,7 +570,7 @@ void openWardriveUpload() {
 void handleWardriveUploadTouch(int x, int y) {
   if (uploadBusy) return;
   if (currentView == View::kWardriveUploadFiles) {
-    if (y >= kFooterTop) {
+    if (y >= kFooterTopDesign) {
       if (x < 60) drawWardriveUpload();
       else if (x < 120) { --uploadFilePage; drawWardriveUploadFiles(); }
       else if (x < 180) { ++uploadFilePage; drawWardriveUploadFiles(); }
@@ -585,7 +585,7 @@ void handleWardriveUploadTouch(int x, int y) {
     }
     return;
   }
-  if (y >= kFooterTop) {
+  if (y >= kFooterTopDesign) {
     if (x < 120) { netSetupReturnUpload = false; drawNetworkMenu(); }
     else { uploadScanFiles(); drawWardriveUpload(); }
   } else if (y >= 50 && y < 80) {

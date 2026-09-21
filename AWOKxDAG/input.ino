@@ -326,7 +326,7 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kBleIntel) {
-    if (x < kScreenWidth / 2) {
+    if (x < kDesignWidth / 2) {
       stopBleIntel();
       drawReconMenu();
     } else {
@@ -356,7 +356,7 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kTopologyMap) {
-    if (x < kScreenWidth / 2) {
+    if (x < kDesignWidth / 2) {
       stopTopologyMap();
       drawReconMenu();
     } else {
