@@ -420,6 +420,7 @@
     <button class="tab-btn" data-tab="tab-tools">⚡ Tools &amp; Ops</button>
     <button class="tab-btn" data-tab="tab-fleet">🤝 Fleet</button>
     <button class="tab-btn" data-tab="tab-topology">🕸️ Topology</button>
+    <button class="tab-btn" data-tab="tab-bleintel">🎧 BLE Intel</button>
     <button class="tab-btn" data-tab="tab-logs">📜 Terminal</button>
   </div>
 
@@ -643,6 +644,7 @@
         <button data-op="12">Cameras</button>
         <button data-op="13">Security Audit</button>
         <button data-op="14">BLE Trackers</button>
+        <button data-op="57">BLE Intel</button>
         <button data-op="15">Harvester</button>
         <button data-op="16">Probe Intel</button>
         <button data-op="17">Saved</button>
@@ -792,7 +794,58 @@
     </div>
   </div>
 
-  <!-- TAB 7: TERMINAL LOG -->
+  <!-- TAB 7: BLE ECOSYSTEM INTEL & CONTINUITY -->
+  <div id="tab-bleintel" class="tab-content" hidden>
+    <div class="card">
+      <div class="card-title">
+        <span>🎧 BLE Ecosystem Intel &amp; Continuity Decoder</span>
+        <div class="row" style="gap:6px; flex-wrap:wrap;">
+          <button data-op="57" class="btn-sm primary">▶️ Start BLE Intel</button>
+          <button data-op="255" class="btn-sm stop">⏹️ Stop</button>
+          <button id="bleintel-btn-clear" class="btn-sm">Clear</button>
+          <button id="bleintel-btn-export-csv" class="btn-sm">Export CSV</button>
+        </div>
+      </div>
+
+      <div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom:12px;">
+        <div class="stat-box">
+          <div class="k">Total Decoded</div>
+          <div id="intel-total-count" class="v" style="color:var(--accent);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Apple Continuity</div>
+          <div id="intel-apple-count" class="v" style="color:#58a6ff;">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Google Fast Pair</div>
+          <div id="intel-google-count" class="v" style="color:var(--warn);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Microsoft / Samsung</div>
+          <div id="intel-other-count" class="v" style="color:var(--purple);">0</div>
+        </div>
+      </div>
+
+      <div class="row" style="justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div class="seg" id="bleintel-filter-seg">
+          <button data-filter="all" class="on">All</button>
+          <button data-filter="Apple">Apple</button>
+          <button data-filter="Google">Google</button>
+          <button data-filter="Microsoft">Microsoft</button>
+          <button data-filter="Samsung">Samsung</button>
+        </div>
+        <div class="k" style="font-size:11px;">
+          Decodes AirPods/Beats battery &amp; charging, AirDrop, Nearby Info, FindMy, Fast Pair, Swift Pair
+        </div>
+      </div>
+
+      <div id="bleintel-list" class="net-list-scroll" style="min-height:280px; max-height:480px;">
+        <div class="k" style="padding:14px; text-align:center;">Run BLE Intel to decode nearby ecosystem broadcasts.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 8: TERMINAL LOG -->
   <div id="tab-logs" class="tab-content" hidden>
     <div class="card">
       <div class="card-title">
@@ -827,7 +880,7 @@ const TOOL_NAMES = {
   31: "BLE Spam Watch", 32: "Karma Watch", 33: "Beacon Watch", 34: "Advanced Watch",
   40: "Locator", 41: "Status", 42: "Files", 43: "Fleet Wardrive", 50: "List Wi-Fi",
   51: "Select Wi-Fi", 52: "Deauth", 53: "Grab Handshake", 54: "Track RSSI", 55: "Fleet Hunter",
-  56: "Topology Map", 60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
+  56: "Topology Map", 57: "BLE Intel", 60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1772,6 +1825,127 @@ function stopTopoAnimation() {
   if (topoData.animFrame) cancelAnimationFrame(topoData.animFrame);
 }
 
+// ---- BLE Ecosystem Intel State & Rendering ----
+const bleIntelMap = new Map();
+let bleIntelFilter = "all";
+
+function parseBleIntelRow(rowStr) {
+  try {
+    const p = rowStr.trim().split(",");
+    // $BLEINTEL,mac,ecosystem,deviceType,rssi,batteryL,batteryR,batteryCase,details
+    if (p.length < 9 || p[0] !== "$BLEINTEL") return;
+    const prev = bleIntelMap.get(p[1]);
+    const item = {
+      mac: p[1],
+      ecosystem: p[2],
+      deviceType: p[3],
+      rssi: parseInt(p[4], 10) || -127,
+      batteryL: parseInt(p[5], 10),
+      batteryR: parseInt(p[6], 10),
+      batteryCase: parseInt(p[7], 10),
+      details: p.slice(8).join(","),
+      lastSeen: Date.now(),
+      sightings: prev ? prev.sightings + 1 : 1
+    };
+    bleIntelMap.set(item.mac, item);
+    updateBleIntelCounts();
+    renderBleIntel();
+  } catch (e) {
+    console.error("Failed to parse BLE intel row:", e);
+  }
+}
+
+function updateBleIntelCounts() {
+  let apple = 0, google = 0, other = 0;
+  bleIntelMap.forEach(d => {
+    if (d.ecosystem === "Apple") apple++;
+    else if (d.ecosystem === "Google") google++;
+    else other++;
+  });
+  if ($("intel-total-count")) $("intel-total-count").textContent = bleIntelMap.size;
+  if ($("intel-apple-count")) $("intel-apple-count").textContent = apple;
+  if ($("intel-google-count")) $("intel-google-count").textContent = google;
+  if ($("intel-other-count")) $("intel-other-count").textContent = other;
+}
+
+function renderBleIntel() {
+  const container = $("bleintel-list");
+  if (!container) return;
+  if (bleIntelMap.size === 0) {
+    container.innerHTML = '<div class="k" style="padding:14px; text-align:center;">Run BLE Intel to decode nearby ecosystem broadcasts.</div>';
+    return;
+  }
+  const items = Array.from(bleIntelMap.values()).filter(d => {
+    if (bleIntelFilter === "all") return true;
+    return d.ecosystem.toLowerCase() === bleIntelFilter.toLowerCase();
+  });
+  items.sort((a, b) => b.rssi - a.rssi);
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="k" style="padding:14px; text-align:center;">No devices matching filter "' + bleIntelFilter + '".</div>';
+    return;
+  }
+
+  let html = "";
+  for (const it of items) {
+    let ecoBadge = "badge-blue";
+    if (it.ecosystem === "Apple") ecoBadge = "badge-blue";
+    else if (it.ecosystem === "Google") ecoBadge = "badge-warn";
+    else if (it.ecosystem === "Microsoft") ecoBadge = "badge-lime";
+    else if (it.ecosystem === "Samsung") ecoBadge = "badge-purple";
+
+    let batteryGauges = "";
+    if (it.batteryL >= 0 || it.batteryR >= 0 || it.batteryCase >= 0) {
+      const pill = (label, pct) => {
+        if (pct < 0) return "";
+        let col = "var(--good)";
+        if (pct <= 20) col = "var(--bad)";
+        else if (pct <= 50) col = "var(--warn)";
+        return `<span style="background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; font-size:11px; border-left:3px solid ${col};"><b>${label}:</b> ${pct}%</span>`;
+      };
+      batteryGauges = `<div class="row" style="gap:6px; margin:4px 0;">
+        ${pill("Left", it.batteryL)}
+        ${pill("Right", it.batteryR)}
+        ${pill("Case", it.batteryCase)}
+      </div>`;
+    }
+
+    const agoSec = Math.max(0, Math.round((Date.now() - it.lastSeen) / 1000));
+    html += `
+      <div style="background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:8px;">
+        <div class="row" style="justify-content:space-between; margin-bottom:4px;">
+          <div class="row" style="gap:8px;">
+            <span class="badge ${ecoBadge}">${it.ecosystem}</span>
+            <b style="color:#fff; font-size:13px;">${it.deviceType}</b>
+          </div>
+          <span style="color:var(--accent); font-weight:600; font-size:12px;">${it.rssi} dBm</span>
+        </div>
+        <div class="row" style="justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:4px;">
+          <span style="font-family:monospace;">${it.mac}</span>
+          <span>Seen ${it.sightings}x · ${agoSec}s ago</span>
+        </div>
+        ${batteryGauges}
+        <div class="k" style="font-size:12px; color:#c9d1d9;">${it.details}</div>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function exportBleIntelCsv() {
+  if (bleIntelMap.size === 0) { log("no BLE intel data to export"); return; }
+  const header = "address,ecosystem,device_type,rssi,battery_l,battery_r,battery_case,details,sightings\n";
+  const rows = Array.from(bleIntelMap.values()).map(d =>
+    `"${d.mac}","${d.ecosystem}","${d.deviceType}",${d.rssi},${d.batteryL},${d.batteryR},${d.batteryCase},"${d.details}",${d.sightings}`
+  );
+  const text = header + rows.join("\n") + "\n";
+  const blob = new Blob([text], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ble_intel-" + Date.now() + ".csv";
+  a.click();
+  log("exported " + bleIntelMap.size + " BLE intel devices to CSV");
+}
+
 function parseResult(dv, c){
   if (dv.byteLength >= 1 && dv.getUint8(0) === 2) {  // wardrive WiGLE CSV row (text)
     let row = "";
@@ -1793,7 +1967,13 @@ function parseResult(dv, c){
     parseTopologyRow(row);
     return;
   }
-  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x48 && dv.getUint8(2) === 0x55 && dv.getUint8(3) === 0x4E && dv.getUint8(4) === 0x54) {
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 5) {  // BLE Intel telemetry (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseBleIntelRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x48 && dv.getUint8(2) === 0x55 && dv.getUint8(3) === 0x4E && dv.getUint8(4) === 0x4E) {
     let row = "";
     for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
     parseHuntRow(row);
@@ -1803,6 +1983,12 @@ function parseResult(dv, c){
     let row = "";
     for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
     parseTopologyRow(row);
+    return;
+  }
+  if (dv.byteLength >= 9 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x42 && dv.getUint8(2) === 0x4C && dv.getUint8(3) === 0x45 && dv.getUint8(4) === 0x49) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseBleIntelRow(row);
     return;
   }
   if (dv.byteLength < 12) return;            // [source][index][count][rssi][ch][auth][bssid6][ssid]
@@ -2216,7 +2402,7 @@ updateEnabled(); renderConns(); renderStats(); initTopoCanvas();
 async function downloadWardriveCsv(){
   if (!wardriveRows.length){ log("no wardrive rows yet"); return; }
   const header =
-    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.1,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
+    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.3,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
     "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\n";
   const text = header + wardriveRows.join("\n") + "\n";
   const fname = "wardrive-" + Date.now() + ".csv";
@@ -2248,6 +2434,21 @@ $("wd-clear").addEventListener("click", () => {
   $("wd-count").textContent = "0";
   renderWardriveTable();
   log("wardrive rows cleared");
+});
+$("bleintel-btn-clear").addEventListener("click", () => {
+  bleIntelMap.clear();
+  updateBleIntelCounts();
+  renderBleIntel();
+  log("BLE intel cleared");
+});
+$("bleintel-btn-export-csv").addEventListener("click", exportBleIntelCsv);
+document.querySelectorAll("#bleintel-filter-seg button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#bleintel-filter-seg button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    bleIntelFilter = btn.dataset.filter;
+    renderBleIntel();
+  });
 });
 $("clear-log").addEventListener("click", () => {
   $("log").textContent = "";

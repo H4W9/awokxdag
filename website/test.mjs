@@ -18,7 +18,7 @@ test('Remote UI parses source-prefixed fleet status per target', async () => {
 
 test('Remote wardrive export stays aligned with firmware WiGLE 1.6 rows', async () => {
   const html = await readFile(new URL('./public/control.html', import.meta.url), 'utf8');
-  assert.match(html, /WigleWifi-1\.6,appRelease=AxD,model=ESP32,release=1\.6\.1/);
+  assert.match(html, /WigleWifi-1\.6,appRelease=AxD,model=ESP32,release=1\.6\.3/);
   assert.match(html, /MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type/);
   assert.doesNotMatch(html, /WigleWifi_1\.4/);
   // Fleet Hunter support
@@ -32,6 +32,12 @@ test('Remote wardrive export stays aligned with firmware WiGLE 1.6 rows', async 
   assert.match(html, /tab-topology/);
   assert.match(html, /parseTopologyRow/);
   assert.match(html, /topo-canvas/);
+  // BLE Ecosystem Intel & Continuity Decoder support
+  assert.match(html, /57:\s*"BLE Intel"/);
+  assert.match(html, /data-op="57"/);
+  assert.match(html, /tab-bleintel/);
+  assert.match(html, /parseBleIntelRow/);
+  assert.match(html, /bleintel-list/);
 });
 
 test('Markdown supports tables, safe HTML, stable unique anchors, and document links', () => {
