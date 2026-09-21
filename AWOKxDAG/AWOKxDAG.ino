@@ -104,6 +104,7 @@ bool locatorActive = false;        // RSSI fox-hunt (state in locator.ino)
 bool fleetHuntActive = false;      // multi-node trilateration hunt (locator.ino)
 bool topologyActive = false;       // live swarm mesh topology mapping (topologymap.ino)
 bool bleIntelActive = false;       // BLE ecosystem intel & continuity decoder (bleintel.ino)
+bool spectrogramActive = false;    // RF spectrogram & waterfall analyzer (spectrogram.ino)
 // SD export status for the new recon tabs (read by input.ino, which is
 // concatenated before those tabs, so the flags must live in the main sketch).
 bool lastAuditCsvOk = false;
@@ -111,6 +112,7 @@ bool lastTrackerCsvOk = false;
 bool lastProbeIntelCsvOk = false;
 bool lastTopologyCsvOk = false;
 bool lastBleIntelCsvOk = false;
+bool lastSpectrogramCsvOk = false;
 bool sdReady = false;
 bool lastSavedSdWriteOk = false;
 bool lastScanSdWriteOk = false;
@@ -1564,7 +1566,7 @@ void updateWifiSignalMonitor() {
 // Data-driven Recon menu: append an item here (label + a case in
 // launchReconItem) and it paginates automatically. 6 items per page.
 const char* const kReconItems[] = {
-    "Wi-Fi Scan",   "Channel Map",  "BLE Scan",     "Clients",
+    "Wi-Fi Scan",   "Channel Map",  "Spectrogram",  "BLE Scan",     "Clients",
     "Packet Mon",   "WPS Scan",     "Hidden SSID",  "Cameras",
     "Security Audit", "BLE Trackers", "BLE Intel",   "Harvester",
     "Probe Intel",  "Saved",        "Fleet Hunter", "Topology Map",
@@ -1597,6 +1599,8 @@ void launchReconItem(int index) {
     } else {
       scanWifiForChannelMap();
     }
+  } else if (label == "Spectrogram") {
+    startSpectrogram();
   } else if (label == "BLE Scan") {
     scanBle();
   } else if (label == "Clients") {
@@ -2327,6 +2331,7 @@ void loop() {
   updateSecurityAudit();
   updateTrackerScan();
   updateBleIntel();
+  updateSpectrogram();
   updateHarvester();
   updateProbeIntel();
   updateKarmaWatch();

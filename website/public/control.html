@@ -421,6 +421,7 @@
     <button class="tab-btn" data-tab="tab-fleet">🤝 Fleet</button>
     <button class="tab-btn" data-tab="tab-topology">🕸️ Topology</button>
     <button class="tab-btn" data-tab="tab-bleintel">🎧 BLE Intel</button>
+    <button class="tab-btn" data-tab="tab-spectrogram">🌈 Spectrogram</button>
     <button class="tab-btn" data-tab="tab-logs">📜 Terminal</button>
   </div>
 
@@ -645,6 +646,7 @@
         <button data-op="13">Security Audit</button>
         <button data-op="14">BLE Trackers</button>
         <button data-op="57">BLE Intel</button>
+        <button data-op="58">Spectrogram</button>
         <button data-op="15">Harvester</button>
         <button data-op="16">Probe Intel</button>
         <button data-op="17">Saved</button>
@@ -845,7 +847,64 @@
     </div>
   </div>
 
-  <!-- TAB 8: TERMINAL LOG -->
+  <!-- TAB 8: DUAL-BAND RF SPECTROGRAM & WATERFALL -->
+  <div id="tab-spectrogram" class="tab-content" hidden>
+    <div class="card">
+      <div class="card-title">
+        <span>🌈 Dual-Band RF Spectrogram &amp; Waterfall Analyzer</span>
+        <div class="row" style="gap:6px; flex-wrap:wrap;">
+          <button data-op="58" class="btn-sm primary">▶️ Start Spectrogram</button>
+          <button data-op="255" class="btn-sm stop">⏹️ Stop</button>
+          <button id="spec-btn-clear" class="btn-sm">Clear</button>
+          <button id="spec-btn-export-csv" class="btn-sm">Export CSV</button>
+        </div>
+      </div>
+
+      <div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom:12px;">
+        <div class="stat-box">
+          <div class="k">Peak Channel</div>
+          <div id="spec-peak-channel" class="v" style="color:var(--accent);">--</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Avg Duty Cycle</div>
+          <div id="spec-avg-duty" class="v" style="color:var(--lime);">0%</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Monitored Packets</div>
+          <div id="spec-total-pkts" class="v" style="color:var(--warn);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Active Noise Floor</div>
+          <div id="spec-noise-floor" class="v" style="color:var(--purple);">-95 dBm</div>
+        </div>
+      </div>
+
+      <div class="row" style="justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div class="seg" id="spec-filter-seg">
+          <button data-filter="all" class="on">All Channels</button>
+          <button data-filter="2.4g">2.4 GHz Only</button>
+          <button data-filter="5g">5 GHz Only</button>
+        </div>
+        <div class="k" style="font-size:11px;">
+          Live RF channel duty cycle saturation, frame density, and 2D waterfall spectrogram
+        </div>
+      </div>
+
+      <!-- Instantaneous Spectrum Bar Chart -->
+      <div style="margin-bottom:10px; background:#0d1117; border:1px solid var(--border); border-radius:6px; padding:8px;">
+        <div class="k" style="font-size:11px; margin-bottom:4px; color:var(--accent);">INSTANTANEOUS CHANNEL DUTY CYCLE (%) &amp; PEAK HOLD</div>
+        <canvas id="spec-bar-canvas" width="800" height="120" style="width:100%; height:120px; display:block;"></canvas>
+      </div>
+
+      <!-- Scrolling Waterfall Canvas -->
+      <div style="background:#0d1117; border:1px solid var(--border); border-radius:6px; padding:8px;">
+        <div class="k" style="font-size:11px; margin-bottom:4px; color:var(--lime);">REAL-TIME THERMAL WATERFALL SPECTROGRAM (TIME ↓)</div>
+        <canvas id="spec-waterfall-canvas" width="800" height="300" style="width:100%; height:300px; display:block;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 9: TERMINAL LOG -->
   <div id="tab-logs" class="tab-content" hidden>
     <div class="card">
       <div class="card-title">
@@ -880,7 +939,7 @@ const TOOL_NAMES = {
   31: "BLE Spam Watch", 32: "Karma Watch", 33: "Beacon Watch", 34: "Advanced Watch",
   40: "Locator", 41: "Status", 42: "Files", 43: "Fleet Wardrive", 50: "List Wi-Fi",
   51: "Select Wi-Fi", 52: "Deauth", 53: "Grab Handshake", 54: "Track RSSI", 55: "Fleet Hunter",
-  56: "Topology Map", 57: "BLE Intel", 60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
+  56: "Topology Map", 57: "BLE Intel", 58: "Spectrogram", 60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1946,6 +2005,169 @@ function exportBleIntelCsv() {
   log("exported " + bleIntelMap.size + " BLE intel devices to CSV");
 }
 
+// ---- Spectrogram & Waterfall State & Rendering ----
+const specChannels = new Map();
+const specWaterfall = [];
+let specFilter = "all";
+let specTotalPacketsMonitored = 0;
+const SPEC_24_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+const SPEC_5_CHANNELS = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
+const ALL_SPEC_CHANNELS = [...SPEC_24_CHANNELS, ...SPEC_5_CHANNELS];
+
+function getVisibleChannels() {
+  if (specFilter === "2.4g") return SPEC_24_CHANNELS;
+  if (specFilter === "5g") return SPEC_5_CHANNELS;
+  return ALL_SPEC_CHANNELS;
+}
+
+function parseSpectrogramRow(rowStr) {
+  try {
+    const p = rowStr.trim().split(",");
+    // $SPEC,ch,dutyPct,pkts,peakRssi,noise,mgmt,ctrl,data
+    if (p.length < 9 || p[0] !== "$SPEC") return;
+    const ch = parseInt(p[1], 10);
+    const duty = Math.min(100, Math.max(0, parseInt(p[2], 10) || 0));
+    const pkts = parseInt(p[3], 10) || 0;
+    const peakRssi = parseInt(p[4], 10) || -127;
+    const noise = parseInt(p[5], 10) || -95;
+    const mgmt = parseInt(p[6], 10) || 0;
+    const ctrl = parseInt(p[7], 10) || 0;
+    const data = parseInt(p[8], 10) || 0;
+
+    const prev = specChannels.get(ch);
+    const peakHold = prev ? Math.max(prev.peakHold || 0, duty) : duty;
+    specChannels.set(ch, { ch, duty, pkts, peakRssi, noise, mgmt, ctrl, data, peakHold, lastSeen: Date.now() });
+
+    specTotalPacketsMonitored += pkts;
+    updateSpectrogramMetrics();
+    pushWaterfallSlice();
+    renderSpectrumBarChart();
+    renderWaterfallSpectrogram();
+  } catch (e) {
+    console.error("Failed to parse spectrogram row:", e);
+  }
+}
+
+function pushWaterfallSlice() {
+  const visible = getVisibleChannels();
+  const row = visible.map(ch => {
+    const stat = specChannels.get(ch);
+    return stat ? stat.duty : 0;
+  });
+  specWaterfall.unshift(row);
+  if (specWaterfall.length > 80) specWaterfall.pop();
+}
+
+function specColorMap(duty) {
+  if (duty <= 0) return "#0d1117";
+  if (duty < 15) return "#1f6feb";
+  if (duty < 35) return "#38bdf8";
+  if (duty < 55) return "#2ea043";
+  if (duty < 75) return "#e3b341";
+  if (duty < 90) return "#f85149";
+  return "#d299ff";
+}
+
+function updateSpectrogramMetrics() {
+  let maxDuty = 0, peakCh = "--", sumDuty = 0, count = 0, lastNoise = -95;
+  const visible = getVisibleChannels();
+  visible.forEach(ch => {
+    const s = specChannels.get(ch);
+    if (s) {
+      if (s.duty > maxDuty) { maxDuty = s.duty; peakCh = `Ch ${s.ch} (${s.duty}%)`; }
+      sumDuty += s.duty;
+      count++;
+      if (s.noise > -120) lastNoise = s.noise;
+    }
+  });
+  const avg = count ? Math.round(sumDuty / count) : 0;
+  if ($("spec-peak-channel")) $("spec-peak-channel").textContent = peakCh;
+  if ($("spec-avg-duty")) $("spec-avg-duty").textContent = avg + "%";
+  if ($("spec-total-pkts")) $("spec-total-pkts").textContent = specTotalPacketsMonitored.toLocaleString();
+  if ($("spec-noise-floor")) $("spec-noise-floor").textContent = lastNoise + " dBm";
+}
+
+function renderSpectrumBarChart() {
+  const canvas = $("spec-bar-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = "#0d1117";
+  ctx.fillRect(0, 0, w, h);
+
+  const channels = getVisibleChannels();
+  const n = channels.length;
+  if (n === 0) return;
+  const barW = Math.max(2, (w / n) - 3);
+
+  for (let i = 0; i < n; i++) {
+    const ch = channels[i];
+    const stat = specChannels.get(ch);
+    const duty = stat ? stat.duty : 0;
+    const peak = stat ? stat.peakHold : 0;
+    const x = i * (w / n) + 2;
+    const barH = (duty / 100) * (h - 24);
+    const peakY = h - 18 - (peak / 100) * (h - 24);
+
+    ctx.fillStyle = specColorMap(duty);
+    ctx.fillRect(x, h - 18 - barH, barW, barH);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x, peakY, barW, 2);
+
+    if (n <= 14 || i % 2 === 0) {
+      ctx.fillStyle = "#8b949e";
+      ctx.font = "9px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(ch, x + barW / 2, h - 4);
+    }
+  }
+}
+
+function renderWaterfallSpectrogram() {
+  const canvas = $("spec-waterfall-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = "#06090e";
+  ctx.fillRect(0, 0, w, h);
+
+  const channels = getVisibleChannels();
+  const numCh = channels.length;
+  if (numCh === 0 || specWaterfall.length === 0) return;
+
+  const cellW = w / numCh;
+  const numRows = specWaterfall.length;
+  const cellH = Math.max(2, Math.min(6, h / numRows));
+
+  for (let r = 0; r < numRows; r++) {
+    const row = specWaterfall[r];
+    const y = r * cellH;
+    if (y > h) break;
+    for (let c = 0; c < numCh; c++) {
+      const val = row[c] || 0;
+      ctx.fillStyle = specColorMap(val);
+      ctx.fillRect(c * cellW, y, cellW, cellH - 0.5);
+    }
+  }
+}
+
+function exportSpectrogramCsv() {
+  if (specChannels.size === 0) { log("no spectrogram data to export"); return; }
+  const header = "channel,band,duty_percent,packets,peak_rssi,avg_noise,mgmt_frames,ctrl_frames,data_frames\n";
+  const rows = Array.from(specChannels.values()).map(s => {
+    const band = s.ch <= 14 ? "2.4GHz" : "5GHz";
+    return `${s.ch},${band},${s.duty},${s.pkts},${s.peakRssi},${s.noise},${s.mgmt},${s.ctrl},${s.data}`;
+  });
+  const text = header + rows.join("\n") + "\n";
+  const blob = new Blob([text], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "spectrogram-" + Date.now() + ".csv";
+  a.click();
+  log("exported spectrogram data (" + specChannels.size + " channels)");
+}
+
 function parseResult(dv, c){
   if (dv.byteLength >= 1 && dv.getUint8(0) === 2) {  // wardrive WiGLE CSV row (text)
     let row = "";
@@ -1973,6 +2195,12 @@ function parseResult(dv, c){
     parseBleIntelRow(row);
     return;
   }
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 6) {  // Spectrogram telemetry (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseSpectrogramRow(row);
+    return;
+  }
   if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x48 && dv.getUint8(2) === 0x55 && dv.getUint8(3) === 0x4E && dv.getUint8(4) === 0x4E) {
     let row = "";
     for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
@@ -1983,6 +2211,12 @@ function parseResult(dv, c){
     let row = "";
     for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
     parseTopologyRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x53 && dv.getUint8(2) === 0x50 && dv.getUint8(3) === 0x45 && dv.getUint8(4) === 0x43) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseSpectrogramRow(row);
     return;
   }
   if (dv.byteLength >= 9 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x42 && dv.getUint8(2) === 0x4C && dv.getUint8(3) === 0x45 && dv.getUint8(4) === 0x49) {
@@ -2389,6 +2623,10 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     } else {
       stopTopoAnimation();
     }
+    if (btn.dataset.tab === "tab-spectrogram") {
+      renderSpectrumBarChart();
+      renderWaterfallSpectrogram();
+    }
   });
 });
 
@@ -2402,7 +2640,7 @@ updateEnabled(); renderConns(); renderStats(); initTopoCanvas();
 async function downloadWardriveCsv(){
   if (!wardriveRows.length){ log("no wardrive rows yet"); return; }
   const header =
-    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.3,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
+    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.4,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
     "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\n";
   const text = header + wardriveRows.join("\n") + "\n";
   const fname = "wardrive-" + Date.now() + ".csv";
@@ -2448,6 +2686,26 @@ document.querySelectorAll("#bleintel-filter-seg button").forEach(btn => {
     btn.classList.add("on");
     bleIntelFilter = btn.dataset.filter;
     renderBleIntel();
+  });
+});
+$("spec-btn-clear").addEventListener("click", () => {
+  specChannels.clear();
+  specWaterfall.length = 0;
+  specTotalPacketsMonitored = 0;
+  updateSpectrogramMetrics();
+  renderSpectrumBarChart();
+  renderWaterfallSpectrogram();
+  log("spectrogram data cleared");
+});
+$("spec-btn-export-csv").addEventListener("click", exportSpectrogramCsv);
+document.querySelectorAll("#spec-filter-seg button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#spec-filter-seg button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    specFilter = btn.dataset.filter;
+    updateSpectrogramMetrics();
+    renderSpectrumBarChart();
+    renderWaterfallSpectrogram();
   });
 });
 $("clear-log").addEventListener("click", () => {
