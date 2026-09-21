@@ -1,8 +1,8 @@
 #pragma once
 // Pancake C5 capacitive touch: FT6336 on the shared I2C bus (SDA 9 / SCL 10,
 // reset on GPIO 8). Reports raw panel coordinates in the ST7796's native
-// 320x480 portrait space; input.ino readTouch() maps those back into the
-// 240x320 logical UI space (the inverse of pancake_display.h's upscale blit).
+// 320x480 space; input.ino readTouch() maps those back into the 240x320 design
+// grid the UI is authored in (draws scale that grid up via scaleX/scaleY).
 //
 // Register logic follows ESP32_FlipSocial/ft6336.h, the proven Pancake driver.
 // Exposes just begin()/read(), a lighter interface than XPT2046_Touchscreen --

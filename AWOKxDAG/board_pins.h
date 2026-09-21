@@ -32,8 +32,9 @@
 #define AWOK_MINI_DISPLAY
 #endif
 // Pancake C5: a generic ESP32-C5-DevKitC board (NOT an AWOK board) with an
-// ST7796 320x480 panel scaled from the 240x320 UI buffer, plus an FT6336
-// capacitive touch controller on I2C (no resistive XPT2046 chip).
+// ST7796 320x480 panel rendered natively (the 240x320 UI is scaled to it via
+// scaleX/scaleY), plus an FT6336 capacitive touch controller on I2C (no
+// resistive XPT2046 chip).
 #if defined(PANCAKE_C5)
 #define PANCAKE_DISPLAY
 #define PANCAKE_CAP_TOUCH
