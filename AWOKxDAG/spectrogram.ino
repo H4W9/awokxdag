@@ -10,6 +10,7 @@ enum SpectrogramMode : uint8_t {
   kSpecMode24 = 0,
   kSpecModeAll = 1,
   kSpecModeLock = 2,
+  kSpecMode5 = 3,
 };
 
 const uint8_t kSpec24Channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
@@ -29,6 +30,7 @@ constexpr int kMaxSpecBuckets = 38;
 
 SpectrogramChannelStats specStats[kMaxSpecBuckets];
 uint8_t specPeakHold[kMaxSpecBuckets] = {0};
+static uint8_t specLevel[kMaxSpecBuckets] = {0};
 uint8_t waterfallHistory[kWaterfallHistoryRows][kMaxSpecBuckets] = {{0}};
 int waterfallHead = 0;
 
@@ -71,22 +73,87 @@ uint8_t specIndexToChannel(int idx) {
   return 1;
 }
 
+int specBandBase() {
+#ifndef AWOK_CLASSIC_ESP32
+  return (specMode == kSpecMode5) ? kSpec24Count : 0;
+#else
+  return 0;
+#endif
+}
+
 int specTotalChannels() {
 #ifndef AWOK_CLASSIC_ESP32
-  return (specMode == kSpecMode24) ? kSpec24Count : (kSpec24Count + kSpec5Count);
+  if (specMode == kSpecMode24) return kSpec24Count;
+  if (specMode == kSpecMode5) return kSpec5Count;
+  return kSpec24Count + kSpec5Count;
 #else
   return kSpec24Count;
 #endif
 }
 
+static uint16_t specPaletteLut[101];
+static uint8_t specGammaLut[101];
+static bool specLutInit = false;
+
+static void specInitLuts() {
+  static const uint8_t stops[8][3] = {
+      {  6,  10,  72},
+      {  0,  36, 168},
+      {  0, 140, 240},
+      {  0, 230, 190},
+      { 60, 255,  60},
+      {240, 240,   0},
+      {255, 140,   0},
+      {255,  40,  40}};
+  for (int v = 0; v <= 100; ++v) {
+    float t = (float)v / 100.0f * 7.0f;
+    int i = (int)t;
+    if (i > 6) i = 6;
+    float f = t - (float)i;
+    int r = stops[i][0] + (int)((stops[i + 1][0] - stops[i][0]) * f);
+    int g = stops[i][1] + (int)((stops[i + 1][1] - stops[i][1]) * f);
+    int b = stops[i][2] + (int)((stops[i + 1][2] - stops[i][2]) * f);
+    specPaletteLut[v] = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+    specGammaLut[v] = (uint8_t)(powf((float)v / 100.0f, 0.72f) * 100.0f + 0.5f);
+  }
+  specLutInit = true;
+}
+
 uint16_t specThermalColor(uint8_t val) {
-  if (val == 0) return 0x0842;           // dark navy (idle)
-  if (val < 15) return ILI9341_BLUE;     // low
-  if (val < 35) return ILI9341_CYAN;     // light traffic
-  if (val < 55) return ILI9341_GREEN;    // moderate
-  if (val < 75) return ILI9341_YELLOW;   // busy
-  if (val < 90) return ILI9341_RED;      // heavy congestion
-  return ILI9341_MAGENTA;                // saturated / flood
+  if (!specLutInit) specInitLuts();
+  if (val > 100) val = 100;
+  return specPaletteLut[val];
+}
+
+static uint8_t hmapLo[224];
+static uint8_t hmapFrac[224];
+static int hmapKey = -1;
+
+static void specBuildHMap(int total) {
+  const int bw = 224;
+  const int span = (total > 1) ? (total - 1) : 1;
+  for (int px = 0; px < bw; ++px) {
+    long pos = (long)px * span * 256 / (bw - 1);
+    int lo = (int)(pos >> 8);
+    if (lo < 0) lo = 0;
+    if (lo > total - 2) lo = (total >= 2) ? total - 2 : 0;
+    hmapLo[px] = (uint8_t)lo;
+    hmapFrac[px] = (uint8_t)(pos & 0xFF);
+  }
+  hmapKey = (int)specMode * 64 + total;
+}
+
+static void specResampleRow(const uint8_t* row, uint8_t* out) {
+  const int bw = 224;
+  for (int px = 0; px < bw; ++px) {
+    const int lo = hmapLo[px];
+    const int a = row[lo];
+    const int b = row[lo + 1];
+    int v = a + (((b - a) * (int)hmapFrac[px]) >> 8);
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    out[px] = (uint8_t)v;
+  }
 }
 
 void IRAM_ATTR spectrogramCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
@@ -141,8 +208,21 @@ void spectrogramRecordDwell() {
   specStats[idx].dataCount = dwellData;
   specStats[idx].lastSeenMs = millis();
 
-  if (duty > specPeakHold[idx]) {
-    specPeakHold[idx] = duty;
+  int lvl = 0;
+  if (specStats[idx].peakRssi > -120) {
+    int snr = specStats[idx].peakRssi - avgNoise;
+    if (snr < 0) snr = 0;
+    lvl = snr * 2;
+    if (lvl > 100) lvl = 100;
+  }
+  if (lvl >= specLevel[idx]) {
+    specLevel[idx] = (uint8_t)lvl;
+  } else {
+    int d = (int)specLevel[idx] - 8;
+    specLevel[idx] = (uint8_t)(d > lvl ? d : lvl);
+  }
+  if (lvl > specPeakHold[idx]) {
+    specPeakHold[idx] = (uint8_t)lvl;
   }
 
   // Stream telemetry line: $SPEC,ch,dutyPct,pkts,peakRssi,noise,mgmt,ctrl,data
@@ -164,9 +244,12 @@ void spectrogramRecordDwell() {
 
 void spectrogramPushWaterfallRow() {
   waterfallHead = (waterfallHead + 1) % kWaterfallHistoryRows;
-  const int total = specTotalChannels();
+  int total = kSpec24Count;
+#ifndef AWOK_CLASSIC_ESP32
+  total = kSpec24Count + kSpec5Count;
+#endif
   for (int i = 0; i < total; ++i) {
-    waterfallHistory[waterfallHead][i] = specStats[i].dutyPercent;
+    waterfallHistory[waterfallHead][i] = specLevel[i];
   }
 }
 
@@ -226,16 +309,27 @@ bool exportSpectrogramToSd() {
 
 void drawSpectrogram() {
   currentView = View::kSpectrogram;
+  if (!specLutInit) specInitLuts();
   display.fillScreen(kBackground);
 
   const char* modeLabel = (specMode == kSpecMode24) ? "2.4 GHz"
-                         : (specMode == kSpecModeAll) ? "2.4+5 GHz" : "Locked";
+                         : (specMode == kSpecModeAll) ? "2.4+5 GHz"
+                         : (specMode == kSpecMode5) ? "5 GHz" : "Locked";
   const int curIdx = specChannelToIndex(specCurrentChannel);
   const uint8_t curDuty = (curIdx >= 0) ? specStats[curIdx].dutyPercent : 0;
   const int8_t curPeak = (curIdx >= 0) ? specStats[curIdx].peakRssi : -127;
   const int8_t curNoise = (curIdx >= 0) ? specStats[curIdx].avgNoise : -95;
 
-  drawHeader("SPECTROGRAM", String(modeLabel) + " · Ch " + String(specCurrentChannel) + " (" + String(curDuty) + "%)");
+  drawHeader("SPECTROGRAM", String(modeLabel) + " \xC2\xB7 Ch " + String(specCurrentChannel) + " (" + String(curDuty) + "%)");
+
+  const char* bandTag = (specMode == kSpecMode24) ? "2.4"
+                       : (specMode == kSpecModeAll) ? "2+5"
+                       : (specMode == kSpecMode5) ? "5G" : "LCK";
+  display.drawRoundRect(174, 5, 62, 30, 6, kAccent);
+  display.setTextSize(1);
+  display.setTextColor(kAccent, kBackground);
+  display.setCursor(174 + (62 - (int)strlen(bandTag) * 6) / 2, 16);
+  display.print(bandTag);
 
 #ifdef AWOK_MINI_DISPLAY
   display.setTextSize(1);
@@ -259,7 +353,9 @@ void drawSpectrogram() {
   return;
 #endif
 
-  // Touch 240x320 Layout
+  const int total = specTotalChannels();
+  const int base = specBandBase();
+
   display.setTextSize(1);
   display.setTextColor(ILI9341_WHITE, kBackground);
   display.setCursor(5, 46);
@@ -269,82 +365,156 @@ void drawSpectrogram() {
                  curPeak,
                  curNoise);
 
-  // Upper Bar Chart (Instantaneous Spectrum + Peak Hold)
-  constexpr int kChartBaseY = 120;
-  constexpr int kChartMaxH = 64;
-  const int totalCh = specTotalChannels();
+  const int bx0 = 8;
+  const int bw = 224;
+  const int sBaseY = 120;
+  const int sMaxH = 62;
+
+  if (hmapKey != (int)specMode * 64 + total) specBuildHMap(total);
+
+  uint8_t drow[kMaxSpecBuckets];
+  uint8_t prow[kMaxSpecBuckets];
+  for (int i = 0; i < total; ++i) {
+    drow[i] = specLevel[base + i];
+    prow[i] = specPeakHold[base + i];
+  }
+  static uint8_t specLine[224];
+  static uint8_t peakLine[224];
+  specResampleRow(drow, specLine);
+  specResampleRow(prow, peakLine);
+
+  for (int px = 0; px < bw; ++px) {
+    const int x = bx0 + px;
+    const int iv = specLine[px];
+    display.drawFastVLine(x, sBaseY - sMaxH, sMaxH, specPaletteLut[0]);
+    int h = iv * sMaxH / 100;
+    if (h < 1 && iv > 0) h = 1;
+    if (h > sMaxH) h = sMaxH;
+    if (h > 0) display.drawFastVLine(x, sBaseY - h, h, specPaletteLut[iv]);
+    const int pv = peakLine[px];
+    int ph = pv * sMaxH / 100;
+    if (ph > sMaxH) ph = sMaxH;
+    if (pv > 0) display.drawPixel(x, sBaseY - ph, ILI9341_WHITE);
+  }
+
+  display.drawFastHLine(bx0, sBaseY, bw, kMuted);
+
+  const int markIdx = specChannelToIndex(specCurrentChannel) - base;
+  if (markIdx >= 0 && markIdx < total) {
+    const int mx = bx0 + (total > 1 ? markIdx * (bw - 1) / (total - 1) : 0);
+    display.drawFastVLine(mx, sBaseY - sMaxH - 2, sMaxH + 2, ILI9341_WHITE);
+  }
 
   if (specMode == kSpecMode24) {
-    // 13 channels: 16px pitch
-    for (int i = 0; i < kSpec24Count; ++i) {
-      const int ch = kSpec24Channels[i];
-      const int duty = specStats[i].dutyPercent;
-      const int barH = max(1, duty * kChartMaxH / 100);
-      const int x = 12 + i * 16;
-
-      // Active bar
-      display.fillRect(x, kChartBaseY - barH, 12, barH, specThermalColor(duty));
-
-      // Peak hold line
-      const int peakH = max(1, static_cast<int>(specPeakHold[i]) * kChartMaxH / 100);
-      display.drawFastHLine(x, kChartBaseY - peakH, 12, ILI9341_WHITE);
-
-      // Active channel marker
-      if (ch == specCurrentChannel) {
-        display.drawRect(x - 1, kChartBaseY - kChartMaxH - 2, 14, kChartMaxH + 4, kAccent);
-      }
-
-      // Channel text
-      display.setTextColor((ch == specCurrentChannel) ? kAccent : kMuted, kBackground);
-      display.setCursor(x + (ch < 10 ? 3 : 0), kChartBaseY + 2);
-      display.print(ch);
-    }
-  } else {
-    // All channels (up to 38): 6px pitch
-    for (int i = 0; i < totalCh; ++i) {
-      const int duty = specStats[i].dutyPercent;
-      const int barH = max(1, duty * kChartMaxH / 100);
-      const int x = 6 + i * 6;
-
-      display.fillRect(x, kChartBaseY - barH, 4, barH, specThermalColor(duty));
-
-      const int peakH = max(1, static_cast<int>(specPeakHold[i]) * kChartMaxH / 100);
-      display.drawFastHLine(x, kChartBaseY - peakH, 4, ILI9341_WHITE);
-
-      if (specIndexToChannel(i) == specCurrentChannel) {
-        display.drawFastVLine(x + 2, kChartBaseY - kChartMaxH - 2, 4, kAccent);
-      }
+    const int labels[3] = {1, 6, 11};
+    display.setTextColor(kMuted, kBackground);
+    for (int li = 0; li < 3; ++li) {
+      const int idx = labels[li] - 1;
+      const int lx = bx0 + (total > 1 ? idx * (bw - 1) / (total - 1) : 0);
+      display.setCursor(lx - (labels[li] < 10 ? 2 : 5), sBaseY + 3);
+      display.print(labels[li]);
     }
   }
 
-  // Divider
-  display.drawFastHLine(4, 134, 232, 0x3186);
-
-  // Lower Waterfall Heat Map (26 rows, scrolling downward)
-  constexpr int kWaterTopY = 138;
-  constexpr int kWaterRowH = 5;
-  constexpr int kWaterDisplayRows = 26;
-
-  for (int r = 0; r < kWaterDisplayRows; ++r) {
-    const int rowIdx = (waterfallHead - r + kWaterfallHistoryRows) % kWaterfallHistoryRows;
-    const int y = kWaterTopY + r * kWaterRowH;
-
-    if (specMode == kSpecMode24) {
-      for (int i = 0; i < kSpec24Count; ++i) {
-        const uint8_t val = waterfallHistory[rowIdx][i];
-        const int x = 12 + i * 16;
-        display.fillRect(x, y, 12, kWaterRowH - 1, specThermalColor(val));
-      }
-    } else {
-      for (int i = 0; i < totalCh; ++i) {
-        const uint8_t val = waterfallHistory[rowIdx][i];
-        const int x = 6 + i * 6;
-        display.fillRect(x, y, 4, kWaterRowH - 1, specThermalColor(val));
-      }
+  const int wTop = 138;
+  const int wfBottom = kFooterTop;
+  const int wfH = wfBottom - wTop;
+  const int wRows = kWaterfallHistoryRows;
+  static uint8_t lineA[224];
+  static uint8_t lineB[224];
+  int builtRow = -1;
+  for (int y = wTop; y < wfBottom; ++y) {
+    long hr = (long)(y - wTop) * (wRows - 1) * 256 / (wfH - 1);
+    int r0 = (int)(hr >> 8);
+    if (r0 < 0) r0 = 0;
+    if (r0 > wRows - 2) r0 = wRows - 2;
+    const int f = (int)(hr & 0xFF);
+    if (builtRow != r0) {
+      specResampleRow(&waterfallHistory[(waterfallHead - r0 + wRows) % wRows][base], lineA);
+      specResampleRow(&waterfallHistory[(waterfallHead - (r0 + 1) + wRows) % wRows][base], lineB);
+      builtRow = r0;
+    }
+    for (int px = 0; px < bw; ++px) {
+      int v = lineA[px] + (((lineB[px] - lineA[px]) * f) >> 8);
+      if (v < 0) v = 0;
+      if (v > 100) v = 100;
+      display.drawPixel(bx0 + px, y, specPaletteLut[specGammaLut[v]]);
     }
   }
 
-  drawFooter("Back", lastSpectrogramCsvOk ? "Saved" : "Save");
+  drawFourButtonFooter("Back", "Ch-", "Ch+", "Hop");
+}
+
+static void specResetDwell() {
+  dwellFrames = 0;
+  dwellBytes = 0;
+  dwellPeakRssi = -127;
+  dwellNoiseSum = 0;
+  dwellNoiseSamples = 0;
+  dwellMgmt = 0;
+  dwellCtrl = 0;
+  dwellData = 0;
+}
+
+int spectrogramFullChannelCount() {
+#ifndef AWOK_CLASSIC_ESP32
+  return kSpec24Count + kSpec5Count;
+#else
+  return kSpec24Count;
+#endif
+}
+
+void spectrogramLockToIndex(int idx) {
+  const int total = spectrogramFullChannelCount();
+  if (idx < 0) idx = 0;
+  if (idx >= total) idx = total - 1;
+  specMode = kSpecModeLock;
+  specLockedChannel = specIndexToChannel(idx);
+  specCurrentChannel = specLockedChannel;
+  esp_wifi_set_channel(specCurrentChannel, WIFI_SECOND_CHAN_NONE);
+  lastSpecHopMs = millis();
+  specResetDwell();
+  drawSpectrogram();
+}
+
+void spectrogramLockStep(int dir) {
+  const int total = spectrogramFullChannelCount();
+  int idx = specChannelToIndex(specLockedChannel);
+  if (idx < 0) idx = 0;
+  idx = (idx + dir + total) % total;
+  spectrogramLockToIndex(idx);
+}
+
+void spectrogramToggleHop() {
+  if (specMode == kSpecModeLock) {
+#ifndef AWOK_CLASSIC_ESP32
+    specMode = (specLockedChannel <= 14) ? kSpecMode24 : kSpecMode5;
+#else
+    specMode = kSpecMode24;
+#endif
+  }
+  specHopIndex = 0;
+  specCurrentChannel = specIndexToChannel(specBandBase());
+  esp_wifi_set_channel(specCurrentChannel, WIFI_SECOND_CHAN_NONE);
+  lastSpecHopMs = millis();
+  specResetDwell();
+  drawSpectrogram();
+}
+
+void spectrogramCycleBand() {
+#ifndef AWOK_CLASSIC_ESP32
+  if (specMode == kSpecMode24) specMode = kSpecModeAll;
+  else if (specMode == kSpecModeAll) specMode = kSpecMode5;
+  else specMode = kSpecMode24;
+#else
+  specMode = kSpecMode24;
+#endif
+  specHopIndex = 0;
+  specCurrentChannel = specIndexToChannel(specBandBase());
+  esp_wifi_set_channel(specCurrentChannel, WIFI_SECOND_CHAN_NONE);
+  lastSpecHopMs = millis();
+  specResetDwell();
+  drawSpectrogram();
 }
 
 void startSpectrogram() {
@@ -352,7 +522,7 @@ void startSpectrogram() {
   if (!ensureWifiStation(true)) return;
 
   specHopIndex = 0;
-  specCurrentChannel = (specMode == kSpecModeLock) ? specLockedChannel : specIndexToChannel(0);
+  specCurrentChannel = (specMode == kSpecModeLock) ? specLockedChannel : specIndexToChannel(specBandBase());
   lastSpecHopMs = millis();
   lastSpecDrawMs = 0;
   lastPeakDecayMs = millis();
@@ -363,6 +533,7 @@ void startSpectrogram() {
     specStats[i] = SpectrogramChannelStats();
     specStats[i].channel = specIndexToChannel(i);
     specPeakHold[i] = 0;
+    specLevel[i] = 0;
     for (int r = 0; r < kWaterfallHistoryRows; ++r) {
       waterfallHistory[r][i] = 0;
     }
@@ -411,7 +582,7 @@ void cycleSpectrogramMode() {
     specMode = kSpecMode24;
   }
   specHopIndex = 0;
-  specCurrentChannel = (specMode == kSpecModeLock) ? specLockedChannel : specIndexToChannel(0);
+  specCurrentChannel = (specMode == kSpecModeLock) ? specLockedChannel : specIndexToChannel(specBandBase());
   esp_wifi_set_channel(specCurrentChannel, WIFI_SECOND_CHAN_NONE);
   lastSpecHopMs = millis();
   dwellFrames = 0;
@@ -470,7 +641,7 @@ void updateSpectrogram() {
       if (specHopIndex == 0) {
         spectrogramPushWaterfallRow();
       }
-      specCurrentChannel = specIndexToChannel(specHopIndex);
+      specCurrentChannel = specIndexToChannel(specBandBase() + specHopIndex);
       esp_wifi_set_channel(specCurrentChannel, WIFI_SECOND_CHAN_NONE);
       lastSpecHopMs = now;
       dwellFrames = 0;
@@ -488,9 +659,10 @@ void updateSpectrogram() {
   if (now - lastPeakDecayMs >= 400) {
     lastPeakDecayMs = now;
     const int total = specTotalChannels();
+    const int base = specBandBase();
     for (int i = 0; i < total; ++i) {
-      if (specPeakHold[i] > 2) specPeakHold[i] -= 2;
-      else specPeakHold[i] = 0;
+      if (specPeakHold[base + i] > 2) specPeakHold[base + i] -= 2;
+      else specPeakHold[base + i] = 0;
     }
   }
 
