@@ -4054,8 +4054,10 @@ function armFileTransferTimeout() {
   if (transfer.timeout) clearTimeout(transfer.timeout);
   transfer.timeout = setTimeout(() => {
     if (activeFileDownload !== transfer) return;
+    const received = transfer.chunks.size;
+    log(`Bluetooth ACK transfer stalled: token=${transfer.token}, received=${received}/${transfer.totalChunks}, bytes=${transfer.size}`);
     resetDownloadProgress();
-    alert("File transfer timed out. Update both chips and the control page, then retry.");
+    alert(`Bluetooth transfer stalled after ${received} of ${transfer.totalChunks} chunks. See the transfer log for details.`);
   }, 12000);
 }
 
@@ -4110,6 +4112,7 @@ function parseReliableFileChunk(msg, connection) {
     transfer.snapshotSize = size;
     transfer.size = size; // current snapshot, not a possibly stale directory listing
     transfer.totalChunks = Math.ceil(size / 96) || 1;
+    log(`Bluetooth ACK transfer confirmed: token=${token}, bytes=${size}, chunks=${transfer.totalChunks}`);
   }
   if (transfer.size !== size) return;
   const total = transfer.totalChunks;

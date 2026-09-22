@@ -208,3 +208,40 @@ test('reliable transfer handles an empty file and acknowledges terminal errors',
   assert.equal(failed.errors.length, 1);
   assert.equal(failed.acknowledgments.length, 2);
 });
+
+const resultStart = html.indexOf('function parseResult(dv, c){');
+const resultEnd = html.indexOf('// Parse live WiGLE', resultStart);
+const fileParserStart = html.indexOf('function parseFileMessage(');
+const fileParserEnd = html.indexOf('\nif ($("connect-serial"))', fileParserStart);
+assert.ok(resultStart >= 0 && resultEnd > resultStart && fileParserEnd > fileParserStart);
+
+test('full BLE notification parser preserves files around 100 KiB and above 1 MiB', async () => {
+  for (const size of [100 * 1024 - 1, 100 * 1024 + 1, 1024 * 1024 + 17]) {
+    const data = Buffer.alloc(size);
+    for (let i = 0; i < size; ++i) data[i] = (i * 17 + 31) & 255;
+    const t = reliableTransfer(data);
+    vm.runInContext(html.slice(resultStart, resultEnd) + html.slice(fileParserStart, fileParserEnd), t.context);
+    const total = Math.ceil(size / 96);
+    const receiveNotification = async (seq, kind, payload) => {
+      // The actual source-prefixed notification format, including seq digit
+      // transitions at 999/1000 and 9999/10000, routed through both dispatchers.
+      const line = `$FILECHUNK,1234,${seq},${size},${kind},${payload}`;
+      const bytes = Buffer.concat([Buffer.from([9]), Buffer.from(line)]);
+      t.context.parseResult(new DataView(bytes.buffer, bytes.byteOffset, bytes.length), t.connection);
+      await t.connection.fileAckWrites;
+    };
+    for (let seq = 1; seq <= total; ++seq) {
+      const payload = data.subarray((seq - 1) * 96, seq * 96).toString('base64');
+      if (![12, 15, 1000, 1024, 4096, 10000].includes(seq)) {
+        await receiveNotification(seq, 0, payload);
+      }
+      if (t.acknowledgments.at(-1)?.seq !== seq) await receiveNotification(seq, 0, payload);
+      assert.equal(t.acknowledgments.at(-1).seq, seq);
+      if (seq % 1000 === 0) await receiveNotification(seq, 0, payload); // lost ACK -> duplicate
+    }
+    await receiveNotification(total + 1, 1, 'wardrive-0001.csv');
+    assert.deepEqual(t.errors, []);
+    assert.equal(t.saved.length, 1);
+    assert.deepEqual(Buffer.from(await t.saved[0].blob.arrayBuffer()), data);
+  }
+});
