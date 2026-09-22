@@ -152,6 +152,39 @@ void onLinkRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
       bridgeNotifyResult(kSourceHunt, reinterpret_cast<const uint8_t*>(rowBuf), rlen);
     }
     return;
+  } else if (type == kLinkMsgFileEntry && len >= 12) {
+    AxdFileEntryMsg r = {};
+    memcpy(&r, data, len < static_cast<int>(sizeof(r)) ? len : sizeof(r));
+    char line[96];
+    if (r.index == 255) {
+      snprintf(line, sizeof(line), "$FILELIST_END,%u,%lu",
+               r.count, static_cast<unsigned long>(r.size));
+    } else {
+      snprintf(line, sizeof(line), "$FILELIST,%u,%u,%lu,%s",
+               r.index, r.count, static_cast<unsigned long>(r.size), r.name);
+    }
+    bridgeNotifyResult(kSourceFiles, reinterpret_cast<const uint8_t*>(line), strlen(line));
+    return;
+  } else if (type == kLinkMsgFileData && len >= 12) {
+    AxdFileDataMsg r = {};
+    memcpy(&r, data, len < static_cast<int>(sizeof(r)) ? len : sizeof(r));
+    char line[180];
+    snprintf(line, sizeof(line), "$FILEDATA,%u,%u,%s", r.chunkSeq, r.totalChunks, r.data);
+    bridgeNotifyResult(kSourceFiles, reinterpret_cast<const uint8_t*>(line), strlen(line));
+    return;
+  } else if (type == kLinkMsgFileDone && len >= 12) {
+    AxdFileDoneMsg r = {};
+    memcpy(&r, data, len < static_cast<int>(sizeof(r)) ? len : sizeof(r));
+    char line[80];
+    if (r.status == 1) {
+      snprintf(line, sizeof(line), "$FILEERR,TRANSFER_FAILED");
+    } else if (r.status == 2) {
+      snprintf(line, sizeof(line), "$FILEABORT,%s", r.name);
+    } else {
+      snprintf(line, sizeof(line), "$FILEDONE,%s,%lu", r.name, static_cast<unsigned long>(r.totalBytes));
+    }
+    bridgeNotifyResult(kSourceFiles, reinterpret_cast<const uint8_t*>(line), strlen(line));
+    return;
   }
 #endif
   // Link/fleet control frames (Hello, Sync, Telem, Command, FleetInvite,
@@ -1044,6 +1077,7 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
       break;
     case kAxdCmdHarvester: startHarvester(); break;
     case kAxdCmdProbeIntel: startProbeIntel(); break;
+    case kAxdCmdWifi6Intel: startWifi6Intel(); break;
     case kAxdCmdSaved: drawSavedNetworks(); break;
     // Attacks (target-specific ones act on the on-device last selection)
     case kAxdCmdBeaconFlood: startBeaconFlood(); break;
@@ -1058,6 +1092,7 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
     case kAxdCmdKarmaWatch: startKarmaWatch(); break;
     case kAxdCmdBeaconWatch: startBeaconWatch(); break;
     case kAxdCmdAdvancedWatch: startAdvancedWatch(); break;
+    case kAxdCmdDeauthForensics: startDeauthForensics(); break;
     // GPS / wardrive / misc
     case kAxdCmdWardriveStart: startWardrive(); break;
     case kAxdCmdWardriveStop: stopWardrive(); drawHome(); break;
@@ -1065,6 +1100,10 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
     case kAxdCmdLocator: startLocator(); break;
     case kAxdCmdStatus: drawStatus(); break;
     case kAxdCmdFiles: openFilesManager(); break;
+    case kAxdCmdFileList: linkStreamFileList(); break;
+    case kAxdCmdFileGet: linkStreamFileData(arg); break;
+    case kAxdCmdFileDelete: linkDeleteFile(arg); break;
+    case kAxdCmdFileAbort: linkAbortFileStream(); break;
     // Network selection + per-target actions
     case kAxdCmdListWifi: linkStreamWifiResults(); break;
     case kAxdCmdSelectWifi:

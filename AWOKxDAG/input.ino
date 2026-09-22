@@ -417,6 +417,66 @@ void handleTouch() {
     }
     return;
   }
+  if (currentView == View::kWifi6Intel) {
+    const int pages = wifi6PageCount();
+    if (pages > 1) {
+      if (x < 60) {
+        stopWifi6Intel();
+        drawReconMenu();
+      } else if (x < 120) {
+        wifi6Page = (wifi6Page - 1 + pages) % pages;
+        drawWifi6Intel();
+      } else if (x < 180) {
+        wifi6Page = (wifi6Page + 1) % pages;
+        drawWifi6Intel();
+      } else {
+        lastWifi6IntelCsvOk = exportWifi6IntelToSd();
+        drawWifi6Intel();
+      }
+    } else {
+      if (x < 80) {
+        stopWifi6Intel();
+        drawReconMenu();
+      } else if (x < 160) {
+        clearWifi6Intel();
+        drawWifi6Intel();
+      } else {
+        lastWifi6IntelCsvOk = exportWifi6IntelToSd();
+        drawWifi6Intel();
+      }
+    }
+    return;
+  }
+  if (currentView == View::kDeauthForensics) {
+    const int pages = deauthForensicsPageCount();
+    if (pages > 1) {
+      if (x < 60) {
+        stopDeauthForensics();
+        drawMonitorMenu();
+      } else if (x < 120) {
+        deauthForensicsPage = (deauthForensicsPage - 1 + pages) % pages;
+        drawDeauthForensics();
+      } else if (x < 180) {
+        deauthForensicsPage = (deauthForensicsPage + 1) % pages;
+        drawDeauthForensics();
+      } else {
+        lastDeauthForensicsCsvOk = exportDeauthForensicsToSd();
+        drawDeauthForensics();
+      }
+    } else {
+      if (x < 80) {
+        stopDeauthForensics();
+        drawMonitorMenu();
+      } else if (x < 160) {
+        clearDeauthForensics();
+        drawDeauthForensics();
+      } else {
+        lastDeauthForensicsCsvOk = exportDeauthForensicsToSd();
+        drawDeauthForensics();
+      }
+    }
+    return;
+  }
   if (currentView == View::kDeauthMonitor) {
     if (x < kScreenWidth / 2) {
       stopDeauthMonitor();
@@ -762,6 +822,7 @@ bool toolBlocksSerialShortcuts() {
          probeLureActive || securityAuditActive || trackerScanActive ||
          bleIntelActive || spectrogramActive || harvesterActive || probeIntelActive || karmaWatchActive ||
          beaconWatchActive || authFloodActive || advancedWatchActive ||
+         wifi6IntelActive || deauthForensicsActive ||
          locatorActive || fleetHuntActive || topologyActive || linkWardriveActive ||
          linkState == kLinkDiscovering || linkState == kLinkAwaitConfirm;
 }
@@ -792,6 +853,8 @@ void stopActiveTools() {
   if (beaconWatchActive) stopBeaconWatch();
   if (authFloodActive) stopAuthFlood();
   if (advancedWatchActive) stopAdvancedWatch();
+  if (wifi6IntelActive) stopWifi6Intel();
+  if (deauthForensicsActive) stopDeauthForensics();
   if (locatorActive) stopLocator();
   if (fleetHuntActive) stopFleetHunt();
   if (topologyActive) stopTopologyMap();
@@ -808,6 +871,18 @@ void handleSerial() {
   }
   if (!Serial.available() || scanInProgress) return;
   noteActivity();
+  if (Serial.peek() == '$') {
+    String line = Serial.readStringUntil('\n');
+    line.trim();
+    if (line.startsWith("$CMD,")) {
+      const int firstSep = line.indexOf(',');
+      const int secondSep = line.indexOf(',', firstSep + 1);
+      const uint8_t op = line.substring(firstSep + 1, secondSep > 0 ? secondSep : line.length()).toInt();
+      const uint8_t arg = secondSep > 0 ? line.substring(secondSep + 1).toInt() : 0;
+      linkDispatchCommand(op, arg);
+      return;
+    }
+  }
   const char command = static_cast<char>(tolower(Serial.read()));
   if (toolBlocksSerialShortcuts()) {
     if (command == 'h') {

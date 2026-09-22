@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.6.4
+- **Version:** 1.6.5
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -86,6 +86,12 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
   engine. Aggregates multi-node target observations over ESP-NOW, computes estimated
   GPS coordinates, geodesic range, confidence radius, and heading bearing, visualized
   via a tactical radar scope on device and in the web dashboard.
+- **Wi-Fi 6 Intel** — passive 802.11ax High Efficiency (HE) capability and operation
+  inspector. Decodes BSS Color (1–63) collision parameters, color disabled flags,
+  channel widths (20/40/80/160 MHz), and generational classifications (Wi-Fi 4/5/6)
+  across 2.4 GHz and 5 GHz bands. Features on-device touch/mini inspection, SD CSV
+  logging to `/awokxdag/wifi6_intel.csv`, live `$AXINTEL` telemetry, and an interactive
+  Web Bluetooth BSS color collision matrix.
 - **Saved** — up to 10 access points kept in NVS across reboots.
 
 ### Network Tools (connected LAN)
@@ -166,6 +172,17 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   disconnect reason storms, channel-switch announcements, EAPOL and association
   spikes, RF noise-floor changes, and rapid BLE address churn. Alerts are
   thresholded and GPS logged. Passive; RF and BLE churn results are heuristics.
+- **Deauth Forensics** — targeted deauthentication & disassociation frame forensic
+  analyzer and attribution engine. Differentiates shotgun broadcast floods from
+  targeted unicast victim station attacks, detects transmitter 802.11 sequence number
+  jumps indicating forged/spoofed attack frames, decodes 802.11 reason codes, logs
+  forensic audit trails to `/awokxdag/deauth_forensics.csv`, and streams live `$DEAUTH`
+  telemetry to Web Bluetooth with real-time alert banners.
+- **SD Card File Manager & Remote Transfer** — browse, preview, and download SD card captures
+  directly to your phone or computer over Web Bluetooth or Web Serial without removing the SD card.
+  Streams base64 chunks on-the-fly (`$FILEDATA`), supports PCAP handshakes and wardrive CSVs,
+  provides an in-browser preview drawer with one-click copy, and automatically bridges requests
+  between Screen Chip and Bridge Chip over ESP-NOW.
 
 ### GPS
 - **GPS status** — fix, satellites, coordinates, speed, HDOP, plus a baud cycler

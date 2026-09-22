@@ -79,6 +79,8 @@ View auditReturnView = View::kWifi;
 int reconPage = 0;
 int monitorPage = 0;
 int homePage = 0;
+int wifi6Page = 0;
+int deauthForensicsPage = 0;
 DeviceSettingsRecord deviceSettings = {};
 bool backlightDimmed = false;
 uint32_t lastActivityMs = 0;
@@ -105,6 +107,8 @@ bool fleetHuntActive = false;      // multi-node trilateration hunt (locator.ino
 bool topologyActive = false;       // live swarm mesh topology mapping (topologymap.ino)
 bool bleIntelActive = false;       // BLE ecosystem intel & continuity decoder (bleintel.ino)
 bool spectrogramActive = false;    // RF spectrogram & waterfall analyzer (spectrogram.ino)
+bool wifi6IntelActive = false;      // 802.11ax OFDMA & BSS Color intel (wifi6intel.ino)
+bool deauthForensicsActive = false; // targeted deauth & disassoc forensics (deauthforensics.ino)
 // SD export status for the new recon tabs (read by input.ino, which is
 // concatenated before those tabs, so the flags must live in the main sketch).
 bool lastAuditCsvOk = false;
@@ -113,6 +117,8 @@ bool lastProbeIntelCsvOk = false;
 bool lastTopologyCsvOk = false;
 bool lastBleIntelCsvOk = false;
 bool lastSpectrogramCsvOk = false;
+bool lastWifi6IntelCsvOk = false;
+bool lastDeauthForensicsCsvOk = false;
 bool sdReady = false;
 bool lastSavedSdWriteOk = false;
 bool lastScanSdWriteOk = false;
@@ -1570,7 +1576,7 @@ const char* const kReconItems[] = {
     "Packet Mon",   "WPS Scan",     "Hidden SSID",  "Cameras",
     "Security Audit", "BLE Trackers", "BLE Intel",   "Harvester",
     "Probe Intel",  "Saved",        "Fleet Hunter", "Topology Map",
-    "Network Tools"};
+    "Network Tools", "Wi-Fi 6 Intel"};
 constexpr int kReconItemCount =
     static_cast<int>(sizeof(kReconItems) / sizeof(kReconItems[0]));
 constexpr int kMenuPerPage = 6;
@@ -1633,6 +1639,8 @@ void launchReconItem(int index) {
     startTopologyMap();
   } else if (label == "Network Tools") {
     openNetworkTools();
+  } else if (label == "Wi-Fi 6 Intel") {
+    startWifi6Intel();
   } else if (label == "Saved") {
     drawSavedNetworks();
   }
@@ -1665,7 +1673,7 @@ void drawReconMenu() {
 const char* const kMonitorItems[] = {
     "Deauth Watch",   "Rogue Watch", "BLE Spam Watch",
     "Karma Watch",    "Beacon Watch", "Auth Flood",
-    "Advanced Watch"};
+    "Advanced Watch", "Deauth Forensics"};
 constexpr int kMonitorItemCount =
     static_cast<int>(sizeof(kMonitorItems) / sizeof(kMonitorItems[0]));
 
@@ -1689,6 +1697,8 @@ void launchMonitorItem(int index) {
     startAuthFlood();
   } else if (label == "Advanced Watch") {
     startAdvancedWatch();
+  } else if (label == "Deauth Forensics") {
+    startDeauthForensics();
   }
 }
 
@@ -2338,6 +2348,8 @@ void loop() {
   updateBeaconWatch();
   updateAuthFlood();
   updateAdvancedWatch();
+  updateWifi6Intel();
+  updateDeauthForensics();
   updateLink();
 #ifdef AWOK_HEADLESS
   bridgeServiceCommand();  // run any phone command off the BLE host task

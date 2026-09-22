@@ -78,7 +78,7 @@ void bridgeNotifyStatus(uint8_t source, const uint8_t* body, size_t len) {
 
 void bridgeNotifyResult(uint8_t source, const uint8_t* body, size_t len) {
   if (!g_bridgeResults || !g_bridgePhoneConnected) return;
-  uint8_t blob[1 + 180];  // fits a full WiGLE CSV row for wardrive streaming
+  uint8_t blob[1 + 240];  // fits full WiGLE CSV row or base64 file data chunk
   blob[0] = source;
   size_t n = len < sizeof(blob) - 1 ? len : sizeof(blob) - 1;
   memcpy(blob + 1, body, n);
@@ -111,7 +111,13 @@ class BridgeCmdCallbacks : public NimBLECharacteristicCallbacks {
 void bridgeServiceCommand() {
   if (!g_bridgeCmdPending) return;
   g_bridgeCmdPending = false;
-  const uint8_t op = g_bridgePendOp, arg = g_bridgePendArg, target = g_bridgePendTarget;
+  const uint8_t op = g_bridgePendOp, arg = g_bridgePendArg;
+  uint8_t target = g_bridgePendTarget;
+  // SD card is physically on the Screen chip; always relay file commands to screen
+  if (op == kAxdCmdFileList || op == kAxdCmdFileGet || op == kAxdCmdFileDelete ||
+      op == kAxdCmdFileAbort || op == kAxdCmdFiles) {
+    target = kTargetScreen;
+  }
   Serial.printf("[bridge] cmd op=%u arg=%u target=%u\n", op, arg, target);
   if (target == kTargetScreen) {
     bridgeRelayToScreen(op, arg);

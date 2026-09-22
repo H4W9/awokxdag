@@ -5,6 +5,37 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.6.5] - 2026-09-22
+
+### Added
+
+- **Wi-Fi 6 / 802.11ax OFDMA & BSS Color Intelligence (`AWOKxDAG/wifi6intel.ino`):**
+  - **Passive HE Beacon & Probe Inspector:** Promiscuous management frame parser extracting 802.11ax High Efficiency capabilities and operation elements (Extended Tag 255 with Ext IDs 35 and 36) without transmitting.
+  - **BSS Color Collision Analysis:** Extracts 6-bit BSS Color codes (1–63) and BSS Color Disabled flags to map spatial reuse channel congestion and co-channel interference.
+  - **Channel Width & Generation Classification:** Identifies channel operating widths (20, 40, 80, 160 MHz) and classifies networks into Wi-Fi 4 (802.11n), Wi-Fi 5 (802.11ac), and Wi-Fi 6 (802.11ax).
+  - **On-Device UI (`View::kWifi6Intel`):** Touch (240×320) and Mini (128×128) scrollable list showing generational badges, color pills, channel widths, BSSID, and RSSI with on-device SD CSV export.
+  - **SD Card CSV Logging:** Exports observed Wi-Fi 6 parameters and collision states to `/awokxdag/wifi6_intel.csv` with GPS coordinates.
+  - **Telemetry Streaming:** Emits `$AXINTEL,bssid,ssid,channel,generation,bssColor,channelWidth,rssi` over Serial and Web Bluetooth (`kSourceWifi6Intel = 7`, opcode 59 `kAxdCmdWifi6Intel`).
+  - **Remote Dashboard Tab (`control.html`):** Added dedicated "⚡ Wi-Fi 6" tab with live interactive 64-cell BSS Color collision matrix, generational breakdown stats, band filters, and CSV export.
+
+- **Targeted Deauth & Disassociation Forensic Analyzer (`AWOKxDAG/deauthforensics.ino`):**
+  - **Promiscuous Forensic Attribution Engine:** Passive sniffer for 802.11 deauthentication (subtype 12) and disassociation (subtype 10) frames.
+  - **Attack Classification:** Differentiates shotgun broadcast floods (`ff:ff:ff:ff:ff:ff`) from targeted unicast victim station attacks.
+  - **Transmitter Sequence Number Anomaly Detection:** Tracks per-transmitter 802.11 sequence counters and flags sudden sequence number jumps ($|\Delta| > 10$) indicating forged/spoofed transmitter MAC addresses.
+  - **Reason Code Decoding:** Decodes standard 802.11 reason codes (1 Unspecified, 2 Prev Auth Invalid, 3 Station Leaving, 6 Class 2 Nonauth, 7 Class 3 Nonassoc, 8 Station Disassoc, 15 4-Way Handshake Timeout, etc.).
+  - **On-Device UI (`View::kDeauthForensics`):** Touch and Mini screens with live incident counters, attack classification badges, and victim MAC tracking.
+  - **SD Card CSV Logging:** Logs complete forensic event audits to `/awokxdag/deauth_forensics.csv` with timestamps and GPS geotags.
+  - **Telemetry & Real-Time Alerts:** Emits `$DEAUTH,type,targetMac,sourceMac,bssid,reason,seqJump,rssi,channel` over Serial and Web Bluetooth (`kSourceDeauthForensics = 8`, opcode 63 `kAxdCmdDeauthForensics`).
+  - **Remote Dashboard Tab (`control.html`):** Added dedicated "🛡️ Deauth Forensics" tab with real-time attack alert banners, live forensic event table, filter segments, and CSV export.
+
+- **Remote SD Card File Manager & Web Serial Transfer (`files.ino`, `link.ino`, `control.html`):**
+  - **In-Browser File Manager Tab (`tab-files`):** Dedicated "📁 SD Files" dashboard tab in the WebUI to browse, preview, and download capture files, wardrive CSVs, and logs directly from `/awokxdag` to your phone or PC.
+  - **Binary-Safe Base64 Chunked Streaming:** Emits on-the-fly Base64 encoded chunks (`$FILEDATA,<seq>,<total>,<data>`) over Web Bluetooth and Web Serial, ensuring binary safe packet capture (`.pcap`) and text log transfers without delimiter collisions or control character corruption.
+  - **Dual-Board ESP-NOW Relay:** File listing (`kAxdCmdFileList = 64`), download (`kAxdCmdFileGet = 65`), delete (`kAxdCmdFileDelete = 66`), and abort (`kAxdCmdFileAbort = 67`) requests are seamlessly bridged between the Screen Chip (holding the physical SD card) and the Orange Bridge Chip over ESP-NOW.
+  - **Web Serial Integration:** Added native Web Serial (`navigator.serial`) connection engine at 115200 baud to the WebUI header, enabling direct cable plug-and-play on desktop PCs and Android USB-OTG in addition to Web Bluetooth.
+  - **In-Browser Preview Drawer:** Instant in-browser preview with copy-to-clipboard for wardrive CSVs, handshake hashcat files, and text logs.
+  - **Live Progress & Throughput Tracker:** Shows animated progress bar, percentage completion, transfer speed in KB/s, and byte-level verification with automatic browser file saving.
+
 ## [1.6.4] - 2026-09-21
 
 ### Added
