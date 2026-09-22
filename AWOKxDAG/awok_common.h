@@ -842,6 +842,10 @@ void drawSpectrogram();
 void cycleSpectrogramMode();
 void handleSpectrogramBarTouch(int touchedIdx);
 bool exportSpectrogramToSd();
+void spectrogramLockStep(int dir);
+void spectrogramCycleBand();
+void spectrogramToggleHop();
+void spectrogramLockToChannel(uint8_t ch);
 
 // Network Tools types precede Arduino-generated function prototypes.
 enum class NetJob { None, Join, Hosts, Ports, Cameras, Printers, Sip, Upnp };
