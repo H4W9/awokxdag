@@ -385,7 +385,10 @@
         <div class="sub">AWOKxDAG BLE Control · Multi-Node Fleet &amp; Wardrive</div>
       </div>
     </div>
-    <button id="connect" class="primary btn-sm">+ Add ESP</button>
+    <div class="row" style="gap:8px;">
+      <button id="connect-serial" class="btn-sm">🔌 Web Serial</button>
+      <button id="connect" class="primary btn-sm">+ Add ESP</button>
+    </div>
   </header>
 
   <div id="nobt" class="banner" hidden>
@@ -422,6 +425,9 @@
     <button class="tab-btn" data-tab="tab-topology">🕸️ Topology</button>
     <button class="tab-btn" data-tab="tab-bleintel">🎧 BLE Intel</button>
     <button class="tab-btn" data-tab="tab-spectrogram">🌈 Spectrogram</button>
+    <button class="tab-btn" data-tab="tab-wifi6">⚡ Wi-Fi 6</button>
+    <button class="tab-btn" data-tab="tab-deauthforensics">🛡️ Deauth Forensics</button>
+    <button class="tab-btn" data-tab="tab-files">📁 SD Files</button>
     <button class="tab-btn" data-tab="tab-logs">📜 Terminal</button>
   </div>
 
@@ -651,6 +657,7 @@
         <button data-op="16">Probe Intel</button>
         <button data-op="17">Saved</button>
         <button data-op="56">Topology Map</button>
+        <button data-op="59">Wi-Fi 6 Intel</button>
       </div>
     </div>
 
@@ -677,6 +684,7 @@
         <button data-op="32">Karma Watch</button>
         <button data-op="33">Beacon Watch</button>
         <button data-op="34">Advanced Watch</button>
+        <button data-op="63">Deauth Forensics</button>
       </div>
     </div>
 
@@ -939,7 +947,227 @@
     </div>
   </div>
 
-  <!-- TAB 9: TERMINAL LOG -->
+  <!-- TAB 9: WI-FI 6 / 802.11AX OFDMA & BSS COLOR INTEL -->
+  <div id="tab-wifi6" class="tab-content" hidden>
+    <div class="card">
+      <div class="card-title">
+        <span>⚡ Wi-Fi 6 / 802.11ax OFDMA &amp; BSS Color Intelligence</span>
+        <div class="row" style="gap:6px; flex-wrap:wrap;">
+          <button data-op="59" class="btn-sm primary">▶️ Start Wi-Fi 6 Intel</button>
+          <button data-op="255" class="btn-sm stop">⏹️ Stop</button>
+          <button id="wifi6-btn-clear" class="btn-sm">Clear</button>
+          <button id="wifi6-btn-export-csv" class="btn-sm">Export CSV</button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics -->
+      <div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom:12px;">
+        <div class="stat-box">
+          <div class="k">Observed APs</div>
+          <div id="wifi6-total-count" class="v" style="color:var(--accent);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Wi-Fi 6 (802.11ax)</div>
+          <div id="wifi6-ax-count" class="v" style="color:var(--lime);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Legacy (Wi-Fi 4/5)</div>
+          <div id="wifi6-legacy-count" class="v" style="color:var(--muted);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Active BSS Colors</div>
+          <div id="wifi6-color-count" class="v" style="color:var(--purple);">0</div>
+        </div>
+      </div>
+
+      <!-- BSS Color Matrix (0-63) -->
+      <div style="background:#05070a; border:1px solid #30363d; border-radius:6px; padding:10px; margin-bottom:12px;">
+        <div class="row" style="justify-content:space-between; margin-bottom:6px;">
+          <div class="k" style="font-size:11px; color:var(--accent); font-weight:700;">802.11ax BSS COLOR COLLISION MAP (COLORS 1–63)</div>
+          <div class="k" style="font-size:11px; color:var(--muted);">Highlighted = Active BSSID in Air</div>
+        </div>
+        <div id="wifi6-color-matrix" style="display:grid; grid-template-columns: repeat(16, 1fr); gap:3px;">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="row" style="justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div class="seg" id="wifi6-filter-seg">
+          <button class="on" data-filter="all">All APs</button>
+          <button data-filter="ax">Wi-Fi 6 Only</button>
+          <button data-filter="24">2.4 GHz</button>
+          <button data-filter="5">5 GHz</button>
+        </div>
+      </div>
+
+      <!-- AP List -->
+      <div id="wifi6-list" class="net-list-scroll" style="max-height:400px;">
+        <div class="k" style="padding:14px; text-align:center;">Run Wi-Fi 6 Intel to decode 802.11ax High Efficiency beacons &amp; BSS color parameters.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 10: DEAUTH & DISASSOCIATION FORENSIC ANALYZER -->
+  <div id="tab-deauthforensics" class="tab-content" hidden>
+    <div class="card">
+      <div class="card-title">
+        <span>🛡️ Targeted Deauth &amp; Disassociation Forensic Analyzer</span>
+        <div class="row" style="gap:6px; flex-wrap:wrap;">
+          <button data-op="63" class="btn-sm primary">▶️ Start Forensics</button>
+          <button data-op="255" class="btn-sm stop">⏹️ Stop</button>
+          <button id="deauth-btn-clear" class="btn-sm">Clear</button>
+          <button id="deauth-btn-export-csv" class="btn-sm">Export CSV</button>
+        </div>
+      </div>
+
+      <!-- Attack Alert Banner -->
+      <div id="deauth-alert-banner" style="display:none; background:rgba(255,59,48,0.15); border:1px solid var(--bad); border-radius:6px; padding:10px 14px; margin-bottom:12px; color:var(--bad); font-weight:700;">
+        ⚠️ <span id="deauth-alert-text">ATTACK DETECTED IN THE AIR</span>
+      </div>
+
+      <!-- Quick Metrics -->
+      <div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom:12px;">
+        <div class="stat-box">
+          <div class="k">Total Attack Frames</div>
+          <div id="deauth-total-frames" class="v" style="color:var(--bad);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">2.4 GHz / 5 GHz</div>
+          <div id="deauth-band-count" class="v" style="color:var(--cyan);">0 / 0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Targeted Unicast</div>
+          <div id="deauth-targeted-count" class="v" style="color:var(--warn);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Broadcast Floods</div>
+          <div id="deauth-broadcast-count" class="v" style="color:var(--purple);">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="k">Seq Jumps (Spoofs)</div>
+          <div id="deauth-anomaly-count" class="v" style="color:var(--accent);">0</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="row" style="justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <div class="seg" id="deauth-filter-seg">
+          <button class="on" data-filter="all">All Events</button>
+          <button data-filter="targeted">Targeted Unicast</button>
+          <button data-filter="broadcast">Broadcast Floods</button>
+          <button data-filter="anomaly">Seq Anomaly</button>
+          <button data-filter="5ghz">5 GHz Only</button>
+          <button data-filter="24ghz">2.4 GHz Only</button>
+        </div>
+      </div>
+
+      <!-- Forensic Event Log Table -->
+      <div class="wd-table-wrap" style="max-height:380px;">
+        <table class="wd-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Target MAC</th>
+              <th>Source / Attacker</th>
+              <th>BSSID / AP</th>
+              <th>Reason Code</th>
+              <th>Δ Seq</th>
+              <th>RSSI</th>
+              <th>Ch</th>
+            </tr>
+          </thead>
+          <tbody id="deauth-event-tbody">
+            <tr><td colspan="9" style="text-align:center; color:var(--muted); padding:20px;">No deauth/disassociation frames captured yet. Run Forensics to monitor.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: SD CARD FILE MANAGER -->
+  <div id="tab-files" class="tab-content" hidden>
+    <div class="card">
+      <div class="card-title">
+        <span>📁 SD Card Files &amp; Captures</span>
+        <div class="row" style="gap:6px;">
+          <button id="files-refresh-btn" class="primary btn-sm">🔄 Refresh List</button>
+          <button id="files-abort-btn" class="btn-sm" style="display:none; background:var(--bad);">⏹️ Cancel</button>
+        </div>
+      </div>
+      <div class="sub" style="margin-bottom:12px; color:var(--muted); font-size:12px;">
+        Browse, preview, and download wardrive CSVs, handshake PCAPs, and logs directly to this device over BLE or Serial.
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:16px;">
+        <div class="stat-card">
+          <div id="files-stat-count" class="v">0</div>
+          <div class="l">Total Files</div>
+        </div>
+        <div class="stat-card">
+          <div id="files-stat-bytes" class="v">0 KB</div>
+          <div class="l">Total Storage</div>
+        </div>
+        <div class="stat-card">
+          <div id="files-stat-pipe" class="v">Idle</div>
+          <div class="l">Connection</div>
+        </div>
+        <div class="stat-card">
+          <div id="files-stat-rate" class="v">–</div>
+          <div class="l">Transfer Speed</div>
+        </div>
+      </div>
+
+      <!-- Active File Transfer Progress Card -->
+      <div id="file-progress-card" class="card" style="display:none; margin-bottom:16px; border:1px solid var(--accent); background:rgba(0,255,200,0.05);">
+        <div class="card-title" style="margin-bottom:6px;">
+          <span>Downloading: <b id="file-progress-name" style="color:var(--accent);">file.csv</b></span>
+          <span id="file-progress-pct" style="font-weight:700; color:var(--accent);">0%</span>
+        </div>
+        <div style="height:12px; background:rgba(255,255,255,0.1); border-radius:6px; overflow:hidden; margin:8px 0;">
+          <div id="file-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg, #00d2ff, #00f076); transition:width 0.15s ease;"></div>
+        </div>
+        <div class="row" style="justify-content:space-between; font-size:12px; color:var(--muted);">
+          <span id="file-progress-detail">0 / 0 bytes (Chunk 0/0)</span>
+          <span id="file-progress-speed">0.0 KB/s</span>
+        </div>
+      </div>
+
+      <!-- File Table -->
+      <div class="table-scroll">
+        <table id="files-table">
+          <thead>
+            <tr>
+              <th style="width:40px;">#</th>
+              <th>File Name</th>
+              <th style="width:140px;">Type</th>
+              <th style="width:100px;">Size</th>
+              <th style="width:190px; text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="files-tbody">
+            <tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">No files loaded. Connect and click <b>Refresh List</b> to browse the SD card.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- In-Browser File Preview Card -->
+      <div id="file-preview-card" class="card" style="display:none; margin-top:16px; border:1px solid rgba(255,255,255,0.15);">
+        <div class="card-title">
+          <span>File Preview: <code id="preview-filename" style="color:var(--accent);"></code></span>
+          <div class="row" style="gap:6px;">
+            <button id="preview-copy-btn" class="btn-sm">📋 Copy</button>
+            <button id="preview-dl-btn" class="btn-sm primary">⬇️ Download</button>
+            <button id="preview-close-btn" class="btn-sm">✕ Close</button>
+          </div>
+        </div>
+        <pre id="preview-content" style="max-height:280px; overflow:auto; background:rgba(0,0,0,0.4); padding:12px; font-family:var(--font-mono, monospace); font-size:11px; border-radius:4px; white-space:pre-wrap; word-break:break-all;"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 12: TERMINAL LOG -->
   <div id="tab-logs" class="tab-content" hidden>
     <div class="card">
       <div class="card-title">
@@ -961,7 +1189,7 @@ const OP_SELECT_WIFI = 51;
 const TARGET_OPS = [52,53,54,55,22,23];  // need a selected network
 const TGT_BRIDGE = 0, TGT_SCREEN = 1;
 let target = TGT_SCREEN;  // which chip runs the command
-const GPSSD_OPS = [42];  // Files -- screen-chip only (no SD on bridge)
+const GPSSD_OPS = [42, 64, 65, 66, 67];  // Files -- screen-chip only (no SD on bridge)
 
 // Friendly tool opcode dictionary for telemetry display
 const TOOL_NAMES = {
@@ -974,7 +1202,8 @@ const TOOL_NAMES = {
   31: "BLE Spam Watch", 32: "Karma Watch", 33: "Beacon Watch", 34: "Advanced Watch",
   40: "Locator", 41: "Status", 42: "Files", 43: "Fleet Wardrive", 50: "List Wi-Fi",
   51: "Select Wi-Fi", 52: "Deauth", 53: "Grab Handshake", 54: "Track RSSI", 55: "Fleet Hunter",
-  56: "Topology Map", 57: "BLE Intel", 58: "Spectrogram", 60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 255: "Home / Idle"
+  56: "Topology Map", 57: "BLE Intel", 58: "Spectrogram", 59: "Wi-Fi 6 Intel", 60: "Fleet Start", 61: "Fleet Join", 62: "Fleet Leave", 63: "Deauth Forensics",
+  64: "File List", 65: "File Download", 66: "File Delete", 67: "File Abort", 255: "Home / Idle"
 };
 
 const $ = (id) => document.getElementById(id);
@@ -2313,6 +2542,315 @@ function exportSpectrogramCsv() {
   log("exported spectrogram data (" + specChannels.size + " channels)");
 }
 
+// ---- Wi-Fi 6 / 802.11ax Intel State & Rendering ----
+const wifi6ApMap = new Map();
+let wifi6Filter = "all";
+
+function parseWifi6IntelRow(rowStr) {
+  try {
+    const p = rowStr.trim().split(",");
+    // $AXINTEL,bssid,ssid,channel,generation,bssColor,channelWidth,rssi
+    if (p.length < 8 || p[0] !== "$AXINTEL") return;
+    const bssid = p[1].toLowerCase();
+    const prev = wifi6ApMap.get(bssid);
+    const item = {
+      bssid: bssid,
+      ssid: p[2] || "<hidden>",
+      channel: parseInt(p[3], 10) || 1,
+      generation: parseInt(p[4], 10) || 4,
+      bssColor: parseInt(p[5], 10) || 0,
+      channelWidth: parseInt(p[6], 10) || 20,
+      rssi: parseInt(p[7], 10) || -127,
+      lastSeen: Date.now(),
+      sightings: prev ? prev.sightings + 1 : 1
+    };
+    wifi6ApMap.set(bssid, item);
+    updateWifi6Counts();
+    renderWifi6Matrix();
+    renderWifi6List();
+  } catch (e) {
+    console.error("Failed to parse Wi-Fi 6 intel row:", e);
+  }
+}
+
+function updateWifi6Counts() {
+  let ax = 0, legacy = 0;
+  const colors = new Set();
+  wifi6ApMap.forEach(d => {
+    if (d.generation >= 6) {
+      ax++;
+      if (d.bssColor > 0) colors.add(d.bssColor);
+    } else {
+      legacy++;
+    }
+  });
+  if ($("wifi6-total-count")) $("wifi6-total-count").textContent = wifi6ApMap.size;
+  if ($("wifi6-ax-count")) $("wifi6-ax-count").textContent = ax;
+  if ($("wifi6-legacy-count")) $("wifi6-legacy-count").textContent = legacy;
+  if ($("wifi6-color-count")) $("wifi6-color-count").textContent = colors.size;
+}
+
+function renderWifi6Matrix() {
+  const container = $("wifi6-color-matrix");
+  if (!container) return;
+  const colorCounts = new Array(64).fill(0);
+  wifi6ApMap.forEach(d => {
+    if (d.generation >= 6 && d.bssColor > 0 && d.bssColor <= 63) {
+      colorCounts[d.bssColor]++;
+    }
+  });
+  let html = "";
+  for (let c = 0; c <= 63; c++) {
+    const cnt = colorCounts[c];
+    let bg = "rgba(255,255,255,0.04)";
+    let border = "1px solid #21262d";
+    let textCol = "var(--muted)";
+    if (c === 0) {
+      html += `<div style="background:${bg}; border:${border}; border-radius:4px; padding:3px 2px; text-align:center; font-size:10px; color:${textCol};" title="Color 0: Disabled/None">0</div>`;
+      continue;
+    }
+    if (cnt > 0) {
+      const hue = Math.round(((c - 1) * 360) / 63);
+      bg = `hsla(${hue}, 85%, 45%, 0.25)`;
+      border = `1px solid hsl(${hue}, 85%, 55%)`;
+      textCol = `hsl(${hue}, 85%, 65%)`;
+    }
+    html += `<div style="background:${bg}; border:${border}; border-radius:4px; padding:3px 2px; text-align:center; font-size:10px; font-weight:700; color:${textCol}; cursor:pointer;" title="BSS Color ${c}: ${cnt} AP${cnt===1?'':'s'}">${c}</div>`;
+  }
+  container.innerHTML = html;
+}
+
+function renderWifi6List() {
+  const container = $("wifi6-list");
+  if (!container) return;
+  if (wifi6ApMap.size === 0) {
+    container.innerHTML = '<div class="k" style="padding:14px; text-align:center;">Run Wi-Fi 6 Intel to decode 802.11ax High Efficiency beacons &amp; BSS color parameters.</div>';
+    return;
+  }
+  const items = Array.from(wifi6ApMap.values()).filter(d => {
+    if (wifi6Filter === "ax") return d.generation >= 6;
+    if (wifi6Filter === "24") return d.channel <= 14;
+    if (wifi6Filter === "5") return d.channel > 14;
+    return true;
+  });
+  items.sort((a, b) => b.rssi - a.rssi);
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="k" style="padding:14px; text-align:center;">No APs matching filter "' + wifi6Filter + '".</div>';
+    return;
+  }
+
+  let html = "";
+  for (const it of items) {
+    const isAx = it.generation >= 6;
+    const genBadge = isAx ? '<span class="badge badge-lime" style="font-weight:800;">Wi-Fi 6</span>' :
+                            it.generation === 5 ? '<span class="badge badge-blue">Wi-Fi 5</span>' :
+                            '<span class="badge" style="background:#21262d; color:#8b949e;">Wi-Fi 4</span>';
+    let colorPill = "";
+    if (isAx) {
+      if (it.bssColor > 0) {
+        const hue = Math.round(((it.bssColor - 1) * 360) / 63);
+        colorPill = `<span style="background:hsla(${hue}, 85%, 45%, 0.2); border:1px solid hsl(${hue}, 85%, 55%); color:hsl(${hue}, 85%, 65%); padding:2px 7px; border-radius:4px; font-size:11px; font-weight:700;">Color ${it.bssColor}</span>`;
+      } else {
+        colorPill = `<span style="background:rgba(255,255,255,0.06); border:1px solid #30363d; color:var(--muted); padding:2px 7px; border-radius:4px; font-size:11px;">Color Off</span>`;
+      }
+    }
+    const widthBadge = `<span style="background:rgba(0,229,255,0.1); border:1px solid var(--accent); color:var(--accent); padding:2px 6px; border-radius:4px; font-size:11px;">${it.channelWidth} MHz</span>`;
+
+    html += `
+      <div class="net" style="cursor:default;">
+        <div class="nm">
+          <div class="row" style="gap:8px; align-items:center; margin-bottom:4px;">
+            <span class="ss">${it.ssid}</span>
+            ${genBadge}
+            ${colorPill}
+            ${widthBadge}
+          </div>
+          <div class="mb">
+            <span><b>BSSID:</b> ${it.bssid}</span>
+            <span><b>Ch:</b> ${it.channel} (${it.channel <= 14 ? "2.4G" : "5G"})</span>
+            <span><b>Sightings:</b> ${it.sightings}</span>
+          </div>
+        </div>
+        <div class="rs"><b>${it.rssi} dBm</b></div>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function exportWifi6Csv() {
+  if (wifi6ApMap.size === 0) { log("no Wi-Fi 6 intel data to export"); return; }
+  const header = "bssid,ssid,channel,generation,bss_color,channel_width_mhz,rssi,sightings\n";
+  const rows = Array.from(wifi6ApMap.values()).map(d =>
+    `"${d.bssid}","${d.ssid.replace(/"/g, '""')}",${d.channel},${d.generation},${d.bssColor},${d.channelWidth},${d.rssi},${d.sightings}`
+  );
+  const text = header + rows.join("\n") + "\n";
+  const blob = new Blob([text], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "wifi6_intel-" + Date.now() + ".csv";
+  a.click();
+  log("exported " + wifi6ApMap.size + " Wi-Fi 6 APs to CSV");
+}
+
+// ---- Targeted Deauth & Disassociation Forensic Analyzer State & Rendering ----
+const deauthEventsList = [];
+let deauthFilter = "all";
+let deauthTotalFramesCount = 0;
+let deauthTargetedFramesCount = 0;
+let deauthBroadcastFramesCount = 0;
+let deauthAnomalyFramesCount = 0;
+
+const DEAUTH_REASONS = {
+  1: "Unspecified",
+  2: "Prev Auth Invalid",
+  3: "Station Leaving",
+  4: "Inactivity",
+  5: "AP Over capacity",
+  6: "Class 2 Nonauth",
+  7: "Class 3 Nonassoc",
+  8: "Station Disassoc",
+  9: "Station Notassoc",
+  13: "Invalid Element",
+  14: "MIC Failure",
+  15: "4-Way Handshake Timeout",
+  16: "Group Key Timeout"
+};
+
+function parseDeauthForensicRow(rowStr) {
+  try {
+    const p = rowStr.trim().split(",");
+    // $DEAUTH,attackType,targetMac,sourceMac,bssid,reasonCode,seqJump,rssi,channel
+    if (p.length < 9 || p[0] !== "$DEAUTH") return;
+    const type = parseInt(p[1], 10) || 0;
+    const targetMac = p[2].toLowerCase();
+    const sourceMac = p[3].toLowerCase();
+    const bssid = p[4].toLowerCase();
+    const reasonCode = parseInt(p[5], 10) || 0;
+    const seqJump = parseInt(p[6], 10) || 0;
+    const rssi = parseInt(p[7], 10) || -127;
+    const channel = parseInt(p[8], 10) || 1;
+
+    deauthTotalFramesCount++;
+    if (type === 1) deauthBroadcastFramesCount++;
+    else if (type === 2) deauthTargetedFramesCount++;
+    if (seqJump > 10 || seqJump < -10) deauthAnomalyFramesCount++;
+
+    const item = {
+      type: type,
+      targetMac: targetMac,
+      sourceMac: sourceMac,
+      bssid: bssid,
+      reasonCode: reasonCode,
+      reasonDesc: DEAUTH_REASONS[reasonCode] || ("Code " + reasonCode),
+      seqJump: seqJump,
+      rssi: rssi,
+      channel: channel,
+      time: new Date().toLocaleTimeString()
+    };
+    deauthEventsList.unshift(item);
+    if (deauthEventsList.length > 200) deauthEventsList.pop();
+
+    updateDeauthCounts();
+    renderDeauthTable();
+
+    // Trigger alert banner
+    const banner = $("deauth-alert-banner");
+    const bannerText = $("deauth-alert-text");
+    if (banner && bannerText) {
+      banner.style.display = "block";
+      const typeLabel = type === 2 ? "TARGETED UNICAST ATTACK" : type === 1 ? "BROADCAST DEAUTH FLOOD" : "DISASSOCIATION FRAME";
+      bannerText.textContent = `ALERT: ${typeLabel} on Ch ${channel} | Victim: ${targetMac} (Reason: ${item.reasonDesc})`;
+    }
+  } catch (e) {
+    console.error("Failed to parse deauth forensic row:", e);
+  }
+}
+
+function updateDeauthCounts() {
+  if ($("deauth-total-frames")) $("deauth-total-frames").textContent = deauthTotalFramesCount;
+  if ($("deauth-targeted-count")) $("deauth-targeted-count").textContent = deauthTargetedFramesCount;
+  if ($("deauth-broadcast-count")) $("deauth-broadcast-count").textContent = deauthBroadcastFramesCount;
+  if ($("deauth-anomaly-count")) $("deauth-anomaly-count").textContent = deauthAnomalyFramesCount;
+  let c24 = 0, c5 = 0;
+  for (const ev of deauthEventsList) {
+    if (ev.channel > 14) c5++;
+    else c24++;
+  }
+  if ($("deauth-band-count")) $("deauth-band-count").textContent = `${c24} / ${c5}`;
+}
+
+function renderDeauthTable() {
+  const tbody = $("deauth-event-tbody");
+  if (!tbody) return;
+  if (deauthEventsList.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--muted); padding:20px;">No deauth/disassociation frames captured yet. Run Forensics to monitor.</td></tr>';
+    return;
+  }
+  const filtered = deauthEventsList.filter(ev => {
+    if (deauthFilter === "targeted") return ev.type === 2;
+    if (deauthFilter === "broadcast") return ev.type === 1;
+    if (deauthFilter === "anomaly") return ev.seqJump > 10 || ev.seqJump < -10;
+    if (deauthFilter === "5ghz") return ev.channel > 14;
+    if (deauthFilter === "24ghz") return ev.channel <= 14;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--muted); padding:20px;">No events matching filter "' + deauthFilter + '".</td></tr>';
+    return;
+  }
+
+  let html = "";
+  for (const ev of filtered) {
+    let typeBadge = "";
+    if (ev.type === 2) {
+      typeBadge = '<span class="badge badge-warn" style="font-weight:700;">TARGETED</span>';
+    } else if (ev.type === 1) {
+      typeBadge = '<span class="badge badge-purple" style="font-weight:700;">BROADCAST</span>';
+    } else {
+      typeBadge = '<span class="badge" style="background:#21262d; color:#8b949e;">DISASSOC</span>';
+    }
+
+    let seqBadge = `<span style="color:var(--muted);">${ev.seqJump >= 0 ? "+" : ""}${ev.seqJump}</span>`;
+    if (ev.seqJump > 10 || ev.seqJump < -10) {
+      seqBadge = `<span class="badge badge-bad" style="font-weight:800;" title="High Sequence Gap: Likely Forged Packet!">${ev.seqJump >= 0 ? "+" : ""}${ev.seqJump} ⚠️</span>`;
+    }
+
+    const bandBadge = ev.channel > 14
+      ? `<span class="badge" style="background:#09334f; color:var(--cyan); font-weight:700;">Ch ${ev.channel} (5G)</span>`
+      : `<span class="badge" style="background:#21262d; color:#8b949e;">Ch ${ev.channel} (2.4G)</span>`;
+
+    html += `<tr>
+      <td style="color:var(--muted);">${ev.time}</td>
+      <td>${typeBadge}</td>
+      <td style="font-family:monospace; color:var(--warn);">${ev.targetMac}</td>
+      <td style="font-family:monospace; color:var(--bad);">${ev.sourceMac}</td>
+      <td style="font-family:monospace; color:var(--accent);">${ev.bssid}</td>
+      <td><span title="Code ${ev.reasonCode}">${ev.reasonDesc}</span></td>
+      <td>${seqBadge}</td>
+      <td style="font-variant-numeric:tabular-nums;">${ev.rssi} dBm</td>
+      <td>${bandBadge}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+function exportDeauthCsv() {
+  if (deauthEventsList.length === 0) { log("no deauth forensic events to export"); return; }
+  const header = "time,attack_type,target_mac,source_mac,bssid,reason_code,reason_desc,seq_jump,rssi,channel,band\n";
+  const rows = deauthEventsList.map(ev =>
+    `"${ev.time}",${ev.type},"${ev.targetMac}","${ev.sourceMac}","${ev.bssid}",${ev.reasonCode},"${ev.reasonDesc}",${ev.seqJump},${ev.rssi},${ev.channel},"${ev.channel > 14 ? '5GHz' : '2.4GHz'}"`
+  );
+  const text = header + rows.join("\n") + "\n";
+  const blob = new Blob([text], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "deauth_forensics-" + Date.now() + ".csv";
+  a.click();
+  log("exported " + deauthEventsList.length + " deauth forensic events to CSV");
+}
+
 function parseResult(dv, c){
   if (dv.byteLength >= 1 && dv.getUint8(0) === 2) {  // wardrive WiGLE CSV row (text)
     let row = "";
@@ -2346,6 +2884,24 @@ function parseResult(dv, c){
     parseSpectrogramRow(row);
     return;
   }
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 7) {  // Wi-Fi 6 Intel telemetry (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseWifi6IntelRow(row);
+    return;
+  }
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 8) {  // Deauth Forensics telemetry (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseDeauthForensicRow(row);
+    return;
+  }
+  if (dv.byteLength >= 1 && dv.getUint8(0) === 9) {  // SD File Manager (text)
+    let row = "";
+    for (let k = 1; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseFileMessage(row);
+    return;
+  }
   if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x48 && dv.getUint8(2) === 0x55 && dv.getUint8(3) === 0x4E && dv.getUint8(4) === 0x4E) {
     let row = "";
     for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
@@ -2368,6 +2924,24 @@ function parseResult(dv, c){
     let row = "";
     for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
     parseBleIntelRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x41 && dv.getUint8(2) === 0x58 && dv.getUint8(3) === 0x49 && dv.getUint8(4) === 0x4E) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseWifi6IntelRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x44 && dv.getUint8(2) === 0x45 && dv.getUint8(3) === 0x41 && dv.getUint8(4) === 0x55) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseDeauthForensicRow(row);
+    return;
+  }
+  if (dv.byteLength >= 5 && dv.getUint8(0) === 0x24 && dv.getUint8(1) === 0x46 && dv.getUint8(2) === 0x49 && dv.getUint8(3) === 0x4C && dv.getUint8(4) === 0x45) {
+    let row = "";
+    for (let k = 0; k < dv.byteLength; k++) row += String.fromCharCode(dv.getUint8(k));
+    parseFileMessage(row);
     return;
   }
   if (dv.byteLength < 12) return;            // [source][index][count][rssi][ch][auth][bssid6][ssid]
@@ -2772,6 +3346,13 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
       renderSpectrumBarChart();
       renderWaterfallSpectrogram();
     }
+    if (btn.dataset.tab === "tab-wifi6") {
+      renderWifi6Matrix();
+      renderWifi6List();
+    }
+    if (btn.dataset.tab === "tab-deauthforensics") {
+      renderDeauthTable();
+    }
   });
 });
 
@@ -2785,7 +3366,7 @@ updateEnabled(); renderConns(); renderStats(); initTopoCanvas();
 async function downloadWardriveCsv(){
   if (!wardriveRows.length){ log("no wardrive rows yet"); return; }
   const header =
-    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.4,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
+    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.5,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
     "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\n";
   const text = header + wardriveRows.join("\n") + "\n";
   const fname = "wardrive-" + Date.now() + ".csv";
@@ -2854,6 +3435,45 @@ document.querySelectorAll("#spec-filter-seg button").forEach(btn => {
   });
 });
 
+$("wifi6-btn-clear").addEventListener("click", () => {
+  wifi6ApMap.clear();
+  updateWifi6Counts();
+  renderWifi6Matrix();
+  renderWifi6List();
+  log("Wi-Fi 6 intel cleared");
+});
+$("wifi6-btn-export-csv").addEventListener("click", exportWifi6Csv);
+document.querySelectorAll("#wifi6-filter-seg button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#wifi6-filter-seg button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    wifi6Filter = btn.dataset.filter;
+    renderWifi6List();
+  });
+});
+
+$("deauth-btn-clear").addEventListener("click", () => {
+  deauthEventsList.length = 0;
+  deauthTotalFramesCount = 0;
+  deauthTargetedFramesCount = 0;
+  deauthBroadcastFramesCount = 0;
+  deauthAnomalyFramesCount = 0;
+  updateDeauthCounts();
+  renderDeauthTable();
+  const banner = $("deauth-alert-banner");
+  if (banner) banner.style.display = "none";
+  log("Deauth forensics cleared");
+});
+$("deauth-btn-export-csv").addEventListener("click", exportDeauthCsv);
+document.querySelectorAll("#deauth-filter-seg button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#deauth-filter-seg button").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    deauthFilter = btn.dataset.filter;
+    renderDeauthTable();
+  });
+});
+
 // Canvas tap/click to lock channel on board
 const specCanvas = $("spec-bar-canvas");
 if (specCanvas) {
@@ -2906,9 +3526,434 @@ if ($("spec-btn-band-tag")) {
     log("[spectrogram] Cycle Band");
   });
 }
-$("clear-log").addEventListener("click", () => {
-  $("log").textContent = "";
+// ---- Web Serial Support --------------------------------------------------
+let serialPort = null;
+let serialReader = null;
+let serialConnected = false;
+
+async function toggleSerial() {
+  if (!navigator.serial) {
+    alert("Web Serial is not supported in this browser. Please use Chrome, Edge, or Opera on PC/Mac/Linux or Android USB-OTG.");
+    return;
+  }
+  if (serialConnected) {
+    try {
+      if (serialReader) await serialReader.cancel();
+      if (serialPort) await serialPort.close();
+    } catch(e) {}
+    serialConnected = false;
+    serialPort = null;
+    serialReader = null;
+    if ($("connect-serial")) {
+      $("connect-serial").textContent = "🔌 Web Serial";
+      $("connect-serial").classList.remove("primary");
+    }
+    if ($("files-stat-pipe")) $("files-stat-pipe").textContent = anyConnected() ? "BLE" : "Idle";
+    log("Web Serial disconnected");
+    return;
+  }
+  try {
+    serialPort = await navigator.serial.requestPort();
+    await serialPort.open({ baudRate: 115200 });
+    serialConnected = true;
+    if ($("connect-serial")) {
+      $("connect-serial").textContent = "🔌 Disconnect USB";
+      $("connect-serial").classList.add("primary");
+    }
+    if ($("files-stat-pipe")) $("files-stat-pipe").textContent = "Serial (USB)";
+    log("Web Serial connected at 115200 baud");
+    readSerialLoop();
+  } catch(e) {
+    log("Web Serial connect error: " + e.message);
+  }
+}
+
+async function sendSerialCommand(op, arg = 0) {
+  if (!serialPort || !serialPort.writable) return false;
+  try {
+    const encoder = new TextEncoder();
+    const writer = serialPort.writable.getWriter();
+    await writer.write(encoder.encode(`$CMD,${op},${arg}\n`));
+    writer.releaseLock();
+    log(`[Serial CMD] Op ${op} arg ${arg}`);
+    return true;
+  } catch(e) {
+    log("Serial write error: " + e.message);
+    return false;
+  }
+}
+
+async function readSerialLoop() {
+  const textDecoder = new TextDecoderStream();
+  const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
+  const reader = textDecoder.readable.getReader();
+  serialReader = reader;
+  let lineBuf = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      lineBuf += value;
+      let lines = lineBuf.split("\n");
+      lineBuf = lines.pop();
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        handleIncomingLine(line);
+      }
+    }
+  } catch(e) {
+    if (serialConnected) log("Serial stream error: " + e.message);
+  } finally {
+    try { reader.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleIncomingLine(line) {
+  if (line.startsWith("$FILE")) {
+    parseFileMessage(line);
+    return;
+  }
+  if (line.startsWith("$AXINTEL,")) {
+    parseWifi6IntelRow(line);
+    return;
+  }
+  if (line.startsWith("$DEAUTH,")) {
+    parseDeauthForensicRow(line);
+    return;
+  }
+  if (line.startsWith("$SPEC,")) {
+    parseSpectrogramRow(line);
+    return;
+  }
+  if (line.startsWith("$BLEINTEL,")) {
+    parseBleIntelRow(line);
+    return;
+  }
+  if (line.startsWith("$HUNT,")) {
+    parseHuntRow(line);
+    return;
+  }
+  if (line.startsWith("$TOPO,")) {
+    parseTopologyRow(line);
+    return;
+  }
+  if (line.startsWith("$WigleWifi") || line.startsWith("WigleWifi")) {
+    parseWardriveRow(line);
+    return;
+  }
+  log(line);
+}
+
+// ---- SD Card File Manager ------------------------------------------------
+let sdFileList = [];
+let activeFileDownload = null;
+let currentPreviewFile = null;
+
+function formatBytes(bytes) {
+  if (bytes === 0) return "0 B";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+function getFileTypeInfo(name) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".csv")) return { type: "Wardrive CSV", icon: "📊", mime: "text/csv", canPreview: true };
+  if (lower.endsWith(".pcap")) return { type: "Packet Capture", icon: "🤝", mime: "application/vnd.tcpdump.pcap", canPreview: false };
+  if (lower.endsWith(".22000") || lower.endsWith(".16800")) return { type: "PMKID Hashcat", icon: "🔑", mime: "text/plain", canPreview: true };
+  if (lower.endsWith(".txt") || lower.endsWith(".log")) return { type: "Text Log", icon: "📄", mime: "text/plain", canPreview: true };
+  if (lower.endsWith(".json")) return { type: "JSON Data", icon: "📋", mime: "application/json", canPreview: true };
+  return { type: "Binary / Capture", icon: "💾", mime: "application/octet-stream", canPreview: false };
+}
+
+function renderFilesTable() {
+  const tbody = $("files-tbody");
+  if (!tbody) return;
+  if (sdFileList.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">No files found in /awokxdag. Tap <b>Refresh List</b> to scan SD card.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = "";
+  sdFileList.forEach((file) => {
+    const tr = document.createElement("tr");
+    const info = getFileTypeInfo(file.name);
+    tr.innerHTML = `
+      <td style="color:var(--muted); font-size:12px;">${file.index + 1}</td>
+      <td><b>${info.icon} ${file.name}</b></td>
+      <td><span class="badge badge-blue" style="font-size:11px;">${info.type}</span></td>
+      <td><code>${formatBytes(file.size)}</code></td>
+      <td style="text-align:right;">
+        <div class="row" style="justify-content:flex-end; gap:6px;">
+          ${info.canPreview ? `<button class="btn-sm btn-preview" data-idx="${file.index}">👁️ Preview</button>` : ""}
+          <button class="btn-sm primary btn-download" data-idx="${file.index}">⬇️ Download</button>
+          <button class="btn-sm btn-delete" data-idx="${file.index}" style="background:var(--bad);">🗑️</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll(".btn-download").forEach(b => {
+    b.addEventListener("click", () => {
+      const idx = Number(b.dataset.idx);
+      startFileDownload(idx, false);
+    });
+  });
+  tbody.querySelectorAll(".btn-preview").forEach(b => {
+    b.addEventListener("click", () => {
+      const idx = Number(b.dataset.idx);
+      startFileDownload(idx, true);
+    });
+  });
+  tbody.querySelectorAll(".btn-delete").forEach(b => {
+    b.addEventListener("click", () => {
+      const idx = Number(b.dataset.idx);
+      const f = sdFileList.find(x => x.index === idx);
+      if (f && confirm(`Are you sure you want to permanently delete ${f.name} from the SD card?`)) {
+        deleteFileRemote(idx);
+      }
+    });
+  });
+}
+
+function requestFileList() {
+  sdFileList = [];
+  if ($("files-tbody")) {
+    $("files-tbody").innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Scanning /awokxdag on SD card…</td></tr>';
+  }
+  if ($("files-stat-count")) $("files-stat-count").textContent = "…";
+  if ($("files-stat-bytes")) $("files-stat-bytes").textContent = "…";
+  if (serialConnected) {
+    sendSerialCommand(64, 0);
+  } else {
+    sendOp(64, 0);
+  }
+  log("Requested SD file list");
+}
+
+function startFileDownload(index, isPreview = false) {
+  const file = sdFileList.find(f => f.index === index);
+  if (!file) return;
+  activeFileDownload = {
+    index,
+    name: file.name,
+    size: file.size,
+    totalChunks: Math.ceil(file.size / 96) || 1,
+    chunks: new Map(),
+    startTime: Date.now(),
+    bytesReceived: 0,
+    isPreview
+  };
+  if ($("file-progress-card")) $("file-progress-card").style.display = "block";
+  if ($("file-progress-name")) $("file-progress-name").textContent = file.name + (isPreview ? " (Preview)" : "");
+  if ($("file-progress-pct")) $("file-progress-pct").textContent = "0%";
+  if ($("file-progress-bar")) $("file-progress-bar").style.width = "0%";
+  if ($("file-progress-detail")) $("file-progress-detail").textContent = `0 / ${formatBytes(file.size)} (Chunk 0/${activeFileDownload.totalChunks})`;
+  if ($("file-progress-speed")) $("file-progress-speed").textContent = "0.0 KB/s";
+  if ($("files-abort-btn")) $("files-abort-btn").style.display = "inline-block";
+
+  if (serialConnected) {
+    sendSerialCommand(65, index);
+  } else {
+    sendOp(65, index);
+  }
+  log(`Starting download of ${file.name} (${formatBytes(file.size)})`);
+}
+
+function abortFileDownload() {
+  if (serialConnected) {
+    sendSerialCommand(67, 0);
+  } else {
+    sendOp(67, 0);
+  }
+  log("Sent abort command for active file transfer");
+  resetDownloadProgress();
+}
+
+function deleteFileRemote(index) {
+  if (serialConnected) {
+    sendSerialCommand(66, index);
+  } else {
+    sendOp(66, index);
+  }
+  log(`Requested deletion of file index ${index}`);
+}
+
+function updateDownloadProgress(seq, total) {
+  if (!activeFileDownload) return;
+  const pct = Math.min(100, Math.round((seq / total) * 100));
+  const elapsedSec = (Date.now() - activeFileDownload.startTime) / 1000;
+  const estBytes = Math.min(activeFileDownload.size, seq * 96);
+  const speedKb = elapsedSec > 0 ? (estBytes / 1024 / elapsedSec).toFixed(1) : "0.0";
+
+  if ($("file-progress-pct")) $("file-progress-pct").textContent = pct + "%";
+  if ($("file-progress-bar")) $("file-progress-bar").style.width = pct + "%";
+  if ($("file-progress-detail")) $("file-progress-detail").textContent = `${formatBytes(estBytes)} / ${formatBytes(activeFileDownload.size)} (Chunk ${seq}/${total})`;
+  if ($("file-progress-speed")) $("file-progress-speed").textContent = `${speedKb} KB/s`;
+  if ($("files-stat-rate")) $("files-stat-rate").textContent = `${speedKb} KB/s`;
+}
+
+function resetDownloadProgress() {
+  activeFileDownload = null;
+  if ($("file-progress-card")) $("file-progress-card").style.display = "none";
+  if ($("files-abort-btn")) $("files-abort-btn").style.display = "none";
+  if ($("files-stat-rate")) $("files-stat-rate").textContent = "Idle";
+}
+
+function finishFileDownload(name, size) {
+  if (!activeFileDownload) return;
+  const total = activeFileDownload.totalChunks;
+  let byteArrays = [];
+  let totalBytes = 0;
+  for (let i = 1; i <= total; i++) {
+    const b64 = activeFileDownload.chunks.get(i) || "";
+    if (b64.length) {
+      try {
+        const binaryString = atob(b64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let j = 0; j < len; j++) {
+          bytes[j] = binaryString.charCodeAt(j);
+        }
+        byteArrays.push(bytes);
+        totalBytes += len;
+      } catch(e) {
+        log("Base64 decode chunk error: " + e.message);
+      }
+    }
+  }
+  const fileInfo = getFileTypeInfo(name);
+  const blob = new Blob(byteArrays, { type: fileInfo.mime });
+  log(`File download complete: ${name} (${formatBytes(totalBytes)})`);
+
+  if (activeFileDownload.isPreview) {
+    displayFilePreview(name, blob);
+  } else {
+    downloadBlob(blob, name);
+  }
+  resetDownloadProgress();
+}
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 2000);
+  log(`Saved ${filename} to browser downloads`);
+}
+
+async function displayFilePreview(name, blob) {
+  try {
+    const text = await blob.text();
+    currentPreviewFile = { name, text, blob };
+    if ($("preview-filename")) $("preview-filename").textContent = name;
+    if ($("preview-content")) $("preview-content").textContent = text.slice(0, 50000) + (text.length > 50000 ? "\n\n… [preview truncated; download for full file]" : "");
+    if ($("file-preview-card")) $("file-preview-card").style.display = "block";
+    log(`Previewing ${name} (${text.length} characters)`);
+  } catch(e) {
+    alert("Could not render preview: " + e.message);
+  }
+}
+
+function parseFileMessage(msg) {
+  if (msg.startsWith("$FILELIST_END,")) {
+    const parts = msg.split(",");
+    const count = parseInt(parts[1], 10) || sdFileList.length;
+    const bytes = parseInt(parts[2], 10) || 0;
+    if ($("files-stat-count")) $("files-stat-count").textContent = count;
+    if ($("files-stat-bytes")) $("files-stat-bytes").textContent = formatBytes(bytes);
+    renderFilesTable();
+    log(`SD File listing complete: ${count} file(s), ${formatBytes(bytes)}`);
+    return;
+  }
+  if (msg.startsWith("$FILELIST,")) {
+    const parts = msg.split(",");
+    if (parts.length >= 5) {
+      const idx = parseInt(parts[1], 10);
+      const total = parseInt(parts[2], 10);
+      const size = parseInt(parts[3], 10);
+      const name = parts.slice(4).join(",");
+      const existing = sdFileList.find(f => f.index === idx);
+      if (existing) {
+        existing.name = name; existing.size = size;
+      } else {
+        sdFileList.push({ index: idx, name, size });
+      }
+      sdFileList.sort((a, b) => a.index - b.index);
+      renderFilesTable();
+    }
+    return;
+  }
+  if (msg.startsWith("$FILEDATA,")) {
+    const parts = msg.split(",");
+    if (parts.length >= 4) {
+      const seq = parseInt(parts[1], 10);
+      const total = parseInt(parts[2], 10);
+      const b64 = parts.slice(3).join(",");
+      if (activeFileDownload) {
+        activeFileDownload.chunks.set(seq, b64);
+        activeFileDownload.totalChunks = total;
+        updateDownloadProgress(seq, total);
+      }
+    }
+    return;
+  }
+  if (msg.startsWith("$FILEDONE,")) {
+    const parts = msg.split(",");
+    const name = parts[1] || (activeFileDownload ? activeFileDownload.name : "file");
+    const size = parseInt(parts[2], 10) || 0;
+    finishFileDownload(name, size);
+    return;
+  }
+  if (msg.startsWith("$FILEABORT,")) {
+    const parts = msg.split(",");
+    log("File transfer aborted: " + (parts[1] || ""));
+    resetDownloadProgress();
+    return;
+  }
+  if (msg.startsWith("$FILEDELETE,")) {
+    const parts = msg.split(",");
+    log(`File delete ${parts[1]}: ${parts[2] || ""}`);
+    requestFileList();
+    return;
+  }
+  if (msg.startsWith("$FILEERR,")) {
+    const parts = msg.split(",");
+    log("SD file error: " + parts.slice(1).join(","));
+    resetDownloadProgress();
+    alert("SD Card Error: " + parts.slice(1).join(","));
+    return;
+  }
+}
+
+if ($("connect-serial")) $("connect-serial").addEventListener("click", toggleSerial);
+if ($("files-refresh-btn")) $("files-refresh-btn").addEventListener("click", requestFileList);
+if ($("files-abort-btn")) $("files-abort-btn").addEventListener("click", abortFileDownload);
+if ($("preview-close-btn")) $("preview-close-btn").addEventListener("click", () => {
+  if ($("file-preview-card")) $("file-preview-card").style.display = "none";
 });
+if ($("preview-copy-btn")) $("preview-copy-btn").addEventListener("click", () => {
+  if (currentPreviewFile && currentPreviewFile.text) {
+    navigator.clipboard.writeText(currentPreviewFile.text).then(() => log("Copied file preview to clipboard"));
+  }
+});
+if ($("preview-dl-btn")) $("preview-dl-btn").addEventListener("click", () => {
+  if (currentPreviewFile && currentPreviewFile.blob) {
+    downloadBlob(currentPreviewFile.blob, currentPreviewFile.name);
+  }
+});
+if ($("clear-log")) {
+  $("clear-log").addEventListener("click", () => {
+    $("log").textContent = "";
+  });
+}
 
 $("connect").addEventListener("click", addEsp);
 document.querySelectorAll("button[data-op]").forEach(b =>
