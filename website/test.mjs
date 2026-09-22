@@ -76,6 +76,12 @@ test('Remote wardrive export stays aligned with firmware WiGLE 1.6 rows', async 
   assert.match(html, /connect-serial/);
   assert.match(html, /toggleSerial/);
   assert.match(html, /startFileDownload/);
+  // iPhone / iOS Web Share & Ready Card support
+  assert.match(html, /file-ready-card/);
+  assert.match(html, /ready-share-btn/);
+  assert.match(html, /shareReadyFile/);
+  assert.match(html, /isIosDevice/);
+  assert.match(html, /ready-copy-btn/);
 });
 
 test('Markdown supports tables, safe HTML, stable unique anchors, and document links', () => {
