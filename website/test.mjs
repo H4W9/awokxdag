@@ -44,6 +44,12 @@ test('Remote wardrive export stays aligned with firmware WiGLE 1.6 rows', async 
   assert.match(html, /tab-spectrogram/);
   assert.match(html, /parseSpectrogramRow/);
   assert.match(html, /spec-waterfall-canvas/);
+  assert.match(html, /spec-board-subtitle/);
+  assert.match(html, /spec-board-subheader/);
+  assert.match(html, /spec-btn-band/);
+  assert.match(html, /spec-btn-ch-prev/);
+  assert.match(html, /spec-btn-ch-next/);
+  assert.match(html, /specPaletteLut/);
 });
 
 test('Markdown supports tables, safe HTML, stable unique anchors, and document links', () => {

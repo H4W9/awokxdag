@@ -1028,7 +1028,20 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
     case kAxdCmdSecurityAudit: startSecurityAudit(); break;
     case kAxdCmdTrackers: startTrackerScan(); break;
     case kAxdCmdBleIntel: startBleIntel(); break;
-    case kAxdCmdSpectrogram: startSpectrogram(); break;
+    case kAxdCmdSpectrogram:
+      if (!spectrogramActive) startSpectrogram();
+      if (arg == 201) {
+        spectrogramLockStep(-1);
+      } else if (arg == 202) {
+        spectrogramLockStep(1);
+      } else if (arg == 203) {
+        spectrogramCycleBand();
+      } else if (arg == 204) {
+        spectrogramToggleHop();
+      } else if (arg >= 1 && arg <= 165) {
+        spectrogramLockToChannel(arg);
+      }
+      break;
     case kAxdCmdHarvester: startHarvester(); break;
     case kAxdCmdProbeIntel: startProbeIntel(); break;
     case kAxdCmdSaved: drawSavedNetworks(); break;

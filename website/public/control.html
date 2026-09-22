@@ -860,6 +860,53 @@
         </div>
       </div>
 
+      <!-- Board Display Emulator Screen -->
+      <div style="background:#000000; border:2px solid var(--accent); border-radius:8px; padding:12px; margin-bottom:14px; box-shadow: 0 0 15px rgba(0,229,255,0.12);">
+        <!-- Board Header Bar -->
+        <div class="row" style="justify-content:space-between; align-items:center; border-bottom:1px solid #21262d; padding-bottom:8px; margin-bottom:8px;">
+          <div>
+            <div style="font-weight:800; letter-spacing:1px; font-size:15px; color:#ffffff;">SPECTROGRAM</div>
+            <div id="spec-board-subtitle" style="font-size:12px; color:var(--accent); font-family:monospace;">2.4 GHz | Ch 1 (0%)</div>
+          </div>
+          <div class="row" style="gap:8px; align-items:center;">
+            <span style="font-size:11px; color:var(--muted); text-transform:uppercase;">Band Mode:</span>
+            <button id="spec-btn-band-tag" class="badge badge-blue" style="cursor:pointer; font-size:13px; font-weight:800; padding:4px 12px; border-radius:6px; border:1px solid var(--accent);" title="Cycle Band (2.4G / 2+5G / 5G / LCK)">2.4</button>
+          </div>
+        </div>
+
+        <!-- Board Subheader Bar -->
+        <div id="spec-board-subheader" style="font-family:monospace; font-size:12px; color:#c9d1d9; background:#0d1117; padding:6px 10px; border-radius:4px; margin-bottom:10px; border:1px solid #30363d;">
+          Ch 1 (2.4G) &nbsp; Peak: -127 dBm &nbsp; Noise: -95 dBm &nbsp; SNR: 0 dB
+        </div>
+
+        <!-- Instantaneous Spectrum Resampled Bar Chart -->
+        <div style="margin-bottom:10px; background:#05070a; border:1px solid #30363d; border-radius:6px; padding:8px;">
+          <div class="row" style="justify-content:space-between; margin-bottom:4px;">
+            <div class="k" style="font-size:11px; color:var(--accent); font-weight:700;">INSTANTANEOUS RF SPECTRUM &amp; PEAK HOLD (CLICK TO LOCK)</div>
+            <div class="k" style="font-size:11px; color:var(--muted);">Peak-hold white · Active channel cursor</div>
+          </div>
+          <canvas id="spec-bar-canvas" width="800" height="130" style="width:100%; height:130px; display:block; cursor:crosshair;"></canvas>
+        </div>
+
+        <!-- Scrolling Waterfall Heat Map -->
+        <div style="background:#05070a; border:1px solid #30363d; border-radius:6px; padding:8px; margin-bottom:10px;">
+          <div class="row" style="justify-content:space-between; margin-bottom:4px;">
+            <div class="k" style="font-size:11px; color:var(--lime); font-weight:700;">REAL-TIME THERMAL WATERFALL SPECTROGRAM (TIME ↓)</div>
+            <div class="k" style="font-size:11px; color:var(--muted);">28-slice smooth bilinear thermal gradient</div>
+          </div>
+          <canvas id="spec-waterfall-canvas" width="800" height="280" style="width:100%; height:280px; display:block;"></canvas>
+        </div>
+
+        <!-- Board 4-Button Controller Footer (Mirrors On-Device Footer) -->
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+          <button id="spec-btn-back" class="btn-sm stop" style="padding:10px; font-weight:700; text-align:center; font-size:13px;" title="Stop Spectrogram & Return Home">⏹️ Back</button>
+          <button id="spec-btn-ch-prev" class="btn-sm" style="padding:10px; font-weight:700; text-align:center; font-size:13px;" title="Step to Previous Channel">◀ Ch-</button>
+          <button id="spec-btn-ch-next" class="btn-sm" style="padding:10px; font-weight:700; text-align:center; font-size:13px;" title="Step to Next Channel">Ch+ ▶</button>
+          <button id="spec-btn-band" class="btn-sm primary" style="padding:10px; font-weight:700; text-align:center; font-size:13px;" title="Cycle Band (2.4G / All / 5G)">🔀 Band</button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics & Filters -->
       <div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom:12px;">
         <div class="stat-box">
           <div class="k">Peak Channel</div>
@@ -886,20 +933,8 @@
           <button data-filter="5g">5 GHz Only</button>
         </div>
         <div class="k" style="font-size:11px;">
-          Live RF channel duty cycle saturation, frame density, and 2D waterfall spectrogram
+          Synchronized live RF airtime duty cycle saturation, frame density, and 2D waterfall spectrogram
         </div>
-      </div>
-
-      <!-- Instantaneous Spectrum Bar Chart -->
-      <div style="margin-bottom:10px; background:#0d1117; border:1px solid var(--border); border-radius:6px; padding:8px;">
-        <div class="k" style="font-size:11px; margin-bottom:4px; color:var(--accent);">INSTANTANEOUS CHANNEL DUTY CYCLE (%) &amp; PEAK HOLD</div>
-        <canvas id="spec-bar-canvas" width="800" height="120" style="width:100%; height:120px; display:block;"></canvas>
-      </div>
-
-      <!-- Scrolling Waterfall Canvas -->
-      <div style="background:#0d1117; border:1px solid var(--border); border-radius:6px; padding:8px;">
-        <div class="k" style="font-size:11px; margin-bottom:4px; color:var(--lime);">REAL-TIME THERMAL WATERFALL SPECTROGRAM (TIME ↓)</div>
-        <canvas id="spec-waterfall-canvas" width="800" height="300" style="width:100%; height:300px; display:block;"></canvas>
       </div>
     </div>
   </div>
@@ -2010,9 +2045,45 @@ const specChannels = new Map();
 const specWaterfall = [];
 let specFilter = "all";
 let specTotalPacketsMonitored = 0;
+let specBoardMode = 0; // 0: 2.4 GHz, 1: 2.4+5 GHz, 2: Locked, 3: 5 GHz
+let specCurrentActiveChannel = 1;
+let specCurrentDuty = 0;
+let specCurrentPeakRssi = -127;
+let specCurrentNoise = -95;
+
 const SPEC_24_CHANNELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 const SPEC_5_CHANNELS = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
 const ALL_SPEC_CHANNELS = [...SPEC_24_CHANNELS, ...SPEC_5_CHANNELS];
+
+// Exact 8-stop RGB thermal palette from firmware spectrogram.ino
+const SPEC_PALETTE_STOPS = [
+  [  6,  10,  72],  // 0%  (deep navy)
+  [  0,  36, 168],  // 14% (deep blue)
+  [  0, 140, 240],  // 28% (cyan)
+  [  0, 230, 190],  // 42% (teal)
+  [ 60, 255,  60],  // 57% (green)
+  [240, 240,   0],  // 71% (yellow)
+  [255, 140,   0],  // 85% (orange)
+  [255,  40,  40]   // 100% (bright red)
+];
+const specPaletteLut = new Array(101);
+const specGammaLut = new Uint8Array(101);
+for (let v = 0; v <= 100; v++) {
+  const t = (v / 100) * 7.0;
+  let i = Math.floor(t);
+  if (i > 6) i = 6;
+  const f = t - i;
+  const r = Math.round(SPEC_PALETTE_STOPS[i][0] + (SPEC_PALETTE_STOPS[i+1][0] - SPEC_PALETTE_STOPS[i][0]) * f);
+  const g = Math.round(SPEC_PALETTE_STOPS[i][1] + (SPEC_PALETTE_STOPS[i+1][1] - SPEC_PALETTE_STOPS[i][1]) * f);
+  const b = Math.round(SPEC_PALETTE_STOPS[i][2] + (SPEC_PALETTE_STOPS[i+1][2] - SPEC_PALETTE_STOPS[i][2]) * f);
+  specPaletteLut[v] = `rgb(${r},${g},${b})`;
+  specGammaLut[v] = Math.min(100, Math.round(Math.pow(v / 100, 0.72) * 100));
+}
+
+function specColorMap(duty) {
+  const v = Math.min(100, Math.max(0, Math.round(duty)));
+  return specPaletteLut[v] || "rgb(6,10,72)";
+}
 
 function getVisibleChannels() {
   if (specFilter === "2.4g") return SPEC_24_CHANNELS;
@@ -2023,7 +2094,7 @@ function getVisibleChannels() {
 function parseSpectrogramRow(rowStr) {
   try {
     const p = rowStr.trim().split(",");
-    // $SPEC,ch,dutyPct,pkts,peakRssi,noise,mgmt,ctrl,data
+    // $SPEC,ch,dutyPct,pkts,peakRssi,noise,mgmt,ctrl,data[,mode]
     if (p.length < 9 || p[0] !== "$SPEC") return;
     const ch = parseInt(p[1], 10);
     const duty = Math.min(100, Math.max(0, parseInt(p[2], 10) || 0));
@@ -2033,6 +2104,15 @@ function parseSpectrogramRow(rowStr) {
     const mgmt = parseInt(p[6], 10) || 0;
     const ctrl = parseInt(p[7], 10) || 0;
     const data = parseInt(p[8], 10) || 0;
+    if (p.length >= 10) {
+      const m = parseInt(p[9], 10);
+      if (!isNaN(m)) specBoardMode = m;
+    }
+
+    specCurrentActiveChannel = ch;
+    specCurrentDuty = duty;
+    specCurrentPeakRssi = peakRssi;
+    specCurrentNoise = noise;
 
     const prev = specChannels.get(ch);
     const peakHold = prev ? Math.max(prev.peakHold || 0, duty) : duty;
@@ -2040,6 +2120,7 @@ function parseSpectrogramRow(rowStr) {
 
     specTotalPacketsMonitored += pkts;
     updateSpectrogramMetrics();
+    updateSpectrogramBoardHeader();
     pushWaterfallSlice();
     renderSpectrumBarChart();
     renderWaterfallSpectrogram();
@@ -2055,17 +2136,27 @@ function pushWaterfallSlice() {
     return stat ? stat.duty : 0;
   });
   specWaterfall.unshift(row);
-  if (specWaterfall.length > 80) specWaterfall.pop();
+  if (specWaterfall.length > 28) specWaterfall.pop();
 }
 
-function specColorMap(duty) {
-  if (duty <= 0) return "#0d1117";
-  if (duty < 15) return "#1f6feb";
-  if (duty < 35) return "#38bdf8";
-  if (duty < 55) return "#2ea043";
-  if (duty < 75) return "#e3b341";
-  if (duty < 90) return "#f85149";
-  return "#d299ff";
+function updateSpectrogramBoardHeader() {
+  const modeNames = ["2.4 GHz", "2.4+5 GHz", "Locked", "5 GHz"];
+  const modeTags = ["2.4", "2+5", "LCK", "5G"];
+  const modeLabel = modeNames[specBoardMode] || "2.4 GHz";
+  const tagLabel = modeTags[specBoardMode] || "2.4";
+
+  if ($("spec-board-subtitle")) {
+    $("spec-board-subtitle").textContent = `${modeLabel} | Ch ${specCurrentActiveChannel} (${specCurrentDuty}%)`;
+  }
+  if ($("spec-btn-band-tag")) {
+    $("spec-btn-band-tag").textContent = tagLabel;
+    $("spec-btn-band-tag").className = (specBoardMode === 2) ? "badge badge-warn" : "badge badge-blue";
+  }
+  if ($("spec-board-subheader")) {
+    const band = specCurrentActiveChannel <= 14 ? "2.4G" : "5G";
+    const snr = specCurrentPeakRssi > -127 ? (specCurrentPeakRssi - specCurrentNoise) : 0;
+    $("spec-board-subheader").textContent = `Ch ${specCurrentActiveChannel} (${band}) · Peak: ${specCurrentPeakRssi} dBm · Noise: ${specCurrentNoise} dBm · SNR: ${snr} dB`;
+  }
 }
 
 function updateSpectrogramMetrics() {
@@ -2092,34 +2183,81 @@ function renderSpectrumBarChart() {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
-  ctx.fillStyle = "#0d1117";
+  ctx.fillStyle = "#05070a";
   ctx.fillRect(0, 0, w, h);
 
   const channels = getVisibleChannels();
   const n = channels.length;
   if (n === 0) return;
-  const barW = Math.max(2, (w / n) - 3);
 
-  for (let i = 0; i < n; i++) {
-    const ch = channels[i];
-    const stat = specChannels.get(ch);
-    const duty = stat ? stat.duty : 0;
-    const peak = stat ? stat.peakHold : 0;
-    const x = i * (w / n) + 2;
-    const barH = (duty / 100) * (h - 24);
-    const peakY = h - 18 - (peak / 100) * (h - 24);
+  const sBaseY = h - 22;
+  const sMaxH = h - 28;
+  const span = (n > 1) ? (n - 1) : 1;
 
-    ctx.fillStyle = specColorMap(duty);
-    ctx.fillRect(x, h - 18 - barH, barW, barH);
+  // Resample across pixels continuously like firmware specResampleRow
+  for (let px = 0; px < w; px++) {
+    const pos = (px / (w - 1)) * span;
+    const i0 = Math.floor(pos);
+    const i1 = Math.min(n - 1, i0 + 1);
+    const frac = pos - i0;
 
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(x, peakY, barW, 2);
+    const s0 = specChannels.get(channels[i0]);
+    const s1 = specChannels.get(channels[i1]);
+    const v0 = s0 ? s0.duty : 0;
+    const v1 = s1 ? s1.duty : 0;
+    const dutyVal = Math.round(v0 + (v1 - v0) * frac);
 
-    if (n <= 14 || i % 2 === 0) {
-      ctx.fillStyle = "#8b949e";
-      ctx.font = "9px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(ch, x + barW / 2, h - 4);
+    const p0 = s0 ? (s0.peakHold || 0) : 0;
+    const p1 = s1 ? (s1.peakHold || 0) : 0;
+    const peakVal = Math.round(p0 + (p1 - p0) * frac);
+
+    // Dynamic energy bar
+    const barH = Math.min(sMaxH, Math.max(0, Math.round((dutyVal / 100) * sMaxH)));
+    if (barH > 0) {
+      ctx.fillStyle = specColorMap(dutyVal);
+      ctx.fillRect(px, sBaseY - barH, 1, barH);
+    }
+
+    // Peak hold marker line
+    const peakH = Math.min(sMaxH, Math.max(0, Math.round((peakVal / 100) * sMaxH)));
+    if (peakVal > 0) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(px, sBaseY - peakH, 1, 2);
+    }
+  }
+
+  // Baseline divider
+  ctx.fillStyle = "#30363d";
+  ctx.fillRect(0, sBaseY, w, 1);
+
+  // Active channel cursor line
+  const curIdx = channels.indexOf(specCurrentActiveChannel);
+  if (curIdx >= 0) {
+    const mx = Math.round((curIdx / span) * (w - 1));
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(mx, sBaseY - sMaxH);
+    ctx.lineTo(mx, sBaseY);
+    ctx.stroke();
+  }
+
+  // Channel axis ticks & labels
+  ctx.font = "10px monospace";
+  ctx.textAlign = "center";
+  if (n <= 14) {
+    for (let i = 0; i < n; i++) {
+      const ch = channels[i];
+      const x = Math.round((i / span) * (w - 1));
+      ctx.fillStyle = (ch === specCurrentActiveChannel) ? "var(--accent)" : "#8b949e";
+      ctx.fillText(ch, x, h - 6);
+    }
+  } else {
+    for (let i = 0; i < n; i += 2) {
+      const ch = channels[i];
+      const x = Math.round((i / span) * (w - 1));
+      ctx.fillStyle = (ch === specCurrentActiveChannel) ? "var(--accent)" : "#8b949e";
+      ctx.fillText(ch, x, h - 6);
     }
   }
 }
@@ -2129,25 +2267,32 @@ function renderWaterfallSpectrogram() {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const w = canvas.width, h = canvas.height;
-  ctx.fillStyle = "#06090e";
+  ctx.fillStyle = "#05070a";
   ctx.fillRect(0, 0, w, h);
 
   const channels = getVisibleChannels();
   const numCh = channels.length;
   if (numCh === 0 || specWaterfall.length === 0) return;
 
-  const cellW = w / numCh;
-  const numRows = specWaterfall.length;
-  const cellH = Math.max(2, Math.min(6, h / numRows));
+  const wRows = specWaterfall.length;
+  const spanX = (numCh > 1) ? (numCh - 1) : 1;
+  const cellH = Math.max(3, h / 28);
 
-  for (let r = 0; r < numRows; r++) {
+  // Draw smoothly resampled rows with gamma grading
+  for (let r = 0; r < wRows; r++) {
     const row = specWaterfall[r];
-    const y = r * cellH;
+    const y = Math.round(r * cellH);
     if (y > h) break;
-    for (let c = 0; c < numCh; c++) {
-      const val = row[c] || 0;
-      ctx.fillStyle = specColorMap(val);
-      ctx.fillRect(c * cellW, y, cellW, cellH - 0.5);
+
+    for (let px = 0; px < w; px += 2) {
+      const posX = (px / (w - 1)) * spanX;
+      const c0 = Math.floor(posX);
+      const c1 = Math.min(numCh - 1, c0 + 1);
+      const fx = posX - c0;
+      const val = row[c0] + (row[c1] - row[c0]) * fx;
+      const gammaVal = specGammaLut[Math.min(100, Math.max(0, Math.round(val)))];
+      ctx.fillStyle = specPaletteLut[gammaVal] || "rgb(6,10,72)";
+      ctx.fillRect(px, y, 2, Math.ceil(cellH));
     }
   }
 }
@@ -2708,6 +2853,59 @@ document.querySelectorAll("#spec-filter-seg button").forEach(btn => {
     renderWaterfallSpectrogram();
   });
 });
+
+// Canvas tap/click to lock channel on board
+const specCanvas = $("spec-bar-canvas");
+if (specCanvas) {
+  specCanvas.addEventListener("click", e => {
+    const rect = specCanvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const channels = getVisibleChannels();
+    const n = channels.length;
+    if (n === 0) return;
+    const span = (n > 1) ? (n - 1) : 1;
+    const idx = Math.min(n - 1, Math.max(0, Math.round((clickX / rect.width) * span)));
+    const lockedCh = channels[idx];
+    log(`[spectrogram] Lock to Channel ${lockedCh}`);
+    specBoardMode = 2; // Locked
+    specCurrentActiveChannel = lockedCh;
+    sendOp(58, lockedCh);
+    updateSpectrogramBoardHeader();
+    renderSpectrumBarChart();
+  });
+}
+
+// Board 4-button controller listeners
+if ($("spec-btn-back")) {
+  $("spec-btn-back").addEventListener("click", () => {
+    sendOp(255);
+    log("[spectrogram] stopped");
+  });
+}
+if ($("spec-btn-ch-prev")) {
+  $("spec-btn-ch-prev").addEventListener("click", () => {
+    sendOp(58, 201);
+    log("[spectrogram] Ch- step");
+  });
+}
+if ($("spec-btn-ch-next")) {
+  $("spec-btn-ch-next").addEventListener("click", () => {
+    sendOp(58, 202);
+    log("[spectrogram] Ch+ step");
+  });
+}
+if ($("spec-btn-band")) {
+  $("spec-btn-band").addEventListener("click", () => {
+    sendOp(58, 203);
+    log("[spectrogram] Cycle Band");
+  });
+}
+if ($("spec-btn-band-tag")) {
+  $("spec-btn-band-tag").addEventListener("click", () => {
+    sendOp(58, 203);
+    log("[spectrogram] Cycle Band");
+  });
+}
 $("clear-log").addEventListener("click", () => {
   $("log").textContent = "";
 });
