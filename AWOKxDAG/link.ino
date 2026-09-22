@@ -12,6 +12,12 @@
 // into linkPacketQueue (single-producer / single-consumer ring). All parsing and
 // SD/UI work happens in updateLink() on the main loop.
 
+#include <atomic>
+
+// The Wi-Fi callback acknowledges readiness while the main loop waits, without
+// draining/re-entering the command queue or starting a second file operation.
+static std::atomic<uint32_t> linkFileWaitingToken{0};
+
 // Channel the split scanner is currently dwelling on (reported in TELEM). Local
 // to this tab; every link.ino function is defined after it.
 static uint8_t linkScanChannel = 0;
@@ -35,6 +41,52 @@ void onLinkRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   memcpy(&magic, data, 4);
   if (magic != kLinkMagic) return;
   const uint8_t type = data[5];
+
+  if (type == kLinkMsgFileChunkAck && len == static_cast<int>(sizeof(AxdFileChunkAck))) {
+    AxdFileChunkAck ack;
+    memcpy(&ack, data, sizeof(ack));
+    if (ack.version == kLinkProtoVersion) linkReceiveFileAck(ack.token, ack.seq);
+    return;
+  }
+#ifdef AWOK_HEADLESS
+  if (type == kLinkMsgFileChunk && len == static_cast<int>(sizeof(AxdFileChunkMsg))) {
+    AxdFileChunkMsg chunk;
+    memcpy(&chunk, data, sizeof(chunk));
+    if (chunk.version == kLinkProtoVersion) bridgeQueueFileChunk(chunk);
+    return;
+  }
+#endif
+  // A reliable sender blocks the main loop while waiting. Abort must bypass
+  // the command queue so it can stop that wait immediately.
+  if (type == kLinkMsgCommand && len == static_cast<int>(sizeof(LinkPacket)) &&
+      linkReliableFileActive()) {
+    LinkPacket command;
+    memcpy(&command, data, sizeof(command));
+    if (command.version == kLinkProtoVersion &&
+        static_cast<uint8_t>(command.reserved) == kAxdCmdFileAbort) {
+      linkAbortFileStream();
+      return;
+    }
+  }
+
+  if (type == kLinkMsgFileReady && len == static_cast<int>(sizeof(LinkPacket))) {
+    LinkPacket ready;
+    memcpy(&ready, data, sizeof(ready));
+    if (ready.version != kLinkProtoVersion || ready.sessionId == 0) return;
+#ifdef AWOK_HEADLESS
+    if (ready.flags == kLinkFileReadyRequest &&
+        bridgeFileReceiverReady(ready.sessionId)) {
+      ready.flags = kLinkFileReadyAck;
+      memcpy(ready.srcMac, linkSelfMac, 6);
+      esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&ready), sizeof(ready));
+    }
+#endif
+    if (ready.flags == kLinkFileReadyAck) {
+      uint32_t expected = ready.sessionId;
+      linkFileWaitingToken.compare_exchange_strong(expected, 0);
+    }
+    return;
+  }
 
   // Fleet roster is larger than a LinkPacket: hand it to updateLink via a
   // single-slot mailbox. Filter before writing the slot so a foreign fleet
@@ -867,6 +919,38 @@ void linkFinalizePairing(const LinkPacket& p) {
   if (currentView == View::kLinkWardrive) drawLinkWardrive();
 }
 
+// The bridge can deliver a command in its first burst, then spend the next
+// ~200 ms sweeping other channels. Wait for a matching ACK after it parks back
+// on channel 1, before opening/streaming a file or returning a listing/error.
+static bool linkWaitForFileReceiver(const LinkPacket& command) {
+  linkFileWaitingToken.store(command.sessionId);
+  WiFi.scanDelete();  // an asynchronous scan must not move us off the rendezvous
+  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+  LinkPacket ready;
+  ready.type = kLinkMsgFileReady;
+  ready.flags = kLinkFileReadyRequest;
+  ready.sessionId = command.sessionId;
+  ready.code = command.code;
+  memcpy(ready.srcMac, linkSelfMac, 6);
+  const uint32_t started = millis();
+  uint32_t lastRequest = started - kLinkFileReadyRetryMs;
+  while (millis() - started < kLinkFileReadyTimeoutMs) {
+    if (linkFileWaitingToken.load() == 0) return true;
+    const uint32_t now = millis();
+    if (now - lastRequest >= kLinkFileReadyRetryMs) {
+      lastRequest = now;
+      esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&ready), sizeof(ready));
+    }
+    delay(1);
+  }
+  linkFileWaitingToken.store(0);
+  Serial.println("$FILEERR,RECEIVER_NOT_READY");
+  AxdFileDoneMsg done;
+  done.status = 1;
+  esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&done), sizeof(done));
+  return false;
+}
+
 void linkHandlePacket(const LinkQueueItem& item) {
   const LinkPacket& p = item.pkt;
   if (p.magic != kLinkMagic || p.version != kLinkProtoVersion) return;
@@ -955,8 +1039,16 @@ void linkHandlePacket(const LinkQueueItem& item) {
     static uint16_t lastCmdSeq = 0;
     if (remoteActive && p.code != lastCmdSeq) {
       lastCmdSeq = p.code;
-      linkDispatchCommand(static_cast<uint8_t>(p.reserved & 0xFF),
-                          static_cast<uint8_t>(p.reserved >> 8));
+      const uint8_t op = static_cast<uint8_t>(p.reserved & 0xFF);
+      const bool fileReply = op == kAxdCmdFileList || op == kAxdCmdFileGet ||
+                             op == kAxdCmdFileGetReliable || op == kAxdCmdFileDelete;
+      if (fileReply && (p.flags & kLinkCommandWaitFileReady) &&
+          (p.sessionId == 0 || !linkWaitForFileReceiver(p))) return;
+      if (op == kAxdCmdFileGetReliable) {
+        if (p.sessionId != 0) linkStreamFileReliable(static_cast<uint8_t>(p.reserved >> 8), p.sessionId);
+      } else {
+        linkDispatchCommand(op, static_cast<uint8_t>(p.reserved >> 8));
+      }
     }
     return;
   }

@@ -116,6 +116,8 @@ void handleTouch() {
       return;
     }
     if (y >= 44 && y < 84) {
+      reconCategory = -1;
+      reconPage = 0;
       drawReconMenu();
     } else if (y >= 88 && y < 128) {
       drawAttacksMenu();
@@ -147,21 +149,33 @@ void handleTouch() {
     if (y < kFooterTop) {
       const int start = reconPage * kMenuPerPage;
       for (int row = 0; row < kMenuPerPage; ++row) {
-        const int index = start + row;
-        if (index >= kReconItemCount) break;
+        const int position = start + row;
+        if (position >= reconVisibleItemCount()) break;
         const int by = kMenuFirstY + row * kMenuRowPitch;
         if (y >= by && y < by + kMenuRowHeight) {
-          launchReconItem(index);
+          if (reconCategory < 0) {
+            if (position == kReconCategoryCount - 1) {
+              openNetworkTools();
+            } else {
+              reconCategory = position;
+              reconPage = 0;
+              drawReconMenu();
+            }
+          } else {
+            launchReconItem(reconItemIndex(position));
+          }
           return;
         }
       }
       return;
     }
     const int pages = reconPageCount();
-    if (pages <= 1) {
+    if ((pages <= 1 && x >= 120) || reconCategory < 0) {
       drawHome();
-    } else if (x < 80) {
-      drawHome();
+    } else if (pages <= 1 || x < 80) {
+      reconCategory = -1;
+      reconPage = 0;
+      drawReconMenu();
     } else if (x < 160) {
       reconPage = (reconPage - 1 + pages) % pages;
       drawReconMenu();

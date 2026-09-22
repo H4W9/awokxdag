@@ -5,6 +5,40 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-22
+
+### Fixed
+
+- Bridge BLE results now send an explicit payload per notification instead of
+  scheduling an update to a shared characteristic value, preventing concurrent
+  telemetry/file writes from replacing pending data. Transfer logs now identify
+  ESP-NOW enqueue failures, BLE enqueue failures and MTU, and the exact chunk
+  whose browser ACK exhausted its retries.
+- BLE file preview/download now uses browser acknowledgments for every chunk
+  and completion message, with up to 10 attempts per chunk. Lost ESP-NOW packets,
+  BLE notifications, and ACKs are retried without duplicating file bytes. Transfer
+  tokens reject stale packets; 32-bit sequences support captures above 6 MB.
+  Reliable file notifications are queued outside the Wi-Fi callback, and bridge
+  scanning pauses during the transfer. Requires both chips and the updated control
+  page; legacy USB file streaming remains available.
+- Remote file preview/download now waits for a receiver-ready handshake after
+  the bridge finishes its command channel sweep. Previously the screen started
+  sending immediately while the bridge hopped away, consistently losing the
+  first chunks containing the wardrive CSV header. Update both chips for this
+  handshake; USB transfers are unchanged.
+- Wardrive SD sessions now verify the complete WiGLE metadata and column-header
+  write before accepting rows, including Split/Fleet Link sessions. Failed header
+  writes disable SD logging and remove the incomplete new file.
+- Remote SD downloads reject missing, malformed, or short chunks instead of
+  silently saving partial files (which could omit the wardrive header). Reading
+  an active wardrive file flushes its buffered SD data first.
+
+### Changed
+
+- Replaced Recon's four mixed pages with Wi-Fi, Bluetooth, RF & Packets, and
+  Field Tools groups, plus direct access to Network Tools. Each group fits on
+  one menu page; returning from a tool preserves its group on Touch and Mini.
+
 ## [1.6.5] - 2026-09-22
 
 ### Added
@@ -921,7 +955,9 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.4...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/dagnazty/awokxdag/compare/v1.6.5...v1.7.0
+[1.6.5]: https://github.com/dagnazty/awokxdag/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/dagnazty/awokxdag/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/dagnazty/awokxdag/compare/v1.6.1...v1.6.3
 [1.6.1]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...v1.6.1

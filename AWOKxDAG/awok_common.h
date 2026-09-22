@@ -53,8 +53,9 @@ bool radiosCoexist = true;     // C5: Wi-Fi + BLE run resident together
 extern volatile bool g_bridgePhoneConnected;
 void bridgeBleBegin();
 void bridgeNotifyStatus(uint8_t source, const uint8_t* body, size_t len);
-void bridgeNotifyResult(uint8_t source, const uint8_t* body, size_t len);
+bool bridgeNotifyResult(uint8_t source, const uint8_t* body, size_t len);
 void bridgeServiceCommand();
+bool bridgeFileReceiverReady(uint32_t token);
 #else
 #ifdef AWOK_CLASSIC_ESP32
 bool radiosCoexist = false;
@@ -113,7 +114,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.6.5";
+constexpr char kVersion[] = "1.7.0";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;
@@ -514,6 +515,14 @@ enum class View {
 // The wire format (LinkPacket, magic, keys, msg types, command opcodes) lives in
 // link_protocol.h so the headless bridge chip shares it verbatim.
 #include "link_protocol.h"
+void linkStreamFileReliable(uint8_t index, uint32_t token);
+void linkReceiveFileAck(uint32_t token, uint32_t seq);
+bool linkReliableFileActive();
+#ifdef AWOK_HEADLESS
+void bridgeQueueFileChunk(const AxdFileChunkMsg& chunk);
+void bridgeServiceFileTransfer();
+bool bridgeFileTransferActive();
+#endif
 constexpr uint32_t kLinkRendezvousMs = 1000;  // beat period (live feel)
 constexpr uint32_t kLinkWindowMs = 300;       // link-channel dwell per beat
 constexpr uint32_t kLinkHelloIntervalMs = 250;

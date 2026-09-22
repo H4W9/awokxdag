@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.6.5
+- **Version:** 1.7.0
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -96,7 +96,7 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
 
 ### Network Tools (connected LAN)
 
-Open **Recon → page 3 → Network Tools**. These tools send discovery/service
+Open **Recon → Network Tools**. These tools send discovery/service
 queries on the Wi-Fi network you join; they require a normal network connection.
 
 - **Connect / Wi-Fi** — choose an AP from the last scan (or rescan), enter its
@@ -183,6 +183,10 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   Streams base64 chunks on-the-fly (`$FILEDATA`), supports PCAP handshakes and wardrive CSVs,
   provides an in-browser preview drawer with one-click copy, and automatically bridges requests
   between Screen Chip and Bridge Chip over ESP-NOW.
+  For reliable previews/downloads, update both chips to 1.7.0 and reload the updated
+  control page. BLE transfers wait for the bridge to finish its channel sweep,
+  then require a browser acknowledgment for each chunk and retry missing chunks.
+  Bridge scanning pauses during the transfer. USB retains its existing stream.
 
 ### GPS
 - **GPS status** — fix, satellites, coordinates, speed, HDOP, plus a baud cycler
@@ -269,9 +273,12 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 Home  page 1: Recon | Attacks | Monitor | GPS | Status      (footer: About >)
       page 2: About  (name, version, board, authorized-use notice)
 
-Recon page 1: Wi-Fi Scan | Channel Map | BLE Scan | Clients | Packet Mon | WPS Scan
-      page 2: Hidden SSID | Cameras | Security Audit | BLE Trackers | Harvester | Probe Intel
-      page 3: Saved | Network Tools
+Recon:        Wi-Fi | Bluetooth | RF & Packets | Field Tools | Network Tools
+  Wi-Fi:      Wi-Fi Scan | Saved | WPS Scan | Hidden SSID | Security Audit | Wi-Fi 6 Intel
+  Bluetooth:  BLE Scan | BLE Trackers | BLE Intel
+  RF & Packets: Channel Map | Spectrogram | Packet Mon
+  Field Tools: Clients | Cameras | Harvester | Probe Intel | Fleet Hunter | Topology Map
+  (tool Back returns to its group; Groups returns to the Recon picker)
 
 Network Tools page 1: Connect / Wi-Fi | Discover Hosts | TCP Ports | LAN Cameras |
                       Printers | SIP Services
@@ -281,7 +288,7 @@ Attacks:      Beacon Flood | Evil Portal | Evil Twin | Probe Lure
               (Deauth / Handshake launch from a scanned Wi-Fi result)
 
 Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch | Karma Watch |
-              Beacon Watch | Auth Flood | Advanced Watch
+              Beacon Watch | Auth Flood | Advanced Watch | Deauth Forensics
 
 GPS:          status screen -> Baud / Drive / Link
 Link:         unpaired -> Pair / Solo;  paired -> Unpair / Start (Split Wardrive)

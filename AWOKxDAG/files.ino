@@ -1,3 +1,5 @@
+#include <atomic>
+
 // AWOKxDAG — capture / SD file manager (compiled as part of the sketch; see
 // awok_common.h)
 //
@@ -103,7 +105,7 @@ void openFilesManager() {
   drawFilesManager();
 }
 
-volatile bool g_fileStreamAborted = false;
+std::atomic<bool> g_fileStreamAborted{false};
 
 void linkAbortFileStream() {
   g_fileStreamAborted = true;
@@ -220,6 +222,8 @@ void linkStreamFileData(uint8_t index) {
 
   const String path = fileFullPath(fileRows[index].name);
   const String base = fileBaseName(fileRows[index].name);
+  // A live wardrive keeps its writer open; publish buffered bytes before reading.
+  if (path == g_wardriveCsvPath) flushWardriveCsv();
   File file = SD.open(path.c_str(), FILE_READ);
   if (!file) {
     char err[64];
@@ -322,6 +326,94 @@ void linkStreamFileData(uint8_t index) {
     esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&done), sizeof(done));
   }
 #endif
+}
+
+// Only an ACK from the browser advances the SD reader. Receiving at the bridge
+// or successfully queueing a BLE notification alone does not count as delivery.
+static std::atomic<uint32_t> fileReliableToken{0};
+static std::atomic<uint32_t> fileReliableWaitingSeq{0};
+
+bool linkReliableFileActive() { return fileReliableToken.load() != 0; }
+
+void linkReceiveFileAck(uint32_t token, uint32_t seq) {
+  if (token == 0 || token != fileReliableToken.load()) return;
+  uint32_t expected = seq;
+  fileReliableWaitingSeq.compare_exchange_strong(expected, 0);
+}
+
+static bool fileSendReliable(AxdFileChunkMsg& chunk) {
+  fileReliableWaitingSeq.store(chunk.seq);
+  for (int attempt = 0; attempt < kFileChunkAttempts && !g_fileStreamAborted; ++attempt) {
+    esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+    const esp_err_t sent = esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&chunk), sizeof(chunk));
+    if (sent != ESP_OK) {
+      Serial.printf("[files] ESP-NOW enqueue failed: seq=%lu error=%d\n",
+                    static_cast<unsigned long>(chunk.seq), static_cast<int>(sent));
+    }
+    const uint32_t started = millis();
+    while (millis() - started < kFileChunkRetryMs && !g_fileStreamAborted) {
+      if (fileReliableWaitingSeq.load() == 0) return true;
+      delay(1);  // ACKs arrive in onLinkRecv, independent of the blocked main loop
+    }
+    Serial.printf("[files] retry seq=%lu attempt=%d\n",
+                  static_cast<unsigned long>(chunk.seq), attempt + 1);
+  }
+  return false;
+}
+
+void linkStreamFileReliable(uint8_t index, uint32_t token) {
+  g_fileStreamAborted = false;
+  fileReliableToken.store(token);
+  AxdFileChunkMsg chunk;
+  chunk.token = token;
+  chunk.seq = 1;
+  File file;
+  String base;
+  const char* error = nullptr;
+  char errorDetail[96] = {};
+  if (!ensureSdCard()) error = "SD unavailable";
+  if (!error && (fileRowCount == 0 || index >= fileRowCount)) scanSdFiles();
+  if (!error && index >= fileRowCount) error = "File not found";
+  if (!error) {
+    const String path = fileFullPath(fileRows[index].name);
+    base = fileBaseName(fileRows[index].name);
+    if (path == g_wardriveCsvPath) flushWardriveCsv();
+    file = SD.open(path.c_str(), FILE_READ);
+    if (!file) error = "Cannot open file";
+  }
+  if (!error) {
+    chunk.totalBytes = file.size();
+    Serial.printf("[files] reliable download: %s, %lu bytes, token=%lu\n",
+                  base.c_str(), static_cast<unsigned long>(chunk.totalBytes),
+                  static_cast<unsigned long>(token));
+    uint32_t remaining = chunk.totalBytes;
+    uint8_t raw[kFileChunkBytes];
+    do {
+      const size_t wanted = remaining < sizeof(raw) ? remaining : sizeof(raw);
+      const size_t got = wanted ? file.read(raw, wanted) : 0;
+      if (got != wanted) { error = "SD read failed"; break; }
+      encodeBase64Chunk(raw, got, chunk.data, sizeof(chunk.data));
+      if (!fileSendReliable(chunk)) {
+        snprintf(errorDetail, sizeof(errorDetail), "No browser ACK for chunk %lu after %d attempts",
+                 static_cast<unsigned long>(chunk.seq), kFileChunkAttempts);
+        error = errorDetail;
+        break;
+      }
+      remaining -= got;
+      ++chunk.seq;
+    } while (remaining && !g_fileStreamAborted);
+    file.close();
+  }
+  if (!g_fileStreamAborted) {
+    chunk.kind = error ? 2 : 1;
+    strncpy(chunk.data, error ? error : base.c_str(), sizeof(chunk.data) - 1);
+    // Use a distinct sequence for an error after a timed-out data chunk, so a
+    // delayed data ACK cannot acknowledge the error/completion message.
+    if (error) ++chunk.seq;
+    fileSendReliable(chunk);
+  }
+  fileReliableToken.store(0);
+  fileReliableWaitingSeq.store(0);
 }
 
 void linkDeleteFile(uint8_t index) {

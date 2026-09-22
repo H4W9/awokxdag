@@ -40,7 +40,18 @@ enum LinkMsgType : uint8_t {
   kLinkMsgFileEntry = 14,             // screen -> bridge: one file listing entry
   kLinkMsgFileData = 15,              // screen -> bridge: one chunk of file payload
   kLinkMsgFileDone = 16,              // screen -> bridge: file operation complete / status
+  kLinkMsgFileChunk = 18,             // reliable file data/completion (browser ACK)
+  kLinkMsgFileChunkAck = 19,          // browser -> bridge -> screen
+  kLinkMsgFileReady = 17,             // request/ACK: bridge is parked for file replies
 };
+
+// File commands from a supporting bridge wait for its receiver-ready ACK.
+// sessionId carries a fresh nonce; existing unflagged commands keep their behavior.
+constexpr uint8_t kLinkCommandWaitFileReady = 0x80;
+constexpr uint8_t kLinkFileReadyRequest = 0;
+constexpr uint8_t kLinkFileReadyAck = 1;
+constexpr uint32_t kLinkFileReadyTimeoutMs = 2000;
+constexpr uint32_t kLinkFileReadyRetryMs = 30;
 
 // One ESP-NOW frame. POD, 36 bytes on every supported ABI, copied verbatim.
 // Command frames reuse `reserved` (low byte = AxdCommand opcode, high byte =
@@ -224,6 +235,32 @@ struct AxdFileDoneMsg {
   char name[36] = {0};
 };
 
+// One chunk in flight, retried until the browser acknowledges token + sequence.
+// 32-bit sequences avoid the legacy 65535-chunk (~6 MB) size limit.
+constexpr uint32_t kFileChunkBytes = 96;
+constexpr uint32_t kFileChunkRetryMs = 750;
+constexpr int kFileChunkAttempts = 10;
+struct AxdFileChunkMsg {
+  uint32_t magic = kLinkMagic;
+  uint8_t version = kLinkProtoVersion;
+  uint8_t type = kLinkMsgFileChunk;
+  uint8_t kind = 0;  // 0 = base64 data, 1 = completion/name, 2 = error
+  uint8_t pad = 0;
+  uint32_t token = 0;
+  uint32_t seq = 0;
+  uint32_t totalBytes = 0;
+  char data[136] = {};
+};
+struct AxdFileChunkAck {
+  uint32_t magic = kLinkMagic;
+  uint8_t version = kLinkProtoVersion;
+  uint8_t type = kLinkMsgFileChunkAck;
+  uint16_t pad = 0;
+  uint32_t token = 0;
+  uint32_t seq = 0;
+};
+static_assert(sizeof(AxdFileChunkMsg) <= 250, "File chunk must fit ESP-NOW");
+
 // Multi-node Fleet Hunter observation frame (ESP-NOW)
 struct FleetHuntObservation {
   uint32_t magic = kLinkMagic;
@@ -327,5 +364,7 @@ enum AxdCommand : uint8_t {
   kAxdCmdFileGet = 65,         // download file by index (arg = index)
   kAxdCmdFileDelete = 66,      // delete file by index (arg = index)
   kAxdCmdFileAbort = 67,       // cancel active file streaming
+  kAxdCmdFileGetReliable = 68, // BLE: opcode, index, target, LE uint32 request token
+  kAxdCmdFileChunkAck = 69,    // BLE write: opcode + LE uint32 token + LE uint32 seq
   kAxdCmdStopHome = 255,
 };
