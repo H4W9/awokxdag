@@ -3387,7 +3387,7 @@ updateEnabled(); renderConns(); renderStats(); initTopoCanvas();
 async function downloadWardriveCsv(){
   if (!wardriveRows.length){ log("no wardrive rows yet"); return; }
   const header =
-    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.6.5,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
+    "WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.7.0,device=AxD,display=none,board=AxD Bridge,brand=AxD\n" +
     "MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\n";
   const text = header + wardriveRows.join("\n") + "\n";
   const fname = "wardrive-" + Date.now() + ".csv";
@@ -3910,24 +3910,44 @@ async function copyReadyFileText() {
 
 function finishFileDownload(name, size) {
   if (!activeFileDownload) return;
-  const total = activeFileDownload.totalChunks;
-  let byteArrays = [];
+  // Missing early ESP-NOW/BLE chunks used to be silently skipped, producing
+  // "successful" CSV downloads with no WiGLE metadata or column header.
+  const fail = reason => {
+    log(`File download failed: ${name}: ${reason}. Retry the download.`);
+    resetDownloadProgress();
+    alert(`Incomplete file: ${name}. ${reason}. Please retry the download.`);
+  };
+  if (name !== activeFileDownload.name || !Number.isSafeInteger(size) || size < 0) {
+    fail("File completion did not match the requested transfer");
+    return;
+  }
+  const total = Math.ceil(size / 96) || 1;
+  if (activeFileDownload.totalChunks !== total) {
+    fail("Chunk count does not match the file size");
+    return;
+  }
+  const byteArrays = [];
   let totalBytes = 0;
   for (let i = 1; i <= total; i++) {
-    const b64 = activeFileDownload.chunks.get(i) || "";
-    if (b64.length) {
-      try {
-        const binaryString = atob(b64);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let j = 0; j < len; j++) {
-          bytes[j] = binaryString.charCodeAt(j);
-        }
-        byteArrays.push(bytes);
-        totalBytes += len;
-      } catch(e) {
-        log("Base64 decode chunk error: " + e.message);
+    if (!activeFileDownload.chunks.has(i)) {
+      fail(`Missing chunk ${i} of ${total}`);
+      return;
+    }
+    try {
+      const binaryString = atob(activeFileDownload.chunks.get(i));
+      const len = binaryString.length;
+      const expected = Math.min(96, size - (i - 1) * 96);
+      if (len !== expected) {
+        fail(`Chunk ${i} has ${len} bytes; expected ${expected}`);
+        return;
       }
+      const bytes = new Uint8Array(len);
+      for (let j = 0; j < len; j++) bytes[j] = binaryString.charCodeAt(j);
+      byteArrays.push(bytes);
+      totalBytes += len;
+    } catch(e) {
+      fail(`Invalid data in chunk ${i}`);
+      return;
     }
   }
   const fileInfo = getFileTypeInfo(name);
