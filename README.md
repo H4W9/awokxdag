@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.7.1
+- **Version:** 1.7.2
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -100,8 +100,13 @@ Open **Recon → Network Tools**. These tools send discovery/service
 queries on the Wi-Fi network you join; they require a normal network connection.
 
 - **Connect / Wi-Fi** — choose an AP from the last scan (or rescan), enter its
-  password with the on-device character picker, then Join. Both Touch and Mini
-  support SSID/password entry. Credentials stay in RAM; the password entry is
+  password with the on-device phone keypad, then Join. Both Touch and Mini
+  use a three-column T9-style **multi-tap** layout (no dictionary): repeat a key
+  to cycle its letters, then wait one second or press **# Next** for another
+  letter on the same key. **\* Mode** cycles abc / ABC / 123 / symbols; **0**
+  enters space in letter mode. All printable ASCII characters are available,
+  with separate Delete, Cancel and Done buttons. Mini uses all four directions
+  to move between keys and Center to select. Credentials stay in RAM; the password entry is
   masked and cleared after a connection attempt. Leaving Network Tools disconnects.
 - **Discover Hosts** — ARP discovery with IP/MAC results and subnet-mask handling.
   Tap a host to inspect it individually. The top-level service buttons scan all
@@ -190,7 +195,15 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 
 ### GPS
 - **GPS status** — fix, satellites, coordinates, speed, HDOP, plus a baud cycler
-  and NMEA link diagnostics.
+  and NMEA link diagnostics. GPS coordinates automatically select the local
+  timezone offline; the current date selects daylight saving or standard time.
+  GPS/Wardrive screens show local time and the offset/DST state. Logs, WiGLE
+  CSV FirstSeen values, and SD file timestamps use local time too. The last zone
+  is remembered through fix loss and reboots, and refreshed from a valid fix
+  every 30 seconds. Before the clock and any zone are known, logs use explicit
+  `uptime+` markers. The bundled map is approximate near timezone borders;
+  [data sources and update instructions](third_party/timezones/README.md) describe
+  its limits. Existing files are not rewritten.
 - **Wardrive** — logs each Wi-Fi BSSID and BLE device once to a WiGLE-compatible
   CSV while moving. A GPS-fix indicator sits in the header on every screen, and
   scan/deauth/client/portal/handshake logs are geotagged with the current fix.
@@ -259,8 +272,8 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 
   Credentials are read only for the request, wiped from RAM afterward, and
   never printed or written to the audit log. Uploads are streamed from SD over
-  certificate-verified HTTPS. GPS UTC supplies the device clock, log times, and
-  SD file timestamps; NTP is used only as a fallback when an upload needs TLS
+  certificate-verified HTTPS. GPS supplies the absolute device clock; log times and
+  SD file timestamps are converted to the GPS-selected local timezone; NTP is used only as a fallback when an upload needs TLS
   before GPS time is available. The files remain on SD until you remove them.
   New wardrive files use WiGLE 1.6 so both destinations receive the documented
   multipart CSV.
@@ -340,8 +353,8 @@ works without a card, and readable snapshots mirror to:
 
 The camera and BLE-spam watches are live-view only.
 
-The firmware audit trail includes a per-boot session id, firmware version, GPS
-UTC time when available (otherwise uptime), result, non-secret details, and GPS
+The firmware audit trail includes a per-boot session id, firmware version, GPS-derived
+local time when available (otherwise uptime), result, non-secret details, and GPS
 position. It intentionally does not copy portal submissions, packet payloads,
 or credentials. The live segment rotates at 256 KB and retains one previous
 segment.

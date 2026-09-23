@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'AWOKxDAG/network_parse.h'
+      - 'AWOKxDAG/keyboard_layout.h'
+      - 'AWOKxDAG/gps_timezone.h'
+      - 'AWOKxDAG/timezone_data.h'
       - 'AWOKxDAG/AWOKxDAG.ino'
       - 'AWOKxDAG/gps.ino'
       - 'tests/host/**'
@@ -12,6 +15,9 @@ on:
   pull_request:
     paths:
       - 'AWOKxDAG/network_parse.h'
+      - 'AWOKxDAG/keyboard_layout.h'
+      - 'AWOKxDAG/gps_timezone.h'
+      - 'AWOKxDAG/timezone_data.h'
       - 'AWOKxDAG/AWOKxDAG.ino'
       - 'AWOKxDAG/gps.ino'
       - 'tests/host/**'
@@ -30,3 +36,5 @@ jobs:
           node-version: '22'
       - name: Wardrive shutdown control-flow tests (mocked radios)
         run: node --test tests/host/test_wardrive_shutdown.mjs
+      - name: Phone keypad and offline timezone tests (no firmware build)
+        run: node --test tests/host/test_keyboard.mjs tests/host/test_timezone.mjs

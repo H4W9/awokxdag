@@ -44,6 +44,8 @@
 #include <unistd.h>
 
 #include "board_pins.h"
+#include "keyboard_layout.h"
+#include "gps_timezone.h"
 #ifdef AWOK_MINI_DISPLAY
 #include "mini_display.h"
 #include "mini_boot_screen_data.h"
@@ -122,7 +124,7 @@ constexpr uint8_t kDeauthHopChannels[] = {
 constexpr int kDeauthHopChannelCount =
     static_cast<int>(sizeof(kDeauthHopChannels) / sizeof(kDeauthHopChannels[0]));
 constexpr int kMaxDeauthTargets = 8;
-constexpr char kVersion[] = "1.7.1";
+constexpr char kVersion[] = "1.7.2";
 constexpr char kAuthor[] = "dag nazty";
 constexpr uint32_t kHandshakeRedrawMs = 500;
 constexpr uint32_t kHandshakePulseMs = 2000;

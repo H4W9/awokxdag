@@ -5,6 +5,25 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-09-23
+
+### Changed
+
+- Replaced the credential editor with a three-column phone keypad: large Touch
+  targets, abc/ABC/123/symbol modes, repeat-tap letter cycling, a one-second
+  timeout, and explicit Next/Delete/Cancel/Done. Mini uses a native keypad grid
+  with four-direction joystick navigation. All printable ASCII is available;
+  passwords stay masked and keyboard touch coordinates are not logged. The
+  character currently being cycled shows in the clear until it is committed so
+  repeat-tap letter selection is usable while entering a masked password.
+- GPS coordinates now select a local timezone offline. Local time and DST status
+  appear on GPS/Wardrive screens; log timestamps, WiGLE FirstSeen, and filesystem
+  timestamps use local time. The last zone persists through fix loss/reboots;
+  valid fixes refresh the choice every 30 seconds. Flash-only map/rule tables
+  cover 2020–2099 using IANA 2026d, including non-DST and irregular DST regions.
+  Compact geographic boundaries are approximate; future legal changes require
+  refreshing the bundled data. Absolute system time remains correct for TLS/NTP.
+
 ## [1.7.1] - 2026-09-22
 
 ### Fixed
