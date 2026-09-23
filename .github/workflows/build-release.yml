@@ -98,7 +98,7 @@ jobs:
             "Adafruit ILI9341" \
             "Adafruit ST7735 and ST7789 Library" \
             "Adafruit BusIO" \
-            "NimBLE-Arduino" \
+            "NimBLE-Arduino@2.5.1" \
             "XPT2046_Touchscreen" \
             "TinyGPSPlus"
 

@@ -5,6 +5,27 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-09-22
+
+### Fixed
+
+- Require NimBLE-Arduino 2.5.1 or newer for its scan-response-timer shutdown
+  fix; reject older libraries at compile time and pin release builds to 2.5.1.
+  NimBLE 2.5.0 deleted the scan timer after host teardown, exposing a crash on
+  wardriving/BLE-tool exit. Wardriving now closes its CSV before radio shutdown,
+  logs shutdown stages, ignores duplicate stops, and closes its CSV if radio
+  startup fails. Dual-radio scheduling and BLE participation are unchanged.
+
+### Changed
+
+- Fleet row rings, Wi-Fi 6 Intel, topology, BLE Intel, and deauth-forensics
+  buffers now allocate on tool start and release on stop. Loop-owned result
+  tables prefer PSRAM; callback queues remain in internal RAM. Fleet allocates
+  only the active role's ring. Failed allocations unwind and report a memory
+  error. Callback queues reject late writes across stop/restart; topology peer
+  merges and forensic sequence history now run in the main loop. Tools drain
+  accepted observations and attempt CSV export before freeing their results.
+
 ## [1.7.0] - 2026-09-22
 
 ### Fixed
@@ -955,7 +976,8 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/dagnazty/awokxdag/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/dagnazty/awokxdag/compare/v1.6.5...v1.7.0
 [1.6.5]: https://github.com/dagnazty/awokxdag/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/dagnazty/awokxdag/compare/v1.6.3...v1.6.4

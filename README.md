@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.7.0
+- **Version:** 1.7.1
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -183,7 +183,7 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   Streams base64 chunks on-the-fly (`$FILEDATA`), supports PCAP handshakes and wardrive CSVs,
   provides an in-browser preview drawer with one-click copy, and automatically bridges requests
   between Screen Chip and Bridge Chip over ESP-NOW.
-  For reliable previews/downloads, update both chips to 1.7.0 and reload the updated
+  For reliable previews/downloads, update both chips to 1.7.1 and reload the updated
   control page. BLE transfers wait for the bridge to finish its channel sweep,
   then require a browser acknowledgment for each chunk and retry missing chunks.
   Bridge scanning pauses during the transfer. USB retains its existing stream.
@@ -358,8 +358,12 @@ segment.
    `ieee80211_raw_frame_sanity_check` collides with Espressif's copy in
    `libnet80211.a`. The wrap shrinks Arduino's default STA RX/TX buffers so
    Dual C5 Touch can keep BLE up beside Wi-Fi.
-2. Libraries: **Adafruit GFX**, **Adafruit ILI9341**, **NimBLE-Arduino**,
+2. Libraries: **Adafruit GFX**, **Adafruit ILI9341**, **NimBLE-Arduino 2.5.1 or newer**,
    **XPT2046_Touchscreen**, **TinyGPSPlus**.
+   NimBLE 2.5.0 can crash when stopping wardriving or another BLE tool because
+   it destroys the scan-response timer after host teardown. Update it through
+   Library Manager, or run `arduino-cli lib install "NimBLE-Arduino@2.5.1"`.
+   The firmware rejects older versions; release builds pin 2.5.1.
 3. Open `AWOKxDAG.ino`, select **ESP32C5 Dev Module** with:
    - Flash Size **8 MB**, Partition Scheme **8M with spiffs (3MB APP)**,
      PSRAM **Enabled**, USB CDC On Boot **Disabled**.

@@ -592,6 +592,7 @@ static void wardriveEnterWifi() {
 static void wardriveExitWifi() { WiFi.scanDelete(); }
 
 void startWardrive() {
+  stopActiveTools();  // release the previous tool before bringing up both radios
   wardriveNetworks = 0;
   wardriveBleCount = 0;
   wardriveScans = 0;
@@ -610,13 +611,14 @@ void startWardrive() {
   wardriveSched.bleCallbacks = &wardriveBleCallbacks;  // passive scan
   // Wi-Fi window ends when the scan completes; cap high so a slow dual-band
   // sweep is never cut off mid-scan (which would log zero APs).
-  // Long Wi-Fi dwell (many scan passes) between short BLE windows: minimizes the
-  // number of BLE controller init/deinit cycles (each leaks ~0.4 KB DMA in the
-  // closed C5 blob) so BLE survives most of a session, while Wi-Fi -- the
-  // primary wardrive radio -- gets the majority of airtime.
+  // Long Wi-Fi dwell (many scan passes) between short BLE windows gives Wi-Fi
+  // most airtime. Both controllers stay initialized throughout the session.
   wardriveSched.wifiWindowMs = 30000;
   wardriveSched.bleWindowMs = 8000;
-  if (!radioSchedulerBegin(wardriveSched)) return;
+  if (!radioSchedulerBegin(wardriveSched)) {
+    closeWardriveCsv();
+    return;
+  }
 
   Serial.println(radiosCoexist
                      ? "[wardrive] started (Wi-Fi + BLE, time-shared)"
@@ -628,9 +630,14 @@ void startWardrive() {
 }
 
 void stopWardrive() {
+  if (!wardriveActive && !wardriveSched.active) return;
   wardriveActive = false;
-  radioSchedulerEnd(wardriveSched);
+  Serial.println("[wardrive] stopping; closing CSV before radio shutdown");
+  // Only loopTask writes the CSV; radio callbacks enqueue observations. Save
+  // accepted rows before touching the host/controller shutdown path.
   closeWardriveCsv();
+  Serial.println("[wardrive] CSV closed; stopping radios");
+  radioSchedulerEnd(wardriveSched);
   esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
   linkBroadcastStatus();
   Serial.printf("[wardrive] stopped; %lu Wi-Fi, %lu BLE\n",
