@@ -581,7 +581,6 @@ struct FleetMember {
   uint32_t lastSeenMs = 0;  // coordinator: last FleetJoin/row heard
   uint32_t rows = 0;        // rows contributed (coordinator view)
   uint32_t ackSeq = 0;      // highest row seq stored from this member
-  uint8_t battery = 0;
 };
 
 // A suspected surveillance camera found by the camera scan.
@@ -694,9 +693,7 @@ struct DeviceSettingsRecord {
   uint32_t backlightTimeoutMs;  // 0 = always on
   uint8_t brightnessPercent;    // 20–100
   uint8_t flags;                // kSetting*
-  uint16_t batteryCapacityMah;
-  uint8_t batteryTunePercent;
-  uint8_t reserved[3];
+  uint8_t reserved[6];
 };
 static_assert(sizeof(DeviceSettingsRecord) == 20, "NVS settings layout changed");
 constexpr uint32_t kDeviceSettingsVersion = 1;
