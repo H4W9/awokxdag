@@ -5,6 +5,111 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-09-23
+
+### Changed
+
+- Replaced the credential editor with a three-column phone keypad: large Touch
+  targets, abc/ABC/123/symbol modes, repeat-tap letter cycling, a one-second
+  timeout, and explicit Next/Delete/Cancel/Done. Mini uses a native keypad grid
+  with four-direction joystick navigation. All printable ASCII is available;
+  passwords stay masked and keyboard touch coordinates are not logged. The
+  character currently being cycled shows in the clear until it is committed so
+  repeat-tap letter selection is usable while entering a masked password.
+- GPS coordinates now select a local timezone offline. Local time and DST status
+  appear on GPS/Wardrive screens; log timestamps, WiGLE FirstSeen, and filesystem
+  timestamps use local time. The last zone persists through fix loss/reboots;
+  valid fixes refresh the choice every 30 seconds. Flash-only map/rule tables
+  cover 2020–2099 using IANA 2026d, including non-DST and irregular DST regions.
+  Compact geographic boundaries are approximate; future legal changes require
+  refreshing the bundled data. Absolute system time remains correct for TLS/NTP.
+
+## [1.7.1] - 2026-09-22
+
+### Fixed
+
+- Require NimBLE-Arduino 2.5.1 or newer for its scan-response-timer shutdown
+  fix; reject older libraries at compile time and pin release builds to 2.5.1.
+  NimBLE 2.5.0 deleted the scan timer after host teardown, exposing a crash on
+  wardriving/BLE-tool exit. Wardriving now closes its CSV before radio shutdown,
+  logs shutdown stages, ignores duplicate stops, and closes its CSV if radio
+  startup fails. Dual-radio scheduling and BLE participation are unchanged.
+
+### Changed
+
+- Fleet row rings, Wi-Fi 6 Intel, topology, BLE Intel, and deauth-forensics
+  buffers now allocate on tool start and release on stop. Loop-owned result
+  tables prefer PSRAM; callback queues remain in internal RAM. Fleet allocates
+  only the active role's ring. Failed allocations unwind and report a memory
+  error. Callback queues reject late writes across stop/restart; topology peer
+  merges and forensic sequence history now run in the main loop. Tools drain
+  accepted observations and attempt CSV export before freeing their results.
+
+## [1.7.0] - 2026-09-22
+
+### Fixed
+
+- Bridge BLE results now send an explicit payload per notification instead of
+  scheduling an update to a shared characteristic value, preventing concurrent
+  telemetry/file writes from replacing pending data. Transfer logs now identify
+  ESP-NOW enqueue failures, BLE enqueue failures and MTU, and the exact chunk
+  whose browser ACK exhausted its retries.
+- BLE file preview/download now uses browser acknowledgments for every chunk
+  and completion message, with up to 10 attempts per chunk. Lost ESP-NOW packets,
+  BLE notifications, and ACKs are retried without duplicating file bytes. Transfer
+  tokens reject stale packets; 32-bit sequences support captures above 6 MB.
+  Reliable file notifications are queued outside the Wi-Fi callback, and bridge
+  scanning pauses during the transfer. Requires both chips and the updated control
+  page; legacy USB file streaming remains available.
+- Remote file preview/download now waits for a receiver-ready handshake after
+  the bridge finishes its command channel sweep. Previously the screen started
+  sending immediately while the bridge hopped away, consistently losing the
+  first chunks containing the wardrive CSV header. Update both chips for this
+  handshake; USB transfers are unchanged.
+- Wardrive SD sessions now verify the complete WiGLE metadata and column-header
+  write before accepting rows, including Split/Fleet Link sessions. Failed header
+  writes disable SD logging and remove the incomplete new file.
+- Remote SD downloads reject missing, malformed, or short chunks instead of
+  silently saving partial files (which could omit the wardrive header). Reading
+  an active wardrive file flushes its buffered SD data first.
+
+### Changed
+
+- Replaced Recon's four mixed pages with Wi-Fi, Bluetooth, RF & Packets, and
+  Field Tools groups, plus direct access to Network Tools. Each group fits on
+  one menu page; returning from a tool preserves its group on Touch and Mini.
+
+## [1.6.5] - 2026-09-22
+
+### Added
+
+- **Wi-Fi 6 / 802.11ax OFDMA & BSS Color Intelligence (`AWOKxDAG/wifi6intel.ino`):**
+  - **Passive HE Beacon & Probe Inspector:** Promiscuous management frame parser extracting 802.11ax High Efficiency capabilities and operation elements (Extended Tag 255 with Ext IDs 35 and 36) without transmitting.
+  - **BSS Color Collision Analysis:** Extracts 6-bit BSS Color codes (1–63) and BSS Color Disabled flags to map spatial reuse channel congestion and co-channel interference.
+  - **Channel Width & Generation Classification:** Identifies channel operating widths (20, 40, 80, 160 MHz) and classifies networks into Wi-Fi 4 (802.11n), Wi-Fi 5 (802.11ac), and Wi-Fi 6 (802.11ax).
+  - **On-Device UI (`View::kWifi6Intel`):** Touch (240×320) and Mini (128×128) scrollable list showing generational badges, color pills, channel widths, BSSID, and RSSI with on-device SD CSV export.
+  - **SD Card CSV Logging:** Exports observed Wi-Fi 6 parameters and collision states to `/awokxdag/wifi6_intel.csv` with GPS coordinates.
+  - **Telemetry Streaming:** Emits `$AXINTEL,bssid,ssid,channel,generation,bssColor,channelWidth,rssi` over Serial and Web Bluetooth (`kSourceWifi6Intel = 7`, opcode 59 `kAxdCmdWifi6Intel`).
+  - **Remote Dashboard Tab (`control.html`):** Added dedicated "⚡ Wi-Fi 6" tab with live interactive 64-cell BSS Color collision matrix, generational breakdown stats, band filters, and CSV export.
+
+- **Targeted Deauth & Disassociation Forensic Analyzer (`AWOKxDAG/deauthforensics.ino`):**
+  - **Promiscuous Forensic Attribution Engine:** Passive sniffer for 802.11 deauthentication (subtype 12) and disassociation (subtype 10) frames.
+  - **Attack Classification:** Differentiates shotgun broadcast floods (`ff:ff:ff:ff:ff:ff`) from targeted unicast victim station attacks.
+  - **Transmitter Sequence Number Anomaly Detection:** Tracks per-transmitter 802.11 sequence counters and flags sudden sequence number jumps ($|\Delta| > 10$) indicating forged/spoofed transmitter MAC addresses.
+  - **Reason Code Decoding:** Decodes standard 802.11 reason codes (1 Unspecified, 2 Prev Auth Invalid, 3 Station Leaving, 6 Class 2 Nonauth, 7 Class 3 Nonassoc, 8 Station Disassoc, 15 4-Way Handshake Timeout, etc.).
+  - **On-Device UI (`View::kDeauthForensics`):** Touch and Mini screens with live incident counters, attack classification badges, and victim MAC tracking.
+  - **SD Card CSV Logging:** Logs complete forensic event audits to `/awokxdag/deauth_forensics.csv` with timestamps and GPS geotags.
+  - **Telemetry & Real-Time Alerts:** Emits `$DEAUTH,type,targetMac,sourceMac,bssid,reason,seqJump,rssi,channel` over Serial and Web Bluetooth (`kSourceDeauthForensics = 8`, opcode 63 `kAxdCmdDeauthForensics`).
+  - **Remote Dashboard Tab (`control.html`):** Added dedicated "🛡️ Deauth Forensics" tab with real-time attack alert banners, live forensic event table, filter segments, and CSV export.
+
+- **Remote SD Card File Manager & Web Serial Transfer (`files.ino`, `link.ino`, `control.html`):**
+  - **In-Browser File Manager Tab (`tab-files`):** Dedicated "📁 SD Files" dashboard tab in the WebUI to browse, preview, and download capture files, wardrive CSVs, and logs directly from `/awokxdag` to your phone or PC.
+  - **Binary-Safe Base64 Chunked Streaming:** Emits on-the-fly Base64 encoded chunks (`$FILEDATA,<seq>,<total>,<data>`) over Web Bluetooth and Web Serial, ensuring binary safe packet capture (`.pcap`) and text log transfers without delimiter collisions or control character corruption.
+  - **Dual-Board ESP-NOW Relay:** File listing (`kAxdCmdFileList = 64`), download (`kAxdCmdFileGet = 65`), delete (`kAxdCmdFileDelete = 66`), and abort (`kAxdCmdFileAbort = 67`) requests are seamlessly bridged between the Screen Chip (holding the physical SD card) and the Orange Bridge Chip over ESP-NOW.
+  - **Web Serial Integration:** Added native Web Serial (`navigator.serial`) connection engine at 115200 baud to the WebUI header, enabling direct cable plug-and-play on desktop PCs and Android USB-OTG in addition to Web Bluetooth.
+  - **In-Browser Preview Drawer:** Instant in-browser preview with copy-to-clipboard for wardrive CSVs, handshake hashcat files, and text logs.
+  - **Live Progress & Throughput Tracker:** Shows animated progress bar, percentage completion, transfer speed in KB/s, and byte-level verification with automatic browser file saving.
+
 ## [1.6.4] - 2026-09-21
 
 ### Added
@@ -890,7 +995,10 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.6.4...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/dagnazty/awokxdag/compare/v1.7.0...v1.7.1
+[1.7.0]: https://github.com/dagnazty/awokxdag/compare/v1.6.5...v1.7.0
+[1.6.5]: https://github.com/dagnazty/awokxdag/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/dagnazty/awokxdag/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/dagnazty/awokxdag/compare/v1.6.1...v1.6.3
 [1.6.1]: https://github.com/dagnazty/awokxdag/compare/v1.6.0...v1.6.1

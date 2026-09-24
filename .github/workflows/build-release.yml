@@ -7,7 +7,7 @@ on:
       version:
         description: "Release version (e.g. 1.0.0)"
         required: true
-        default: "1.5.3"
+        default: "1.7.2"
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
@@ -113,7 +113,7 @@ jobs:
               "Adafruit ILI9341" \
               "Adafruit ST7735 and ST7789 Library" \
               "Adafruit BusIO" \
-              "NimBLE-Arduino" \
+              "NimBLE-Arduino@2.5.1" \
               "XPT2046_Touchscreen" \
               "TinyGPSPlus" && break
             echo "::warning::lib install attempt $i failed; retrying in 20s"

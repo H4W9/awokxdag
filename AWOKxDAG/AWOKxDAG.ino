@@ -83,8 +83,11 @@ int blePage = 0;
 View currentView = View::kHome;
 View auditReturnView = View::kWifi;
 int reconPage = 0;
+int reconCategory = -1;  // -1 = category picker; tools return to their category
 int monitorPage = 0;
 int homePage = 0;
+int wifi6Page = 0;
+int deauthForensicsPage = 0;
 DeviceSettingsRecord deviceSettings = {};
 bool backlightDimmed = false;
 uint32_t lastActivityMs = 0;
@@ -111,6 +114,8 @@ bool fleetHuntActive = false;      // multi-node trilateration hunt (locator.ino
 bool topologyActive = false;       // live swarm mesh topology mapping (topologymap.ino)
 bool bleIntelActive = false;       // BLE ecosystem intel & continuity decoder (bleintel.ino)
 bool spectrogramActive = false;    // RF spectrogram & waterfall analyzer (spectrogram.ino)
+bool wifi6IntelActive = false;      // 802.11ax OFDMA & BSS Color intel (wifi6intel.ino)
+bool deauthForensicsActive = false; // targeted deauth & disassoc forensics (deauthforensics.ino)
 // SD export status for the new recon tabs (read by input.ino, which is
 // concatenated before those tabs, so the flags must live in the main sketch).
 bool lastAuditCsvOk = false;
@@ -119,6 +124,8 @@ bool lastProbeIntelCsvOk = false;
 bool lastTopologyCsvOk = false;
 bool lastBleIntelCsvOk = false;
 bool lastSpectrogramCsvOk = false;
+bool lastWifi6IntelCsvOk = false;
+bool lastDeauthForensicsCsvOk = false;
 bool sdReady = false;
 bool lastSavedSdWriteOk = false;
 bool lastScanSdWriteOk = false;
@@ -1617,14 +1624,23 @@ void updateWifiSignalMonitor() {
   drawWifiSignalMonitor();
 }
 
-// Data-driven Recon menu: append an item here (label + a case in
-// launchReconItem) and it paginates automatically. 6 items per page.
-const char* const kReconItems[] = {
-    "Wi-Fi Scan",   "Channel Map",  "Spectrogram",  "BLE Scan",     "Clients",
-    "Packet Mon",   "WPS Scan",     "Hidden SSID",  "Cameras",
-    "Security Audit", "BLE Trackers", "BLE Intel",   "Harvester",
-    "Probe Intel",  "Saved",        "Fleet Hunter", "Topology Map",
-    "Network Tools"};
+// Keep each Recon category small enough to scan on Touch and Mini. Network
+// Tools already has its own menu, so it opens directly from the picker.
+const char* const kReconCategories[] = {
+    "Wi-Fi", "Bluetooth", "RF & Packets", "Field Tools", "Network Tools"};
+constexpr int kReconCategoryCount =
+    static_cast<int>(sizeof(kReconCategories) / sizeof(kReconCategories[0]));
+struct ReconMenuItem {
+  const char* label;
+  int category;
+};
+const ReconMenuItem kReconItems[] = {
+    {"Wi-Fi Scan", 0}, {"Saved", 0}, {"WPS Scan", 0},
+    {"Hidden SSID", 0}, {"Security Audit", 0}, {"Wi-Fi 6 Intel", 0},
+    {"BLE Scan", 1}, {"BLE Trackers", 1}, {"BLE Intel", 1},
+    {"Channel Map", 2}, {"Spectrogram", 2}, {"Packet Mon", 2},
+    {"Clients", 3}, {"Cameras", 3}, {"Harvester", 3},
+    {"Probe Intel", 3}, {"Fleet Hunter", 3}, {"Topology Map", 3}};
 constexpr int kReconItemCount =
     static_cast<int>(sizeof(kReconItems) / sizeof(kReconItems[0]));
 constexpr int kMenuPerPage = 6;
@@ -1632,19 +1648,37 @@ constexpr int kMenuFirstY = 50;
 constexpr int kMenuRowPitch = 32;
 constexpr int kMenuRowHeight = 30;
 
+int reconVisibleItemCount() {
+  if (reconCategory < 0) return kReconCategoryCount;
+  int count = 0;
+  for (const auto& item : kReconItems) {
+    if (item.category == reconCategory) ++count;
+  }
+  return count;
+}
+
 int reconPageCount() {
-  return (kReconItemCount + kMenuPerPage - 1) / kMenuPerPage;
+  return (reconVisibleItemCount() + kMenuPerPage - 1) / kMenuPerPage;
+}
+
+// Convert a position inside the selected category into a tool index.
+int reconItemIndex(int position) {
+  for (int i = 0; i < kReconItemCount; ++i) {
+    if (kReconItems[i].category == reconCategory && position-- == 0) return i;
+  }
+  return -1;
 }
 
 String reconItemLabel(int index) {
-  if (strcmp(kReconItems[index], "Saved") == 0) {
+  if (strcmp(kReconItems[index].label, "Saved") == 0) {
     return "Saved (" + String(savedCount) + ")";
   }
-  return String(kReconItems[index]);
+  return String(kReconItems[index].label);
 }
 
 void launchReconItem(int index) {
-  const String label = kReconItems[index];
+  if (index < 0 || index >= kReconItemCount) return;
+  const String label = kReconItems[index].label;
   if (label == "Wi-Fi Scan") {
     startWifiScanContinuous();
   } else if (label == "Channel Map") {
@@ -1685,8 +1719,8 @@ void launchReconItem(int index) {
     }
   } else if (label == "Topology Map") {
     startTopologyMap();
-  } else if (label == "Network Tools") {
-    openNetworkTools();
+  } else if (label == "Wi-Fi 6 Intel") {
+    startWifi6Intel();
   } else if (label == "Saved") {
     drawSavedNetworks();
   }
@@ -1695,22 +1729,26 @@ void launchReconItem(int index) {
 void drawReconMenu() {
   currentView = View::kRecon;
   const int pages = reconPageCount();
-  if (reconPage >= pages) reconPage = 0;
+  if (reconPage < 0 || reconPage >= pages) reconPage = 0;
   display.fillScreen(kBackground);
-  drawHeader("RECON", pages > 1 ? "discovery tools  " + String(reconPage + 1) +
-                                      "/" + String(pages)
-                                : "discovery tools");
+  const String title = reconCategory < 0 ? "RECON" : kReconCategories[reconCategory];
+  const String detail = reconCategory < 0 ? "choose a tool group" : "Recon / " + title;
+  drawHeader(title, pages > 1 ? detail + " " + String(reconPage + 1) +
+                                      "/" + String(pages) : detail);
   const int start = reconPage * kMenuPerPage;
   for (int row = 0; row < kMenuPerPage; ++row) {
-    const int index = start + row;
-    if (index >= kReconItemCount) break;
-    drawButton(12, kMenuFirstY + row * kMenuRowPitch, 216, kMenuRowHeight,
-               reconItemLabel(index));
+    const int position = start + row;
+    if (position >= reconVisibleItemCount()) break;
+    const String label = reconCategory < 0 ? String(kReconCategories[position])
+                                          : reconItemLabel(reconItemIndex(position));
+    drawButton(12, kMenuFirstY + row * kMenuRowPitch, 216, kMenuRowHeight, label);
   }
   if (pages > 1) {
-    drawThreeButtonFooter("Home", "< Prev", "Next >");
-  } else {
+    drawThreeButtonFooter("< Back", "< Prev", "Next >");
+  } else if (reconCategory < 0) {
     drawFooter("Home", "Home");
+  } else {
+    drawFooter("< Groups", "Home");
   }
 }
 
@@ -1719,7 +1757,7 @@ void drawReconMenu() {
 const char* const kMonitorItems[] = {
     "Deauth Watch",   "Rogue Watch", "BLE Spam Watch",
     "Karma Watch",    "Beacon Watch", "Auth Flood",
-    "Advanced Watch"};
+    "Advanced Watch", "Deauth Forensics"};
 constexpr int kMonitorItemCount =
     static_cast<int>(sizeof(kMonitorItems) / sizeof(kMonitorItems[0]));
 
@@ -1743,6 +1781,8 @@ void launchMonitorItem(int index) {
     startAuthFlood();
   } else if (label == "Advanced Watch") {
     startAdvancedWatch();
+  } else if (label == "Deauth Forensics") {
+    startDeauthForensics();
   }
 }
 
@@ -1811,10 +1851,10 @@ void sortBle() {
 }
 
 void logMemory(const char* stage) {
-  // Report DMA-capable free too: on the C5, Wi-Fi + the BLE controller draw
-  // from the same ~70 KB DMA pool, and DMA exhaustion (not the general heap)
-  // is what starves a BLE scan when both are resident. See the time-multiplex
-  // RadioScheduler, which keeps only one radio DMA-resident at a time.
+  // C5 Wi-Fi and BLE coexistence needs internal/DMA-capable memory. Report
+  // both total free and largest blocks: free PSRAM alone does not establish
+  // whether the controllers can initialize. RadioScheduler alternates scan
+  // windows while keeping both initialized when coexistence succeeds.
   const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
   Serial.printf(
       "[memory] %s: internal free=%u largest=%u; dma free=%u largest=%u; "
@@ -1824,6 +1864,23 @@ void logMemory(const char* stage) {
       unsigned(heap_caps_get_free_size(MALLOC_CAP_DMA)),
       unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_DMA)),
       unsigned(ESP.getFreePsram()));
+}
+
+void showToolMemoryError(const char* tool) {
+  Serial.printf("[memory] %s: buffer allocation failed; tool not started\n", tool);
+  logMemory(tool);
+  currentView = View::kHome;
+  homePage = 1;
+  signalMonitorActive = false;
+  display.fillScreen(kBackground);
+  drawHeader("MEMORY LOW", tool);
+  display.setTextSize(1);
+  display.setTextColor(kWarn, kBackground);
+  display.setCursor(scaleX(6), scaleY(60));
+  display.print("Tool could not start.");
+  display.setCursor(scaleX(6), scaleY(80));
+  display.print("Check Serial Monitor.");
+  drawFooter("Home", "Home");
 }
 
 void showRadioError(const char* message) {
@@ -1888,19 +1945,10 @@ bool ensureBleReady(bool needsWifi) {
 }
 
 void releaseBleMemory() {
-  // One-radio-at-a-time: fully free the BLE controller so Wi-Fi can reclaim its
-  // block. Stop, clear results, let pending callbacks/timers drain, then a FULL
-  // deinit(true) -- the whole point is to empty the DMA pool every cycle so the
-  // repeated init/deinit doesn't slowly leak it away (~0.4 KB/cycle) and starve
-  // the radios after ~10 min.
-  // deinit(false) keeps the NimBLEScan object (and, on the C5 SOC controller,
-  // leaves host allocations behind that the next init re-creates); deinit(true)
-  // deletes the scan object too. The old crash that forced deinit(false) --
-  // ble_npl_callout_deinit() on the scan-response timer after the port was torn
-  // down (null-ptr load on loopTask) -- is guarded in NimBLE 2.5.1:
-  // NimBLEScan::onHostDeinit() deinits that timer and clears
-  // m_srTimerInitialized BEFORE the port teardown, so ~NimBLEScan() no longer
-  // touches it. getScan() re-creates the scan object on the next window.
+  // Release BLE at tool exit or when a Wi-Fi-only tool needs its memory.
+  // Dual-radio scan windows keep the controllers resident. NimBLE >= 2.5.1
+  // (enforced in awok_common.h) cleans up the scan timer BEFORE port teardown;
+  // 2.5.0 instead dereferenced the freed NPL function table in ~NimBLEScan.
   if (!NimBLEDevice::isInitialized()) return;
   NimBLEScan* scan = NimBLEDevice::getScan();
   if (scan) {
@@ -1915,7 +1963,12 @@ void releaseBleMemory() {
   return;
 #else
   delay(100);
-  NimBLEDevice::deinit(true);
+  Serial.println("[ble] releasing scan and controller");
+  if (!NimBLEDevice::deinit(true)) {
+    Serial.println("[ble] deinit failed");
+    logMemory("BLE shutdown failed");
+    return;
+  }
   logMemory("after BLE shutdown");
 #endif
 }
@@ -2007,9 +2060,7 @@ void radioSchedulerEnd(RadioScheduler& s) {
   s.active = false;
   if (s.phase == RadioPhase::kWifi && s.exitWifi) s.exitWifi();
   if (s.bleAvailable) {
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    if (scan) { scan->stop(); scan->clearResults(); }
-    releaseBleMemory();          // single BLE deinit, at tool exit only
+    releaseBleMemory();          // stop/clear/deinit once, at tool exit only
   }
   ensureWifiStation(false);      // STA resident for the rest of the firmware
 }
@@ -2369,6 +2420,15 @@ void loop() {
   if (!resultTablesReady) { delay(50); return; }
 #endif
   updateGps();
+#ifdef AWOK_HEADLESS
+  bridgeServiceFileTransfer();
+  if (bridgeFileTransferActive()) {
+    // Keep radio-owning tools from hopping away during a reliable download.
+    bridgeServiceCommand();
+    delay(1);
+    return;
+  }
+#endif
 #ifdef AWOK_MINI_DISPLAY
   updateMiniJoystick();
 #endif
@@ -2406,6 +2466,8 @@ void loop() {
   updateBeaconWatch();
   updateAuthFlood();
   updateAdvancedWatch();
+  updateWifi6Intel();
+  updateDeauthForensics();
   updateLink();
 #ifdef AWOK_HEADLESS
   bridgeServiceCommand();  // run any phone command off the BLE host task

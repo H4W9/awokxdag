@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.6.4
+- **Version:** 1.7.2
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -86,16 +86,27 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
   engine. Aggregates multi-node target observations over ESP-NOW, computes estimated
   GPS coordinates, geodesic range, confidence radius, and heading bearing, visualized
   via a tactical radar scope on device and in the web dashboard.
+- **Wi-Fi 6 Intel** — passive 802.11ax High Efficiency (HE) capability and operation
+  inspector. Decodes BSS Color (1–63) collision parameters, color disabled flags,
+  channel widths (20/40/80/160 MHz), and generational classifications (Wi-Fi 4/5/6)
+  across 2.4 GHz and 5 GHz bands. Features on-device touch/mini inspection, SD CSV
+  logging to `/awokxdag/wifi6_intel.csv`, live `$AXINTEL` telemetry, and an interactive
+  Web Bluetooth BSS color collision matrix.
 - **Saved** — up to 10 access points kept in NVS across reboots.
 
 ### Network Tools (connected LAN)
 
-Open **Recon → page 3 → Network Tools**. These tools send discovery/service
+Open **Recon → Network Tools**. These tools send discovery/service
 queries on the Wi-Fi network you join; they require a normal network connection.
 
 - **Connect / Wi-Fi** — choose an AP from the last scan (or rescan), enter its
-  password with the on-device character picker, then Join. Both Touch and Mini
-  support SSID/password entry. Credentials stay in RAM; the password entry is
+  password with the on-device phone keypad, then Join. Both Touch and Mini
+  use a three-column T9-style **multi-tap** layout (no dictionary): repeat a key
+  to cycle its letters, then wait one second or press **# Next** for another
+  letter on the same key. **\* Mode** cycles abc / ABC / 123 / symbols; **0**
+  enters space in letter mode. All printable ASCII characters are available,
+  with separate Delete, Cancel and Done buttons. Mini uses all four directions
+  to move between keys and Center to select. Credentials stay in RAM; the password entry is
   masked and cleared after a connection attempt. Leaving Network Tools disconnects.
 - **Discover Hosts** — ARP discovery with IP/MAC results and subnet-mask handling.
   Tap a host to inspect it individually. The top-level service buttons scan all
@@ -166,10 +177,33 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   disconnect reason storms, channel-switch announcements, EAPOL and association
   spikes, RF noise-floor changes, and rapid BLE address churn. Alerts are
   thresholded and GPS logged. Passive; RF and BLE churn results are heuristics.
+- **Deauth Forensics** — targeted deauthentication & disassociation frame forensic
+  analyzer and attribution engine. Differentiates shotgun broadcast floods from
+  targeted unicast victim station attacks, detects transmitter 802.11 sequence number
+  jumps indicating forged/spoofed attack frames, decodes 802.11 reason codes, logs
+  forensic audit trails to `/awokxdag/deauth_forensics.csv`, and streams live `$DEAUTH`
+  telemetry to Web Bluetooth with real-time alert banners.
+- **SD Card File Manager & Remote Transfer** — browse, preview, and download SD card captures
+  directly to your phone or computer over Web Bluetooth or Web Serial without removing the SD card.
+  Streams base64 chunks on-the-fly (`$FILEDATA`), supports PCAP handshakes and wardrive CSVs,
+  provides an in-browser preview drawer with one-click copy, and automatically bridges requests
+  between Screen Chip and Bridge Chip over ESP-NOW.
+  For reliable previews/downloads, update both chips to 1.7.1 and reload the updated
+  control page. BLE transfers wait for the bridge to finish its channel sweep,
+  then require a browser acknowledgment for each chunk and retry missing chunks.
+  Bridge scanning pauses during the transfer. USB retains its existing stream.
 
 ### GPS
 - **GPS status** — fix, satellites, coordinates, speed, HDOP, plus a baud cycler
-  and NMEA link diagnostics.
+  and NMEA link diagnostics. GPS coordinates automatically select the local
+  timezone offline; the current date selects daylight saving or standard time.
+  GPS/Wardrive screens show local time and the offset/DST state. Logs, WiGLE
+  CSV FirstSeen values, and SD file timestamps use local time too. The last zone
+  is remembered through fix loss and reboots, and refreshed from a valid fix
+  every 30 seconds. Before the clock and any zone are known, logs use explicit
+  `uptime+` markers. The bundled map is approximate near timezone borders;
+  [data sources and update instructions](third_party/timezones/README.md) describe
+  its limits. Existing files are not rewritten.
 - **Wardrive** — logs each Wi-Fi BSSID and BLE device once to a WiGLE-compatible
   CSV while moving. A GPS-fix indicator sits in the header on every screen, and
   scan/deauth/client/portal/handshake logs are geotagged with the current fix.
@@ -238,8 +272,8 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 
   Credentials are read only for the request, wiped from RAM afterward, and
   never printed or written to the audit log. Uploads are streamed from SD over
-  certificate-verified HTTPS. GPS UTC supplies the device clock, log times, and
-  SD file timestamps; NTP is used only as a fallback when an upload needs TLS
+  certificate-verified HTTPS. GPS supplies the absolute device clock; log times and
+  SD file timestamps are converted to the GPS-selected local timezone; NTP is used only as a fallback when an upload needs TLS
   before GPS time is available. The files remain on SD until you remove them.
   New wardrive files use WiGLE 1.6 so both destinations receive the documented
   multipart CSV.
@@ -252,9 +286,12 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 Home  page 1: Recon | Attacks | Monitor | GPS | Status      (footer: About >)
       page 2: About  (name, version, board, authorized-use notice)
 
-Recon page 1: Wi-Fi Scan | Channel Map | BLE Scan | Clients | Packet Mon | WPS Scan
-      page 2: Hidden SSID | Cameras | Security Audit | BLE Trackers | Harvester | Probe Intel
-      page 3: Saved | Network Tools
+Recon:        Wi-Fi | Bluetooth | RF & Packets | Field Tools | Network Tools
+  Wi-Fi:      Wi-Fi Scan | Saved | WPS Scan | Hidden SSID | Security Audit | Wi-Fi 6 Intel
+  Bluetooth:  BLE Scan | BLE Trackers | BLE Intel
+  RF & Packets: Channel Map | Spectrogram | Packet Mon
+  Field Tools: Clients | Cameras | Harvester | Probe Intel | Fleet Hunter | Topology Map
+  (tool Back returns to its group; Groups returns to the Recon picker)
 
 Network Tools page 1: Connect / Wi-Fi | Discover Hosts | TCP Ports | LAN Cameras |
                       Printers | SIP Services
@@ -264,7 +301,7 @@ Attacks:      Beacon Flood | Evil Portal | Evil Twin | Probe Lure
               (Deauth / Handshake launch from a scanned Wi-Fi result)
 
 Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch | Karma Watch |
-              Beacon Watch | Auth Flood | Advanced Watch
+              Beacon Watch | Auth Flood | Advanced Watch | Deauth Forensics
 
 GPS:          status screen -> Baud / Drive / Link
 Link:         unpaired -> Pair / Solo;  paired -> Unpair / Start (Split Wardrive)
@@ -316,8 +353,8 @@ works without a card, and readable snapshots mirror to:
 
 The camera and BLE-spam watches are live-view only.
 
-The firmware audit trail includes a per-boot session id, firmware version, GPS
-UTC time when available (otherwise uptime), result, non-secret details, and GPS
+The firmware audit trail includes a per-boot session id, firmware version, GPS-derived
+local time when available (otherwise uptime), result, non-secret details, and GPS
 position. It intentionally does not copy portal submissions, packet payloads,
 or credentials. The live segment rotates at 256 KB and retains one previous
 segment.
@@ -334,8 +371,12 @@ segment.
    `ieee80211_raw_frame_sanity_check` collides with Espressif's copy in
    `libnet80211.a`. The wrap shrinks Arduino's default STA RX/TX buffers so
    Dual C5 Touch can keep BLE up beside Wi-Fi.
-2. Libraries: **Adafruit GFX**, **Adafruit ILI9341**, **NimBLE-Arduino**,
+2. Libraries: **Adafruit GFX**, **Adafruit ILI9341**, **NimBLE-Arduino 2.5.1 or newer**,
    **XPT2046_Touchscreen**, **TinyGPSPlus**.
+   NimBLE 2.5.0 can crash when stopping wardriving or another BLE tool because
+   it destroys the scan-response timer after host teardown. Update it through
+   Library Manager, or run `arduino-cli lib install "NimBLE-Arduino@2.5.1"`.
+   The firmware rejects older versions; release builds pin 2.5.1.
 3. Open `AWOKxDAG.ino`, select **ESP32C5 Dev Module** with:
    - Flash Size **8 MB**, Partition Scheme **8M with spiffs (3MB APP)**,
      PSRAM **Enabled**, USB CDC On Boot **Disabled**.

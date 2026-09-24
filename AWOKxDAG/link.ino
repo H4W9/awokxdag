@@ -12,6 +12,12 @@
 // into linkPacketQueue (single-producer / single-consumer ring). All parsing and
 // SD/UI work happens in updateLink() on the main loop.
 
+#include <atomic>
+
+// The Wi-Fi callback acknowledges readiness while the main loop waits, without
+// draining/re-entering the command queue or starting a second file operation.
+static std::atomic<uint32_t> linkFileWaitingToken{0};
+
 // Channel the split scanner is currently dwelling on (reported in TELEM). Local
 // to this tab; every link.ino function is defined after it.
 static uint8_t linkScanChannel = 0;
@@ -35,6 +41,52 @@ void onLinkRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
   memcpy(&magic, data, 4);
   if (magic != kLinkMagic) return;
   const uint8_t type = data[5];
+
+  if (type == kLinkMsgFileChunkAck && len == static_cast<int>(sizeof(AxdFileChunkAck))) {
+    AxdFileChunkAck ack;
+    memcpy(&ack, data, sizeof(ack));
+    if (ack.version == kLinkProtoVersion) linkReceiveFileAck(ack.token, ack.seq);
+    return;
+  }
+#ifdef AWOK_HEADLESS
+  if (type == kLinkMsgFileChunk && len == static_cast<int>(sizeof(AxdFileChunkMsg))) {
+    AxdFileChunkMsg chunk;
+    memcpy(&chunk, data, sizeof(chunk));
+    if (chunk.version == kLinkProtoVersion) bridgeQueueFileChunk(chunk);
+    return;
+  }
+#endif
+  // A reliable sender blocks the main loop while waiting. Abort must bypass
+  // the command queue so it can stop that wait immediately.
+  if (type == kLinkMsgCommand && len == static_cast<int>(sizeof(LinkPacket)) &&
+      linkReliableFileActive()) {
+    LinkPacket command;
+    memcpy(&command, data, sizeof(command));
+    if (command.version == kLinkProtoVersion &&
+        static_cast<uint8_t>(command.reserved) == kAxdCmdFileAbort) {
+      linkAbortFileStream();
+      return;
+    }
+  }
+
+  if (type == kLinkMsgFileReady && len == static_cast<int>(sizeof(LinkPacket))) {
+    LinkPacket ready;
+    memcpy(&ready, data, sizeof(ready));
+    if (ready.version != kLinkProtoVersion || ready.sessionId == 0) return;
+#ifdef AWOK_HEADLESS
+    if (ready.flags == kLinkFileReadyRequest &&
+        bridgeFileReceiverReady(ready.sessionId)) {
+      ready.flags = kLinkFileReadyAck;
+      memcpy(ready.srcMac, linkSelfMac, 6);
+      esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&ready), sizeof(ready));
+    }
+#endif
+    if (ready.flags == kLinkFileReadyAck) {
+      uint32_t expected = ready.sessionId;
+      linkFileWaitingToken.compare_exchange_strong(expected, 0);
+    }
+    return;
+  }
 
   // Fleet roster is larger than a LinkPacket: hand it to updateLink via a
   // single-slot mailbox. Filter before writing the slot so a foreign fleet
@@ -152,6 +204,39 @@ void onLinkRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
       bridgeNotifyResult(kSourceHunt, reinterpret_cast<const uint8_t*>(rowBuf), rlen);
     }
     return;
+  } else if (type == kLinkMsgFileEntry && len >= 12) {
+    AxdFileEntryMsg r = {};
+    memcpy(&r, data, len < static_cast<int>(sizeof(r)) ? len : sizeof(r));
+    char line[96];
+    if (r.index == 255) {
+      snprintf(line, sizeof(line), "$FILELIST_END,%u,%lu",
+               r.count, static_cast<unsigned long>(r.size));
+    } else {
+      snprintf(line, sizeof(line), "$FILELIST,%u,%u,%lu,%s",
+               r.index, r.count, static_cast<unsigned long>(r.size), r.name);
+    }
+    bridgeNotifyResult(kSourceFiles, reinterpret_cast<const uint8_t*>(line), strlen(line));
+    return;
+  } else if (type == kLinkMsgFileData && len >= 12) {
+    AxdFileDataMsg r = {};
+    memcpy(&r, data, len < static_cast<int>(sizeof(r)) ? len : sizeof(r));
+    char line[180];
+    snprintf(line, sizeof(line), "$FILEDATA,%u,%u,%s", r.chunkSeq, r.totalChunks, r.data);
+    bridgeNotifyResult(kSourceFiles, reinterpret_cast<const uint8_t*>(line), strlen(line));
+    return;
+  } else if (type == kLinkMsgFileDone && len >= 12) {
+    AxdFileDoneMsg r = {};
+    memcpy(&r, data, len < static_cast<int>(sizeof(r)) ? len : sizeof(r));
+    char line[80];
+    if (r.status == 1) {
+      snprintf(line, sizeof(line), "$FILEERR,TRANSFER_FAILED");
+    } else if (r.status == 2) {
+      snprintf(line, sizeof(line), "$FILEABORT,%s", r.name);
+    } else {
+      snprintf(line, sizeof(line), "$FILEDONE,%s,%lu", r.name, static_cast<unsigned long>(r.totalBytes));
+    }
+    bridgeNotifyResult(kSourceFiles, reinterpret_cast<const uint8_t*>(line), strlen(line));
+    return;
   }
 #endif
   // Link/fleet control frames (Hello, Sync, Telem, Command, FleetInvite,
@@ -193,16 +278,14 @@ bool linkEnsureEspNow() {
 // ---- Fleet Wardrive: N linked nodes split the plan into one CSV ----------
 // Coordinator inbox for peer rows (POD; filled in the ESP-NOW callback, drained
 // by the aggregator in updateLink). Ack lets a worker retransmit only new rows.
-static FleetWardriveRow fleetRowRing[kFleetRowRingSlots];
-static volatile int fleetRowHead = 0;
-static volatile int fleetRowTail = 0;
+static ToolQueue<FleetWardriveRow, kFleetRowRingSlots> fleetRowRing;
 
 void fleetOnRowFrame(const uint8_t* data) {
-  if (!fleetCoordinator) return;
-  const int next = (fleetRowHead + 1) % kFleetRowRingSlots;
-  if (next == fleetRowTail) return;  // full: drop (worker retransmits)
-  memcpy(&fleetRowRing[fleetRowHead], data, sizeof(FleetWardriveRow));
-  fleetRowHead = next;
+  const uint32_t generation = fleetRowRing.generation();
+  if (!generation) return;
+  FleetWardriveRow row;
+  memcpy(&row, data, sizeof(row));
+  fleetRowRing.push(row, generation);  // full: worker retransmits
 }
 
 void fleetOnAckFrame(const uint8_t* data) {
@@ -530,12 +613,13 @@ void fleetCoordinatorTick(uint32_t now) {
 }
 // ---- Fleet Wardrive Phase 2: row aggregation -----------------------------
 // Worker outbound ring: new rows wait here until the coordinator ACKs them.
-static FleetWardriveRow fleetOutRing[kFleetRowRingSlots];
+static ToolBuffer<FleetWardriveRow, kFleetRowRingSlots> fleetOutRing;
 static int fleetOutHead = 0;
 static int fleetOutTail = 0;
 
 void fleetQueueOutRow(const uint8_t* id, const String& name, uint8_t auth,
                       uint8_t channel, int rssi, bool isBle) {
+  if (!fleetOutRing) return;
   FleetWardriveRow r;
   r.sessionId = fleetSessionId;
   r.seq = ++fleetRowSeq;
@@ -559,6 +643,7 @@ void fleetQueueOutRow(const uint8_t* id, const String& name, uint8_t auth,
 // Worker: during a window, drop ACKed rows and (re)send a few unacked ones to
 // the coordinator (broadcast; only the coordinator stores them).
 void fleetWorkerSendRows() {
+  if (!fleetOutRing) return;
   while (fleetOutTail != fleetOutHead &&
          fleetOutRing[fleetOutTail].seq <= fleetAckedSeq)
     fleetOutTail = (fleetOutTail + 1) % kFleetRowRingSlots;
@@ -576,11 +661,10 @@ void fleetWorkerSendRows() {
 // Coordinator: merge every inbound row (dedup + SD + phone) and advance each
 // member's ACK sequence. Capped to 32 rows per pass to prevent starvation.
 void fleetCoordDrainRows() {
-  if (!fleetCoordinator) { fleetRowTail = fleetRowHead; return; }
+  if (!fleetCoordinator) return;
   int drained = 0;
-  while (fleetRowTail != fleetRowHead && drained < 32) {
-    FleetWardriveRow r = fleetRowRing[fleetRowTail];
-    fleetRowTail = (fleetRowTail + 1) % kFleetRowRingSlots;
+  FleetWardriveRow r;
+  while (drained < 32 && fleetRowRing.pop(r)) {
     ++drained;
     if (r.sessionId != fleetSessionId) continue;
     const int m = fleetIndexOfMac(r.src);
@@ -596,6 +680,30 @@ void fleetCoordDrainRows() {
     }
     wardriveEmitPeerRow(r);  // dedups by id; writes SD + streams to phone
   }
+}
+
+// A node needs only its role's ring, and only while a drive is running.
+// Worker storage is loopTask-only; the coordinator inbox stays in internal RAM.
+bool fleetBeginRowBuffers() {
+  fleetOutHead = fleetOutTail = 0;
+  if (!fleetActive) return true;
+  const bool ok = fleetCoordinator ? fleetRowRing.begin() : fleetOutRing.allocate();
+  if (!ok) {
+    fleetRowRing.release();
+    fleetOutRing.release();
+    showToolMemoryError("Fleet Wardrive");
+  }
+  return ok;
+}
+
+void fleetReleaseRowBuffers() {
+  fleetRowRing.pause();
+  // Finish accepted inbound rows before the caller closes the CSV. The paused
+  // queue cannot grow; each drain consumes at most 32 of the bounded inbox.
+  for (int i = 0; i < kFleetRowRingSlots; i += 32) fleetCoordDrainRows();
+  fleetRowRing.release();
+  fleetOutRing.release();
+  fleetOutHead = fleetOutTail = 0;
 }
 
 // Coordinator: tell each member the highest row seq stored, so it can
@@ -618,9 +726,9 @@ void fleetSendAcks() {
 void fleetStartWardrive() {
   if (!fleetActive) fleetStartCoordinator();
   if (!fleetCoordinator) return;  // only the coordinator starts the fleet
-  fleetWardriveOn = true;
+  startLinkWardrive();  // allocate our ring before asking workers to start
+  fleetWardriveOn = linkWardriveActive;
   fleetBroadcastRoster();
-  startLinkWardrive();  // scan our slice + aggregate locally
 }
 
 // The designated BLE node runs a continuous BLE observer scan (co-resident with
@@ -649,7 +757,9 @@ void fleetStopBleScanOnly() {
 void fleetStopLocal() {
   linkWardriveActive = false;
   fleetStopBleScanOnly();
+  fleetReleaseRowBuffers();
   closeWardriveCsv();
+  logMemory("Fleet buffers released");
   esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
   linkBroadcastStatus();
 }
@@ -834,6 +944,38 @@ void linkFinalizePairing(const LinkPacket& p) {
   if (currentView == View::kLinkWardrive) drawLinkWardrive();
 }
 
+// The bridge can deliver a command in its first burst, then spend the next
+// ~200 ms sweeping other channels. Wait for a matching ACK after it parks back
+// on channel 1, before opening/streaming a file or returning a listing/error.
+static bool linkWaitForFileReceiver(const LinkPacket& command) {
+  linkFileWaitingToken.store(command.sessionId);
+  WiFi.scanDelete();  // an asynchronous scan must not move us off the rendezvous
+  esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
+  LinkPacket ready;
+  ready.type = kLinkMsgFileReady;
+  ready.flags = kLinkFileReadyRequest;
+  ready.sessionId = command.sessionId;
+  ready.code = command.code;
+  memcpy(ready.srcMac, linkSelfMac, 6);
+  const uint32_t started = millis();
+  uint32_t lastRequest = started - kLinkFileReadyRetryMs;
+  while (millis() - started < kLinkFileReadyTimeoutMs) {
+    if (linkFileWaitingToken.load() == 0) return true;
+    const uint32_t now = millis();
+    if (now - lastRequest >= kLinkFileReadyRetryMs) {
+      lastRequest = now;
+      esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&ready), sizeof(ready));
+    }
+    delay(1);
+  }
+  linkFileWaitingToken.store(0);
+  Serial.println("$FILEERR,RECEIVER_NOT_READY");
+  AxdFileDoneMsg done;
+  done.status = 1;
+  esp_now_send(kLinkBroadcastAddr, reinterpret_cast<uint8_t*>(&done), sizeof(done));
+  return false;
+}
+
 void linkHandlePacket(const LinkQueueItem& item) {
   const LinkPacket& p = item.pkt;
   if (p.magic != kLinkMagic || p.version != kLinkProtoVersion) return;
@@ -922,8 +1064,16 @@ void linkHandlePacket(const LinkQueueItem& item) {
     static uint16_t lastCmdSeq = 0;
     if (remoteActive && p.code != lastCmdSeq) {
       lastCmdSeq = p.code;
-      linkDispatchCommand(static_cast<uint8_t>(p.reserved & 0xFF),
-                          static_cast<uint8_t>(p.reserved >> 8));
+      const uint8_t op = static_cast<uint8_t>(p.reserved & 0xFF);
+      const bool fileReply = op == kAxdCmdFileList || op == kAxdCmdFileGet ||
+                             op == kAxdCmdFileGetReliable || op == kAxdCmdFileDelete;
+      if (fileReply && (p.flags & kLinkCommandWaitFileReady) &&
+          (p.sessionId == 0 || !linkWaitForFileReceiver(p))) return;
+      if (op == kAxdCmdFileGetReliable) {
+        if (p.sessionId != 0) linkStreamFileReliable(static_cast<uint8_t>(p.reserved >> 8), p.sessionId);
+      } else {
+        linkDispatchCommand(op, static_cast<uint8_t>(p.reserved >> 8));
+      }
     }
     return;
   }
@@ -1028,9 +1178,23 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
     case kAxdCmdSecurityAudit: startSecurityAudit(); break;
     case kAxdCmdTrackers: startTrackerScan(); break;
     case kAxdCmdBleIntel: startBleIntel(); break;
-    case kAxdCmdSpectrogram: startSpectrogram(); break;
+    case kAxdCmdSpectrogram:
+      if (!spectrogramActive) startSpectrogram();
+      if (arg == 201) {
+        spectrogramLockStep(-1);
+      } else if (arg == 202) {
+        spectrogramLockStep(1);
+      } else if (arg == 203) {
+        spectrogramCycleBand();
+      } else if (arg == 204) {
+        spectrogramToggleHop();
+      } else if (arg >= 1 && arg <= 165) {
+        spectrogramLockToChannel(arg);
+      }
+      break;
     case kAxdCmdHarvester: startHarvester(); break;
     case kAxdCmdProbeIntel: startProbeIntel(); break;
+    case kAxdCmdWifi6Intel: startWifi6Intel(); break;
     case kAxdCmdSaved: drawSavedNetworks(); break;
     // Attacks (target-specific ones act on the on-device last selection)
     case kAxdCmdBeaconFlood: startBeaconFlood(); break;
@@ -1045,6 +1209,7 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
     case kAxdCmdKarmaWatch: startKarmaWatch(); break;
     case kAxdCmdBeaconWatch: startBeaconWatch(); break;
     case kAxdCmdAdvancedWatch: startAdvancedWatch(); break;
+    case kAxdCmdDeauthForensics: startDeauthForensics(); break;
     // GPS / wardrive / misc
     case kAxdCmdWardriveStart: startWardrive(); break;
     case kAxdCmdWardriveStop: stopWardrive(); drawHome(); break;
@@ -1052,6 +1217,10 @@ void linkDispatchCommand(uint8_t op, uint8_t arg) {
     case kAxdCmdLocator: startLocator(); break;
     case kAxdCmdStatus: drawStatus(); break;
     case kAxdCmdFiles: openFilesManager(); break;
+    case kAxdCmdFileList: linkStreamFileList(); break;
+    case kAxdCmdFileGet: linkStreamFileData(arg); break;
+    case kAxdCmdFileDelete: linkDeleteFile(arg); break;
+    case kAxdCmdFileAbort: linkAbortFileStream(); break;
     // Network selection + per-target actions
     case kAxdCmdListWifi: linkStreamWifiResults(); break;
     case kAxdCmdSelectWifi:
@@ -1333,13 +1502,14 @@ void linkIngestScan(int result) {
 }
 
 void startLinkWardrive() {
-  if (wardriveActive) stopWardrive();  // never run both scanners at once
+  stopActiveTools();  // release the previous tool before allocating this drive
   if (!linkEnsureEspNow()) {
     drawLinkWardrive();
     return;
   }
+  if (!fleetBeginRowBuffers()) return;
   wardriveNetworks = 0;
-  wardriveBleCount = 0;  // BLE off in Link v1
+  wardriveBleCount = 0;  // dedicated Fleet BLE nodes still scan below
   wardriveScans = 0;
   wardriveResetDedup();
   wardriveStartMs = millis();
@@ -1372,6 +1542,8 @@ void stopLinkWardrive() {
   linkWardriveActive = false;
   linkInWindow = false;
   WiFi.scanDelete();
+  fleetStopBleScanOnly();
+  fleetReleaseRowBuffers();
   closeWardriveCsv();
   esp_wifi_set_channel(kLinkChannel, WIFI_SECOND_CHAN_NONE);
   linkBroadcastStatus();
