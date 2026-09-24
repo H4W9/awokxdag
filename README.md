@@ -3,7 +3,7 @@
 **Dual-band Wi-Fi / BLE penetration-testing toolkit for the ESP32-C5** (AWOK Dual
 C5, white-USB screen board with an ILI9341 touchscreen).
 
-- **Version:** 1.7.2
+- **Version:** 1.7.3
 - **Author:** dag nazty
 - **Target:** ESP32-C5 Dev Module, 8 MB flash, PSRAM, microSD
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -98,8 +98,11 @@ Original **Dual ESP32 Mini v1/v2/v3** builds are available as well.
 
 Open **Recon → Network Tools**. These tools send discovery/service
 queries on the Wi-Fi network you join; they require a normal network connection.
+The overview separates **Connection**, **Hosts**, **Services**, and
+**Results & Upload**. Connection/IP status stays visible while browsing. Touch
+uses larger cards; Mini uses selectable, scrolling entries with the same actions.
 
-- **Connect / Wi-Fi** — choose an AP from the last scan (or rescan), enter its
+- **Connection** — choose an AP from the last scan (or rescan), enter its
   password with the on-device phone keypad, then Join. Both Touch and Mini
   use a three-column T9-style **multi-tap** layout (no dictionary): repeat a key
   to cycle its letters, then wait one second or press **# Next** for another
@@ -108,9 +111,10 @@ queries on the Wi-Fi network you join; they require a normal network connection.
   with separate Delete, Cancel and Done buttons. Mini uses all four directions
   to move between keys and Center to select. Credentials stay in RAM; the password entry is
   masked and cleared after a connection attempt. Leaving Network Tools disconnects.
-- **Discover Hosts** — ARP discovery with IP/MAC results and subnet-mask handling.
-  Tap a host to inspect it individually. The top-level service buttons scan all
-  discovered hosts.
+- **Hosts → Discover hosts** — ARP discovery with IP/MAC results and subnet-mask
+  handling. Select a host to check its ports, cameras, printers, or SIP services.
+  Service results return to that host; the host list keeps its page. The separate
+  **Services** menu checks all discovered hosts (UPnP queries the gateway).
 - **TCP Ports** — checks 19 common TCP ports with one nonblocking connection at a
   time. Results establish an open TCP port, not a verified service or vulnerability.
 - **LAN Cameras** — checks RTSP OPTIONS on 554/8554 and ONVIF device-information
@@ -121,11 +125,14 @@ queries on the Wi-Fi network you join; they require a normal network connection.
   responses as printer candidates. Does not submit print jobs.
 - **SIP Services** — sends UDP OPTIONS on 5060 and matches responses to the queried
   host and request. Includes authentication/error responses as service evidence.
-- **UPnP Mappings** (second page) — discovers a compatible gateway using SSDP,
+- **UPnP Mappings** (Services, second page) — discovers a compatible gateway using SSDP,
   reads its IGD service description, and lists existing port mappings. It does
   not create, delete, or change mappings.
-- **Results / exports** — paginated results with detail inspection, Back/Stop,
-  and Save. Completed and cancelled scans automatically save to SD when available;
+- **Results / exports** — three result cards per page, detail inspection, a large
+  **Stop scan** action while busy, and **Actions / Save CSV** after stopping.
+  Actions switches between retained hosts/services, saves a snapshot, restarts
+  discovery, or opens Connection. **Results & Upload** also opens the last host
+  and service lists directly. Completed and cancelled scans automatically save to SD when available;
   CSVs retain partial-result flags, network context, and timeout/error counts.
   Serial **h** exits and disconnects.
 
@@ -157,6 +164,12 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   one network and counts probe requests naming it, logging the probing client.
 
 ### Monitor (defensive)
+
+Open **Monitor → Wi-Fi / Bluetooth / Advanced**. Each detector has a description
+and running/stopped state, with three large cards per page on Touch and selectable
+scrolling entries on Mini. **Stop** ends the detector and returns to its group and
+page; an already stopped detector shows **Back**. **Groups** returns to the picker.
+
 - **Deauth Watch** — hops 2.4/5 GHz counting deauth/disassoc frames; logs the
   last offender.
 - **Rogue Watch** — flags evil-twin APs: one SSID on multiple BSSIDs, or a saved
@@ -188,10 +201,21 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   Streams base64 chunks on-the-fly (`$FILEDATA`), supports PCAP handshakes and wardrive CSVs,
   provides an in-browser preview drawer with one-click copy, and automatically bridges requests
   between Screen Chip and Bridge Chip over ESP-NOW.
-  For reliable previews/downloads, update both chips to 1.7.1 and reload the updated
-  control page. BLE transfers wait for the bridge to finish its channel sweep,
+  For verified previews/downloads, update both chips with this firmware and reload
+  the matching control page. BLE transfers wait for the bridge to finish its channel sweep,
   then require a browser acknowledgment for each chunk and retry missing chunks.
-  Bridge scanning pauses during the transfer. USB retains its existing stream.
+  Bridge scanning pauses during the transfer. Bluetooth downloads can pause and
+  resume after reconnecting to the same bridge, starting at the first missing
+  chunk. Keep the browser tab open: partial downloads are held in tab memory.
+  The device checks the original snapshot and the browser checks the complete
+  file with CRC32 before preview/save. Appended CSV rows do not change an existing
+  snapshot; changed or truncated contents require Restart. USB retains its
+  existing stream and size check.
+  On the board, Captures shows four larger rows per page with file details and
+  type filters. It retains the newest 64 files by SD modification time (filename
+  order breaks ties); the header discloses larger directories. Filters apply to
+  those 64 entries. Deleting a file requires a separate confirmation, and an open
+  wardrive CSV cannot be deleted from the board menu.
 
 ### GPS
 - **GPS status** — fix, satellites, coordinates, speed, HDOP, plus a baud cycler
@@ -207,6 +231,11 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 - **Wardrive** — logs each Wi-Fi BSSID and BLE device once to a WiGLE-compatible
   CSV while moving. A GPS-fix indicator sits in the header on every screen, and
   scan/deauth/client/portal/handshake logs are geotagged with the current fix.
+  Touch, Mini, and website dashboards show device Wi-Fi/BLE counts, elapsed
+  time, estimated distance, recent discovery rate, GPS quality/fix coverage, local
+  time, and SD row/byte/flush status. The website marks stale telemetry and keeps
+  device session totals separate from its best-effort live CSV rows. Fleet
+  workers identify the coordinator as the owner of the merged CSV.
 
 ### Link (two-unit)
 - **Link Mode** — pairs two AxD units (any mix of C5 and original 2.4 GHz
@@ -220,8 +249,8 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   time-synced rendezvous on channel 1 swaps telemetry, so each screen shows its
   own, the partner's, and the combined AP count, the partner's link RSSI, and a
   partner-lost alert. Each board logs its own session WiGLE CSV and uses its
-  own GPS. Started unpaired, it wardrives every channel solo. Reached from the GPS
-  screen; Wi-Fi-only in this release.
+  own GPS. The unpaired option covers every channel with Wi-Fi only. Reached
+  from GPS → Drive modes → Split; Solo mode remains the Wi-Fi + BLE entry.
 - **Fleet Wardrive** — links up to six C5 or classic ESP32 Touch/Mini boards in an explicit
   coordinator/worker topology. Press **Start** on one chip to make it the stable
   coordinator, then **Join** on each worker. The coordinator assigns Wi-Fi/BLE
@@ -243,7 +272,7 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 ### Status / utility
 - **Status** — uptime, free heap, chip temp, SD used/total, GPS fix, Wi-Fi MAC,
   battery (set `kBatteryAdc` in `board_pins.h` to enable).
-- **Settings** (Status → Settings, serial `t`) — sleep timeout (off / 15s / 30s /
+- **Settings** (Home page 2, serial `t`) — sleep timeout (off / 15s / 30s /
   1m / 2m / 5m), brightness, GPS baud, boot splash, two-tap confirm before
   active tests, NMEA echo, and screen test. Stored in NVS. Footer **Defaults**
   restores those prefs. A sleeping screen wakes on the first tap or button
@@ -253,9 +282,9 @@ enterprise authentication and raw 64-digit PSKs are not supported.
   rotation marks, backlight sweep, and touch or five-button probe. Mini draws
   the panel directly, then again through the firmware canvas, so a dead ST7735
   can be told apart from a MiniLayout bug. Serial `h` aborts to Home.
-- **Capture manager** (Status → Files) — browse `/awokxdag/` files with sizes;
+- **Capture manager** (Home page 1 → Files, also Status → Files) — browse `/awokxdag/` files with sizes;
   delete behind a two-tap confirm.
-- **Direct wardrive upload** (Recon → Network Tools → Wardrive Upload) — choose
+- **Direct wardrive upload** (Recon → Network Tools → Results & Upload → Wardrive Upload) — choose
   and join an access point, choose a `wardrive-*.csv` file from SD, select
   **WiGLE** or **WDGWars**, and explicitly press Upload. Put the relevant API
   credentials in one `wardrive_upload.txt` file on the SD card (root or
@@ -283,8 +312,10 @@ enterprise authentication and raw 64-digit PSKs are not supported.
 ## Menu map
 
 ```
-Home  page 1: Recon | Attacks | Monitor | GPS | Status      (footer: About >)
-      page 2: About  (name, version, board, authorized-use notice)
+Home  page 1: Recon | Attacks | Monitor | GPS | Files       (footer: version | Next)
+      page 2: Settings | Status | About                    (footer: Prev | version)
+      About  overlay: name, version, board, authorized-use notice (any tap = back)
+      (Files and Settings open straight from Home; Prev/Next page the tiles)
 
 Recon:        Wi-Fi | Bluetooth | RF & Packets | Field Tools | Network Tools
   Wi-Fi:      Wi-Fi Scan | Saved | WPS Scan | Hidden SSID | Security Audit | Wi-Fi 6 Intel
@@ -293,21 +324,39 @@ Recon:        Wi-Fi | Bluetooth | RF & Packets | Field Tools | Network Tools
   Field Tools: Clients | Cameras | Harvester | Probe Intel | Fleet Hunter | Topology Map
   (tool Back returns to its group; Groups returns to the Recon picker)
 
-Network Tools page 1: Connect / Wi-Fi | Discover Hosts | TCP Ports | LAN Cameras |
-                      Printers | SIP Services
-              page 2: UPnP Mappings | Last Results | Wardrive Upload
+Network Tools: Connection | Hosts | Services | Results & Upload
+  Connection: SSID / password (phone keypad) / scanned AP / Join; explicit Cancel
+  Hosts:      Discover hosts -> select host -> TCP / cameras / printers / SIP
+  Services:   TCP Ports | LAN Cameras | Printers | SIP Services | UPnP Mappings
+  Results:    three cards/page -> detail; Stop scan while busy
+  Actions:    switch hosts/services | Save CSV | Discover hosts | Connection
+  Results & Upload: Last hosts | Last services | Wardrive Upload
+  (host/service pages are retained; leaving Network Tools disconnects)
 
 Attacks:      Beacon Flood | Evil Portal | Evil Twin | Probe Lure
               (Deauth / Handshake launch from a scanned Wi-Fi result)
 
-Monitor:      Deauth Watch | Rogue Watch | BLE Spam Watch | Karma Watch |
-              Beacon Watch | Auth Flood | Advanced Watch | Deauth Forensics
+Monitor:      Wi-Fi | Bluetooth | Advanced
+  Wi-Fi:      Deauth Watch | Rogue Watch | Karma Watch | Beacon Watch | Auth Flood
+  Bluetooth:  BLE Spam Watch
+  Advanced:   Advanced Watch | Deauth Forensics
+  (Stop/Back returns to the tool's group/page; Groups returns to the picker)
 
-GPS:          status screen -> Baud / Drive / Link
-Link:         unpaired -> Pair / Solo;  paired -> Unpair / Start (Split Wardrive)
+GPS:          overview -> Diagnostics / Drive modes
+  Diagnostics: Baud / Raw NMEA / receiver and wiring status
+  Drive modes: Solo (Wi-Fi + BLE) | Split (two boards) | Fleet (multiple boards)
+  Split:      Pair boards / Wi-Fi-only unpaired; paired -> Start / Unpair
+  Fleet:      Start as coordinator / Join as worker
 Status:       health -> Home / Settings / Files
-Settings:     Sleep | Bright | GPS | Splash | Active confirm | NMEA | Screen test
-              footer: Back / Defaults
+Files:        newest captures -> details; All / Wardrive / PCAP / Logs filters
+              Filter & refresh -> Refresh SD list; details -> Delete confirmation
+Settings:     Display | GPS & Time | Behavior | Diagnostics
+  Display:    Screen sleep | Brightness | Boot splash
+  GPS & Time: GPS baud | automatic local time / timezone / DST status
+  Behavior:   Active-tool confirmation
+  Diagnostics: GPS receiver | Raw NMEA | Screen / input test
+  Editors:    explicit value choices -> Cancel / Save
+  Defaults:   separate confirmation; failed persistence shows Retry save
 ```
 
 ## Serial commands (115200 baud)

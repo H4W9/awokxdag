@@ -115,7 +115,7 @@ void handleStatusTouch(int x, int y) {
   if (x < 80) {
     drawHome();
   } else if (x < 160) {
-    drawSettings();
+    openSettings();
   } else {
     openFilesManager();
   }
