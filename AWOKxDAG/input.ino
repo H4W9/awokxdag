@@ -122,25 +122,33 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kHome) {
-    if (homePage == 1) {
-      homePage = 0;  // any tap on the About page returns to the tiles
+    if (homeOverlay) {
+      // About page and the error overlays: any tap returns to the tiles.
+      homeOverlay = false;
+      homePage = 0;
       drawHome();
       return;
     }
-    if (y >= 44 && y < 84) {
-      reconCategory = -1;
-      reconPage = 0;
-      drawReconMenu();
-    } else if (y >= 88 && y < 128) {
-      drawAttacksMenu();
-    } else if (y >= 132 && y < 172) {
-      drawMonitorMenu();
-    } else if (y >= 176 && y < 216) {
-      drawGps();
-    } else if (y >= 220 && y < 260) {
-      drawStatus();
-    } else if (y >= kFooterTopDesign) {
-      homePage = 1;  // footer opens the About page (page 2)
+    if (y < kFooterTopDesign) {
+      const int start = homePage * kHomeTilesPerPage;
+      const int rows = min(kHomeTilesPerPage, kHomeTileCount - start);
+      for (int row = 0; row < rows; ++row) {
+        const int by = kHomeFirstY + row * kHomeRowPitch;
+        if (y >= by && y < by + kHomeTileHeight) {
+          launchHomeTile(start + row);
+          return;
+        }
+      }
+      return;
+    }
+    // Footer paging mirrors drawHome: Prev on the left of later pages, Next on
+    // the right while more pages remain. The version-label slots do nothing.
+    const int pages = homePageCount();
+    if (homePage > 0 && x < kDesignWidth / 2) {
+      homePage -= 1;
+      drawHome();
+    } else if (homePage + 1 < pages && x >= kDesignWidth / 2) {
+      homePage += 1;
       drawHome();
     }
     return;
@@ -153,6 +161,8 @@ void handleTouch() {
     handleSettingsTouch(x, y);
     return;
   }
+  if (currentView == View::kGps) { handleGpsTouch(x, y); return; }
+  if (currentView == View::kLinkWardrive) { handleLinkWardriveTouch(x, y); return; }
   if (currentView == View::kFiles) {
     handleFilesTouch(x, y);
     return;
@@ -197,34 +207,7 @@ void handleTouch() {
     }
     return;
   }
-  if (currentView == View::kMonitor) {
-    if (y < kFooterTopDesign) {
-      const int start = monitorPage * kMenuPerPage;
-      for (int row = 0; row < kMenuPerPage; ++row) {
-        const int index = start + row;
-        if (index >= kMonitorItemCount) break;
-        const int by = kMenuFirstY + row * kMenuRowPitch;
-        if (y >= by && y < by + kMenuRowHeight) {
-          launchMonitorItem(index);
-          return;
-        }
-      }
-      return;
-    }
-    const int pages = monitorPageCount();
-    if (pages <= 1) {
-      drawHome();
-    } else if (x < 80) {
-      drawHome();
-    } else if (x < 160) {
-      monitorPage = (monitorPage - 1 + pages) % pages;
-      drawMonitorMenu();
-    } else {
-      monitorPage = (monitorPage + 1) % pages;
-      drawMonitorMenu();
-    }
-    return;
-  }
+  if (currentView == View::kMonitor) { handleMonitorTouch(x, y); return; }
   if (currentView == View::kWifi && y >= 44 && y < 264) {
     const int row = (y - 44) / 22;
     const int index = wifiPage * kVisibleRows + row;
@@ -262,6 +245,30 @@ void handleTouch() {
       startEvilTwin();
     } else if (y >= 170 && y < 208) {
       startProbeLure();
+    }
+    return;
+  }
+  if (currentView == View::kTopologyMap) {
+    extern bool topoGraphMode;
+    extern bool topoGraphTap(int, int);
+    if (y < kFooterTopDesign) {
+      if (topoGraphMode && y >= kHeaderHeightDesign) {
+        // The graph lays out in physical panel space (kScreenWidth/kHeaderHeight
+        // /kFooterTop), so hit-test with physical coordinates, not design ones.
+        topoGraphTap(scaleX(x), scaleY(y));
+        drawTopologyMap();
+      }
+      return;
+    }
+    if (x < kDesignWidth / 3) {
+      stopTopologyMap();
+      drawReconMenu();
+    } else if (x < (kDesignWidth * 2) / 3) {
+      topoGraphMode = !topoGraphMode;
+      drawTopologyMap();
+    } else {
+      lastTopologyCsvOk = exportTopologyToSd();
+      drawTopologyMap();
     }
     return;
   }
@@ -311,8 +318,8 @@ void handleTouch() {
     return;
   }
   if (currentView == View::kRogueWatch) {
-    stopRogueWatch();
-    drawMonitorMenu();
+    returnToMonitor(1);
+    if (x >= kDesignWidth / 2) drawHome();
     return;
   }
   if (currentView == View::kHiddenReveal) {
@@ -393,20 +400,9 @@ void handleTouch() {
     }
     return;
   }
-  if (currentView == View::kTopologyMap) {
-    if (x < kDesignWidth / 2) {
-      stopTopologyMap();
-      drawReconMenu();
-    } else {
-      lastTopologyCsvOk = exportTopologyToSd();
-      drawTopologyMap();
-    }
-    return;
-  }
   if (currentView == View::kKarmaWatch) {
     if (x < kDesignWidth / 2) {
-      stopKarmaWatch();
-      drawMonitorMenu();
+      returnToMonitor(3);
     } else {
       resetKarmaWatch();
       drawKarmaWatch();
@@ -415,8 +411,7 @@ void handleTouch() {
   }
   if (currentView == View::kBeaconWatch) {
     if (x < kDesignWidth / 2) {
-      stopBeaconWatch();
-      drawMonitorMenu();
+      returnToMonitor(4);
     } else {
       resetBeaconWatch();
       drawBeaconWatch();
@@ -425,8 +420,7 @@ void handleTouch() {
   }
   if (currentView == View::kAuthFlood) {
     if (x < kDesignWidth / 2) {
-      stopAuthFlood();
-      drawMonitorMenu();
+      returnToMonitor(5);
     } else {
       resetAuthFlood();
       drawAuthFlood();
@@ -435,8 +429,7 @@ void handleTouch() {
   }
   if (currentView == View::kAdvancedWatch) {
     if (x < kDesignWidth / 2) {
-      stopAdvancedWatch();
-      drawMonitorMenu();
+      returnToMonitor(6);
     } else {
       resetAdvancedWatch();
       drawAdvancedWatch();
@@ -477,8 +470,7 @@ void handleTouch() {
     const int pages = deauthForensicsPageCount();
     if (pages > 1) {
       if (x < 60) {
-        stopDeauthForensics();
-        drawMonitorMenu();
+        returnToMonitor(7);
       } else if (x < 120) {
         deauthForensicsPage = (deauthForensicsPage - 1 + pages) % pages;
         drawDeauthForensics();
@@ -491,8 +483,7 @@ void handleTouch() {
       }
     } else {
       if (x < 80) {
-        stopDeauthForensics();
-        drawMonitorMenu();
+        returnToMonitor(7);
       } else if (x < 160) {
         clearDeauthForensics();
         drawDeauthForensics();
@@ -505,8 +496,7 @@ void handleTouch() {
   }
   if (currentView == View::kDeauthMonitor) {
     if (x < kDesignWidth / 2) {
-      stopDeauthMonitor();
-      drawHome();
+      returnToMonitor(0);
     } else {
       deauthFrameCount = 0;
       disassocFrameCount = 0;
@@ -561,19 +551,6 @@ void handleTouch() {
     drawHome();
     return;
   }
-  if (currentView == View::kGps) {
-    if (x < 60) {
-      drawHome();
-    } else if (x < 120) {
-      cycleGpsBaud();
-      drawGps();
-    } else if (x < 180) {
-      startWardrive();
-    } else {
-      openLinkWardrive();
-    }
-    return;
-  }
   if (currentView == View::kWardrive) {
     if (x < kDesignWidth / 2) {
       stopWardrive();
@@ -581,83 +558,6 @@ void handleTouch() {
     } else {
       stopWardrive();
       drawHome();
-    }
-    return;
-  }
-  if (currentView == View::kLinkWardrive) {
-    // Fleet screens render over the Link view and take touch first.
-    if (fleetActive || fleetListening) {
-      const bool joining = fleetListening && !fleetActive;
-      if (fleetCoordinator && !joining) {  // Home / Leave / Go|Stop
-        if (x < 80) {
-          drawHome();  // fleet keeps running in the background
-        } else if (x < 160) {
-          fleetLeave();
-          drawLinkWardrive();
-        } else {
-          if (fleetWardriveOn) fleetStopWardrive(); else fleetStartWardrive();
-          drawLinkWardrive();
-        }
-      } else {  // member / joining: Leave / Home
-        if (x < kDesignWidth / 2) {
-          fleetLeave();
-          drawLinkWardrive();
-        } else {
-          drawHome();
-        }
-      }
-      return;
-    }
-    if (fleetMenuOpen) {  // Back / Start / Join
-      if (x < 80) {
-        fleetMenuOpen = false;
-        drawLinkWardrive();
-      } else if (x < 160) {
-        fleetStartWardrive();
-        drawLinkWardrive();
-      } else {
-        fleetArm();
-        drawLinkWardrive();
-      }
-      return;
-    }
-    if (linkWardriveActive) {
-      stopLinkWardrive();
-      if (x < kDesignWidth / 2) {
-        drawLinkWardrive();
-      } else {
-        drawHome();
-      }
-      return;
-    }
-    if (linkState == kLinkDiscovering) {
-      linkCancelPairing();
-      drawLinkWardrive();
-    } else if (linkState == kLinkAwaitConfirm) {
-      if (x < kDesignWidth / 2) {
-        linkCancelPairing();
-        drawLinkWardrive();
-      } else {
-        linkConfirm();
-      }
-    } else if (linkState == kLinkReady) {
-      if (x < 80) {
-        drawGps();
-      } else if (x < 160) {
-        linkUnpair();
-        drawLinkWardrive();
-      } else {
-        startLinkWardrive();
-      }
-    } else {  // kLinkOff — unpaired idle
-      if (x < 80) {
-        drawGps();
-      } else if (x < 160) {
-        fleetMenuOpen = true;   // Fleet supersedes the legacy 1:1 pair flow
-        drawLinkWardrive();
-      } else {
-        startLinkWardrive();
-      }
     }
     return;
   }
@@ -675,8 +575,7 @@ void handleTouch() {
   }
   if (currentView == View::kBleSpamWatch) {
     if (x < kDesignWidth / 2) {
-      stopBleDetect();
-      drawHome();
+      returnToMonitor(2);
     } else {
       bleDetectTotal = 0;
       bleDetectSpam = 0;
@@ -924,10 +823,10 @@ void handleSerial() {
   if (command == 'n') openLinkWardrive();
   if (command == 'u') {
     cycleGpsBaud();
-    if (currentView == View::kGps) drawGps();
+    if (currentView == View::kGps) redrawGpsPage();
     if (currentView == View::kSettings) drawSettings();
   }
-  if (command == 't') drawSettings();
+  if (command == 't') openSettings();
   if (command == 'r') {
     gpsRawEcho = !gpsRawEcho;
     setSettingFlag(kSettingNmeaEcho, gpsRawEcho);

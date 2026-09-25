@@ -10,7 +10,7 @@ const end = html.indexOf('\nfunction downloadBlob(', start);
 assert.ok(start >= 0 && end > start);
 const source = html.slice(start, end);
 const csv = Buffer.from(
-  'WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.7.2,device=AxD,display=none,board=AxD,brand=AxD\r\n' +
+  'WigleWifi-1.6,appRelease=AxD,model=ESP32,release=1.7.3,device=AxD,display=none,board=AxD,brand=AxD\r\n' +
   'MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type\r\n' +
   '00:11:22:33:44:55,Test,[OPEN],2026-09-22 12:00:00,1,2412,-55,42.0,-83.0,200,5,,,WIFI\r\n'
 );
@@ -243,5 +243,108 @@ test('full BLE notification parser preserves files around 100 KiB and above 1 Mi
     assert.deepEqual(t.errors, []);
     assert.equal(t.saved.length, 1);
     assert.deepEqual(Buffer.from(await t.saved[0].blob.arrayBuffer()), data);
+  }
+});
+
+const crcStart = html.indexOf('function fileCrcUpdate(');
+const crcSource = html.slice(crcStart, start);
+const pauseStart = html.indexOf('function sendFileAbort(');
+const pauseEnd = html.indexOf('function deleteFileRemote(', pauseStart);
+
+function verifiedTransfer(data, preview = false) {
+  const t = reliableTransfer(data, preview);
+  const writes = [], elements = new Map();
+  const timers = [];
+  t.connection.id = 'same-bridge';
+  Object.assign(t.context, {
+    $: id => { if (!elements.has(id)) elements.set(id, {style:{}}); return elements.get(id); },
+    TGT_SCREEN: 1, serialConnected: false, activeConn: () => t.connection,
+    reconnectConn: async c => { c.connected = true; },
+    sdFileList: [{index:7,name:'wardrive-0001.csv'}],
+    crypto: {getRandomValues: a => { a[0] = (t.context.activeFileDownload?.token || 1234) + 1; }},
+    setTimeout: callback => {timers.push(callback); return timers.length;},
+  });
+  const original = t.connection.cmdCh.writeValue;
+  t.connection.cmdCh.writeValue = async bytes => {writes.push(bytes); if(bytes[0] === 69) await original(bytes);};
+  Object.assign(t.context.activeFileDownload, {verified:true,deviceId:'same-bridge',index:7,state:'requesting',size:data.length});
+  vm.runInContext(crcSource + html.slice(pauseStart,pauseEnd),t.context);
+  const crc = (t.context.fileCrcUpdate(0xffffffff, data) ^ 0xffffffff) >>> 0;
+  const manifest = crc.toString(16).padStart(8,'0') + ',wardrive-0001.csv';
+  return {...t,writes,elements,timers,crc,manifest,
+    begin: () => t.receive(0xffffffff,3,manifest,t.context.activeFileDownload.token),
+    chunk: seq => t.receive(seq,0,undefined,t.context.activeFileDownload.token),
+    done: () => t.receive(Math.ceil(data.length/96)+1,4,manifest,t.context.activeFileDownload.token)};
+}
+
+test('CRC32 standard vectors match and verified download rejects same-length corruption', async () => {
+  const t = verifiedTransfer(csv);
+  assert.equal((t.context.fileCrcUpdate(0xffffffff,Buffer.from('123456789')) ^ 0xffffffff) >>> 0,0xcbf43926);
+  await t.begin();
+  for(let seq=1;seq<=Math.ceil(csv.length/96);seq++) await t.chunk(seq);
+  const corrupt=Buffer.from(csv.subarray(0,96));corrupt[5]^=1;
+  t.chunks.set(1,corrupt.toString('base64'));
+  await t.done();
+  assert.equal(t.saved.length,0);
+  assert.equal(t.context.activeFileDownload.state,'paused');
+  assert.equal(t.context.activeFileDownload.needsRestart,true);
+  assert.match(t.elements.get('file-progress-state').textContent,/CRC32/);
+});
+test('verified resume retains >100 KiB prefix and requests only the missing suffix', async () => {
+  const data=Buffer.alloc(130*1024+17);for(let i=0;i<data.length;i++)data[i]=i%251;
+  for(const preview of [false,true]) {
+    const t=verifiedTransfer(data,preview);await t.begin();
+    for(let seq=1;seq<=1100;seq++)await t.chunk(seq);
+    t.connection.connected=false;t.context.pauseFileDownload('Disconnected',false);
+    assert.equal(t.chunks.size,1100);
+    await t.context.resumeFileDownload();await t.connection.fileAckWrites;
+    const request=t.writes.findLast(bytes=>bytes[0]===70),view=new DataView(request.buffer);
+    assert.equal(request.length,19);assert.equal(view.getUint32(7,true),1101);
+    assert.equal(view.getUint32(11,true),data.length);assert.equal(view.getUint32(15,true),t.crc);
+    await t.begin();
+    for(let seq=1101;seq<=Math.ceil(data.length/96);seq++)await t.chunk(seq);
+    await t.done();
+    const artifacts=preview?t.previews:t.saved;
+    assert.deepEqual(Buffer.from(await artifacts[0].blob.arrayBuffer()),data);
+    assert.equal(t.context.activeFileDownload,null);
+  }
+});
+test('resume chooses the first gap, tolerates duplicate manifest and re-ACKs completion', async () => {
+  const t=verifiedTransfer(csv);await t.begin();await t.chunk(1);await t.chunk(3);
+  t.context.pauseFileDownload('Pause',false);await t.context.resumeFileDownload();await t.connection.fileAckWrites;
+  assert.equal(new DataView(t.writes.findLast(x=>x[0]===70).buffer).getUint32(7,true),2);
+  await t.begin();await t.begin();
+  for(let seq=2;seq<=Math.ceil(csv.length/96);seq++)await t.chunk(seq);
+  const token=t.context.activeFileDownload.token;await t.done();
+  await t.receive(Math.ceil(csv.length/96)+1,4,t.manifest,token);
+  assert.equal(t.saved.length,1);
+});
+test('changed snapshot forces restart; wrong filename retains original chunks', async () => {
+  const t=verifiedTransfer(csv);await t.begin();await t.chunk(1);
+  await t.receive(0xffffffff,3,'00000001,wardrive-0001.csv');
+  assert.equal(t.context.activeFileDownload.needsRestart,true);
+  await t.context.resumeFileDownload(true);await t.connection.fileAckWrites;
+  assert.equal(t.chunks.size,0);
+  assert.equal(new DataView(t.writes.findLast(x=>x[0]===70).buffer).getUint32(7,true),0);
+  const other=verifiedTransfer(csv);await other.begin();await other.chunk(1);
+  await other.receive(0xffffffff,3,other.manifest.replace('0001','0002'));
+  assert.equal(other.context.activeFileDownload.state,'paused');assert.equal(other.chunks.size,1);
+});
+test('pause ignores late data, wrong bridge cannot resume, timeout retains partial file', async () => {
+  const t=verifiedTransfer(csv);await t.begin();await t.chunk(1);
+  t.timers.at(-1)();assert.equal(t.chunks.size,1);assert.equal(t.context.activeFileDownload.state,'paused');
+  await t.chunk(2);assert.equal(t.chunks.size,1);
+  t.context.activeConn=()=>({id:'other',connected:true});await t.context.resumeFileDownload();
+  assert.ok(!t.writes.some(x=>x[0]===70));
+});
+test('all-data resume requests completion only and empty snapshots verify', async () => {
+  for(const data of [csv,Buffer.alloc(0)]) {
+    const t=verifiedTransfer(data);await t.begin();
+    const total=Math.ceil(data.length/96)||1;
+    for(let seq=1;seq<=total;seq++)await t.chunk(seq);
+    t.context.pauseFileDownload('Pause before done',false);await t.context.resumeFileDownload();await t.connection.fileAckWrites;
+    assert.equal(new DataView(t.writes.findLast(x=>x[0]===70).buffer).getUint32(7,true),total+1);
+    await t.begin();
+    await t.receive(total+1,4,t.manifest,t.context.activeFileDownload.token);
+    assert.equal(t.saved[0].blob.size,data.length);
   }
 });

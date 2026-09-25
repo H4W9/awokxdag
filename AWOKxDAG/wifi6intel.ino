@@ -305,7 +305,7 @@ void drawWifi6Intel() {
     display.printf("%-1.1s Ch%-2u %-7.7s", (ap.generation == 6 ? "6" : "5"), ap.channel, ap.ssid[0] ? ap.ssid : "<hid>");
   }
   if (pages > 1) {
-    drawFourButtonFooter("Back", "< Prev", "Next >", lastWifi6IntelCsvOk ? "Saved" : "Save");
+    drawFourButtonFooter("Back", "Prev", "Next", lastWifi6IntelCsvOk ? "Saved" : "Save");
   } else {
     drawThreeButtonFooter("Back", "Clear", lastWifi6IntelCsvOk ? "Saved" : "Save");
   }
@@ -388,7 +388,7 @@ void drawWifi6Intel() {
   }
 
   if (pages > 1) {
-    drawFourButtonFooter("Back", "< Prev", "Next >", lastWifi6IntelCsvOk ? "Saved" : "Export");
+    drawFourButtonFooter("Back", "Prev", "Next", lastWifi6IntelCsvOk ? "Saved" : "Export");
   } else {
     drawThreeButtonFooter("Back", "Clear", lastWifi6IntelCsvOk ? "Saved" : "Export");
   }

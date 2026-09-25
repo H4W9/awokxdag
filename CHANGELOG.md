@@ -5,6 +5,58 @@ All notable changes to AxD are documented here. This project follows
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-09-24
+
+### Changed
+
+- Network Tools now separates Connection, Hosts, Services, and Results & Upload.
+  Larger cards, visible connection/IP state, and selected-host/page return replace
+  the flat tool list. Results use three cards per page, a large Stop action while
+  scanning, and a separate Actions / Save CSV menu. Connection setup has explicit
+  Cancel while joining; missing prerequisites, empty results, partial scans, and
+  save failures remain visible. Mini retains scrolling position when connection
+  state is unchanged. Existing probes, credentials, upload requests, and view IDs
+  are preserved; stale host/result selections are guarded after memory release
+  or connection loss.
+- Monitor groups all eight detectors into Wi-Fi, Bluetooth, and Advanced, with
+  descriptions and running/stopped state. Touch uses three large cards per page;
+  Mini uses selectable scrolling entries. Stop/Back returns to the detector's
+  group and page, including tools launched remotely. Opening a running detector
+  preserves its results. Existing Reset, Clear, and Export actions remain available;
+  detector algorithms, BLE participation, and radio start/stop routines are unchanged.
+- Settings is grouped into Display, GPS & Time, Behavior, and Diagnostics.
+  Value pickers show the current setting and require Save; Cancel leaves it
+  unchanged. GPS & Time shows the automatic local zone/DST and receiver state.
+  Defaults require a separate confirmation, failed writes report RAM-only
+  changes with Retry save, and diagnostics return to their originating group.
+  The existing NVS record, defaults, and view IDs are unchanged.
+- GPS now separates the location/local-time overview from receiver Diagnostics
+  (baud, raw NMEA, wiring and counters). Mini gets a native compact summary.
+  Drive modes explicitly separate Solo Wi-Fi/BLE, two-board Split, and Fleet.
+  Split has a reachable Pair action; Fleet has explicit coordinator/worker
+  choices. Mode navigation protects active sessions and preserves the existing
+  radio, pairing, and start/stop routines.
+- Reworked the board Captures menu with four larger rows, newest-first ordering,
+  All/Wardrive/PCAP/Logs filters, a named Refresh action, and file details.
+  The bounded list retains the newest 64 files and discloses larger directories.
+  Delete now has a separate confirmation target, reports failures, and blocks
+  the open wardrive CSV. A remote refresh invalidates stale menu selections.
+  Touch and Mini share the same actions; remote transfer indices are not filtered.
+
+### Added
+
+- Wardrive dashboards on Touch, Mini, and the control website: session counts,
+  elapsed time, estimated distance, recent discovery rate, local time, GPS
+  fix coverage/quality, and SD write/flush status. Website telemetry is scoped
+  to the selected bridge/screen and marks stale updates; live received rows
+  remain separate from device session totals. Radio scheduling is unchanged.
+- Bluetooth preview/download Pause, Resume, and Restart. Resume keeps received
+  chunks in the open tab, reconnects to the same bridge, and starts at the first
+  missing chunk after the device verifies the original SD snapshot. Whole-file
+  CRC32 verification blocks corrupt or incomplete previews/saves. Appended CSVs
+  can resume their original prefix; changed or truncated files require Restart.
+  Requires matching updates on both chips and the website; USB streaming is unchanged.
+
 ## [1.7.2] - 2026-09-23
 
 ### Changed
@@ -995,7 +1047,9 @@ All notable changes to AxD are documented here. This project follows
 - Touchscreen UI, SD capture manager, status screens, serial controls, build
   workflow, and recovery documentation.
 
-[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/dagnazty/awokxdag/compare/v1.7.3...HEAD
+[1.7.3]: https://github.com/dagnazty/awokxdag/compare/v1.7.2...v1.7.3
+[1.7.2]: https://github.com/dagnazty/awokxdag/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/dagnazty/awokxdag/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/dagnazty/awokxdag/compare/v1.6.5...v1.7.0
 [1.6.5]: https://github.com/dagnazty/awokxdag/compare/v1.6.4...v1.6.5
