@@ -7,7 +7,7 @@ on:
       version:
         description: "Release version (e.g. 1.0.0)"
         required: true
-        default: "1.7.3"
+        default: "1.7.8"
       prerelease:
         description: "Mark as pre-release?"
         type: boolean
@@ -35,6 +35,30 @@ jobs:
             define: AWOK_DUAL_C5_MINI
             label: "Dual C5 Mini"
             fqbn: "esp32:esp32:esp32c5:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=enabled"
+          - variant: nm-cyd-c5
+            define: AWOK_NM_CYD_C5
+            label: "NM-CYD-C5"
+            fqbn: "esp32:esp32:esp32c5:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=enabled"
+          - variant: cyd-2432s028
+            define: AWOK_CYD_2432S028
+            label: "CYD ESP32-2432S028"
+            fqbn: "esp32:esp32:esp32:FlashSize=4M,PartitionScheme=huge_app,PSRAM=disabled"
+          - variant: halehound-e32r28t
+            define: AWOK_HALEHOUND_E32R28T
+            label: "HaleHound E32R28T"
+            fqbn: "esp32:esp32:esp32:FlashSize=4M,PartitionScheme=huge_app,PSRAM=disabled"
+          - variant: halehound-e32r35t
+            define: AWOK_HALEHOUND_E32R35T
+            label: "HaleHound E32R35T"
+            fqbn: "esp32:esp32:esp32:FlashSize=4M,PartitionScheme=huge_app,PSRAM=disabled"
+          - variant: halehound-nm-rf-hat
+            define: AWOK_HALEHOUND_NM_RF_HAT
+            label: "HaleHound NM-RF-Hat"
+            fqbn: "esp32:esp32:esp32:FlashSize=4M,PartitionScheme=huge_app,PSRAM=disabled"
+          - variant: cardputer-v11
+            define: AWOK_CARDPUTER_V11
+            label: "M5Stack Cardputer v1.1"
+            fqbn: "esp32:esp32:esp32s3:FlashSize=8M,PartitionScheme=default_8MB,PSRAM=disabled,CDCOnBoot=cdc"
           - variant: esp32-touch-v1
             define: AWOK_DUAL_ESP32_TOUCH_V1
             label: "Dual ESP32 Touch v1"
@@ -62,6 +86,9 @@ jobs:
           - variant: bridge
             label: "Dual C5 Bridge (headless BLE<->ESP-NOW)"
             board: dual-c5-bridge
+          - variant: lilygo-t-dongle-c5-bridge
+            label: "LILYGO T-Dongle-C5 Bridge"
+            board: lilygo-t-dongle-c5-bridge
           - variant: esp32-touch-bridge-v1
             label: "Dual ESP32 Touch Bridge v1"
             board: dual-esp32-touch-bridge-v1
@@ -120,6 +147,14 @@ jobs:
             sleep 20
           done
 
+      - name: Install Cardputer libraries
+        if: ${{ matrix.variant == 'cardputer-v11' }}
+        run: |
+          arduino-cli lib install \
+            "M5GFX@0.2.27" \
+            "M5Unified@0.2.20" \
+            "M5Cardputer@1.1.1"
+
       - name: Compile ${{ matrix.label }} (produces the merged image)
         if: ${{ !matrix.board }}
         # -z muldefs lets our ieee80211_raw_frame_sanity_check override win over
@@ -130,8 +165,8 @@ jobs:
         # (pins, display, radio memory policy) independent of the sketch's
         # Arduino IDE default.
         # AWOKxDAG is BLE Observer-only (scan; no client/server/adv anywhere in
-        # the sketch), so the CONFIG_BT_NIMBLE_ROLE_*_DISABLED flags trim
-        # NimBLE-Arduino's default Central/Peripheral/Broadcaster footprint.
+        # the sketch). C5 screen boards retain Central for GATT audit; other
+        # screen boards trim Central/Peripheral/Broadcaster.
         # The actual fix for BLE scan failing with HCI "Memory Capacity
         # Exceeded" (NimBLE rc=519) on the C5 is the time-multiplex
         # RadioScheduler (only one radio DMA-resident at a time) -- the C5's
@@ -143,10 +178,14 @@ jobs:
         # something is wrong, but it's what surfaces NimBLE's own error rc
         # codes, which are compiled out entirely at the default level 0.
         run: |
+          CENTRAL_FLAG="-DCONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED"
+          case "${{ matrix.define }}" in
+            AWOK_DUAL_C5_TOUCH|AWOK_DUAL_C5_MINI|AWOK_NM_CYD_C5) CENTRAL_FLAG="" ;;
+          esac
           arduino-cli compile \
             --fqbn "${{ matrix.fqbn }}" \
             --build-property "compiler.c.elf.extra_flags=-Wl,-z,muldefs -Wl,--wrap=esp_wifi_init -Wl,--wrap=esp_bt_controller_init" \
-            --build-property "compiler.cpp.extra_flags=-D${{ matrix.define }} -DCONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED -DCONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED -DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED" \
+            --build-property "compiler.cpp.extra_flags=-D${{ matrix.define }} ${CENTRAL_FLAG} -DCONFIG_BT_NIMBLE_ROLE_PERIPHERAL_DISABLED -DCONFIG_BT_NIMBLE_ROLE_BROADCASTER_DISABLED" \
             --build-property "build.code_debug=1" \
             --build-path "build-${{ matrix.variant }}" \
             AWOKxDAG/AWOKxDAG.ino
@@ -213,9 +252,13 @@ jobs:
           name: AWOKxDAG v${{ inputs.version }}
           prerelease: ${{ inputs.prerelease }}
           body: |
-            AWOKxDAG v${{ inputs.version }} — ESP32-C5 and original ESP32 firmware.
+            AWOKxDAG v${{ inputs.version }} — ESP32-C5, original ESP32, and Cardputer v1.1 firmware.
 
             - **Dual C5 Touch / Mini** — prefixes `awokxdag-touch-…` / `awokxdag-mini-…`
+            - **NM-CYD-C5** (experimental) — `awokxdag-nm-cyd-c5-…`
+            - **Classic CYD and HaleHound boards** (experimental) — `awokxdag-cyd-2432s028-…` and `awokxdag-halehound-…`
+            - **M5Stack Cardputer v1.1** (experimental) — `awokxdag-cardputer-v11-…`
+            - **LILYGO T-Dongle-C5 bridge** (experimental) — `awokxdag-lilygo-t-dongle-c5-bridge-…`
             - **Original Dual ESP32 Touch v1/v2/v3** (experimental) — `awokxdag-esp32-touch-v<revision>-…`
             - **Original Dual ESP32 Mini v1/v2/v3** (experimental) — `awokxdag-esp32-mini-v<revision>-…`
             - **C5 and original ESP32 headless bridges** — `awokxdag-bridge-…` / `awokxdag-esp32-*-bridge-v<revision>-…`
@@ -223,11 +266,21 @@ jobs:
             Original ESP32 builds support 2.4 GHz only, 32-entry result tables,
             and separate Wi-Fi/BLE operation. See the board port documentation
             for physical validation status. C5 Mini retains PSRAM-backed tables
-            and memory-checked dual-radio operation.
+            and memory-checked dual-radio operation. Cardputer v1.1 uses the
+            ESP32-S3, has no PSRAM, and supports 2.4 GHz only; see
+            `docs/cardputer-v1.1-port.md` for controls and validation status.
+            NM-CYD-C5 uses its onboard 240x320 ST7789, XPT2046 touch, SD slot,
+            and optional LP-UART GPS; see `docs/nm-cyd-c5.md`.
+            Classic CYD/HaleHound targets use the 4 MB ESP32, onboard touch and
+            SD, and coordinator GPS for Fleet rows; see `docs/cyd-halehound-port.md`.
+            The T-Dongle-C5 bridge uses the BLE phone control page and relays
+            screen-chip commands to the Cardputer over ESP-NOW; see
+            `docs/t-dongle-c5-bridge.md` for setup and validation status.
 
             Write your board's merged image at `0x0`. Select `--chip esp32` for
-            original boards or `--chip esp32c5` for C5. For component images,
-            bootloader offsets are `0x1000` (ESP32) / `0x2000` (C5); partitions
-            `0x8000`, boot_app0 `0xe000`, app `0x10000`. Verify SHA256SUMS and keep
-            a backup before installing.
+            original boards, `--chip esp32c5` for C5, or `--chip esp32s3` for
+            Cardputer v1.1. For component images, bootloader offsets are
+            `0x1000` (ESP32), `0x2000` (C5), and `0x0` (S3); partitions `0x8000`,
+            boot_app0 `0xe000`, app `0x10000`. Verify SHA256SUMS and keep a backup
+            before installing.
           files: release/*

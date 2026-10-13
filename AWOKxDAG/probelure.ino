@@ -88,7 +88,7 @@ void drawProbeLure() {
     display.print("Recon > Wi-Fi Scan, tap a network,");
     display.setCursor(scaleX(6), scaleY(90));
     display.print("then open Probe Lure.");
-    drawFooter("Back", "Back");
+    drawFooter("Back", "Home");
     return;
   }
 

@@ -128,7 +128,7 @@ void drawPacketMon() {
   display.print("Hops 2.4/5 GHz; drops payload if the");
   display.setCursor(scaleX(6), scaleY(228));
   display.print("SD write cannot keep up (counts stay).");
-  drawFooter("Home", "Home");
+  drawFooter("Back", "Home");
 }
 
 void startPacketMon() {

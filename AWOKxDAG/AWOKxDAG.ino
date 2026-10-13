@@ -1,7 +1,10 @@
 // Arduino IDE selection.
 #if !defined(AWOK_DUAL_C5_TOUCH) && !defined(PANCAKE_C5) && \
     !defined(AWOK_DUAL_C5_MINI) && \
-    !defined(AWOK_DUAL_C5_BRIDGE) && \
+    !defined(AWOK_NM_CYD_C5) && \
+    !defined(AWOK_CYD_2432S028) && !defined(AWOK_HALEHOUND_E32R28T) && \
+    !defined(AWOK_HALEHOUND_E32R35T) && !defined(AWOK_HALEHOUND_NM_RF_HAT) && \
+    !defined(AWOK_DUAL_C5_BRIDGE) && !defined(AWOK_LILYGO_T_DONGLE_C5_BRIDGE) && \
     !defined(AWOK_DUAL_ESP32_TOUCH_V1) && !defined(AWOK_DUAL_ESP32_TOUCH_V2) && \
     !defined(AWOK_DUAL_ESP32_TOUCH_V3) && \
     !defined(AWOK_DUAL_ESP32_MINI_V1) && !defined(AWOK_DUAL_ESP32_MINI_V2) && \
@@ -11,9 +14,10 @@
     !defined(AWOK_DUAL_ESP32_TOUCH_BRIDGE_V3) && \
     !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V1) && \
     !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V2) && \
-    !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V3)
+    !defined(AWOK_DUAL_ESP32_MINI_BRIDGE_V3) && !defined(AWOK_CARDPUTER_V11)
 //#define AWOK_DUAL_C5_TOUCH
 //#define PANCAKE_C5
+//#define AWOK_NM_CYD_C5
 #define AWOK_DUAL_C5_MINI
 //#define AWOK_DUAL_ESP32_TOUCH_V1
 //#define AWOK_DUAL_ESP32_TOUCH_V2
@@ -23,6 +27,7 @@
 //#define AWOK_DUAL_ESP32_MINI_V3
 #endif
 #include "awok_common.h"
+#include <atomic>
 
 // The Wi-Fi driver refuses to transmit raw management frames it deems
 // malformed, which includes deauthentication and disassociation frames.
@@ -38,7 +43,10 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2,
 #ifdef AWOK_MINI_DISPLAY
 AwokMiniDisplay display;
 #elif defined(AWOK_HEADLESS)
-AwokHeadlessDisplay display;  // no-op sink; the bridge has no screen
+AwokHeadlessDisplay display;  // no-op sink for menu rendering on BLE bridges
+#ifdef AWOK_LILYGO_T_DONGLE_C5_BRIDGE
+AwokDongleDisplay bridgePanel;
+#endif
 // No touch panel on the bridge; a stub keeps every touch.* call compiling and
 // inert (touched() == false), so the input paths just never report a press.
 struct AwokHeadlessTouch {
@@ -52,9 +60,23 @@ AwokPancakeDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
                            AwokPins::kDisplayReset);
 AwokCapTouch touch;  // FT6336 capacitive controller (I2C)
 #else
+#ifdef AWOK_CLASSIC_CYD
+#include "cyd_touch.h"
+SPIClass cydDisplaySpi(HSPI);
+AwokTouchDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
+                         AwokPins::kDisplayReset, &cydDisplaySpi);
+#ifdef AWOK_ST7796_TOUCH
+AwokCydTouch touch(AwokPins::kTouchCs, AwokPins::kTouchSck,
+                   AwokPins::kTouchMiso, AwokPins::kTouchMosi, &cydDisplaySpi);
+#else
+AwokCydTouch touch(AwokPins::kTouchCs, AwokPins::kTouchSck,
+                   AwokPins::kTouchMiso, AwokPins::kTouchMosi, nullptr);
+#endif
+#else
 AwokTouchDisplay display(AwokPins::kDisplayDc, AwokPins::kDisplayCs,
                          AwokPins::kDisplayReset);
 XPT2046_Touchscreen touch(AwokPins::kTouchCs);
+#endif
 #endif
 
 #if defined(AWOK_MINI_DISPLAY) || defined(AWOK_HEADLESS)
@@ -83,6 +105,7 @@ int blePage = 0;
 View currentView = View::kHome;
 View auditReturnView = View::kWifi;
 int reconPage = 0;
+int reconResultPage = 0;  // shared page index for the live scanner result screens
 int reconCategory = -1;  // -1 = category picker; tools return to their category
 int monitorPage = 0;
 int monitorCategory = -1;  // -1 group picker; preserve tool origin on return
@@ -243,13 +266,16 @@ uint32_t lastWardriveDrawMs = 0;
 bool wardriveCsvReady = false;
 String g_wardriveCsvPath;  // this run's CSV file (a new one is made each start)
 File g_wardriveFile;       // persistent open file handle during wardrive
-uint8_t wardriveBloom[kWardriveBloomFilterBytes] = {0};  // fast O(1) MAC deduplication bitset
-uint8_t wardriveMacs[kMaxWardriveMacs][6];
+uint8_t wardriveBloom[kWardriveBloomFilterBytes] = {0};  // fast negative check
+uint8_t wardriveMacs[kMaxWardriveMacs][6];  // exact recently added MACs
 int wardriveMacCount = 0;
+int wardriveMacCursor = 0;
 uint32_t wardriveBleCount = 0;
+uint32_t wardriveWifiScanRestarts = 0;
+std::atomic<uint32_t> wardriveBleQueueDrops{0};
 BleHit bleHitQueue[kBleHitQueueSlots];
-volatile int bleHitHead = 0;
-volatile int bleHitTail = 0;
+std::atomic<int> bleHitHead{0};
+std::atomic<int> bleHitTail{0};
 
 // Link Mode (ESP-NOW pairing + Split Wardrive). Cross-tab globals must be
 // defined here (Arduino auto-prototypes functions but not variables, and
@@ -399,8 +425,10 @@ String bytesToHex(const std::string& data, size_t maximumBytes) {
 }
 
 bool initializeSdCard() {
+#ifndef AWOK_CARDPUTER_V11
   digitalWrite(AwokPins::kDisplayCs, HIGH);
   if (AwokPins::kTouchCs >= 0) digitalWrite(AwokPins::kTouchCs, HIGH);
+#endif
   digitalWrite(AwokPins::kSdCs, HIGH);
 
   if (!SD.begin(AwokPins::kSdCs, SPI, kSdClockHz) ||
@@ -814,6 +842,92 @@ void drawFiveButtonFooter(const String& a, const String& b, const String& c,
   drawSmallButton(194, 284, 44, 30, e, kBad);
 }
 
+// Shared card-menu metrics (Network Tools look: 224x44 rounded card + pager),
+// used by Home, Recon, Monitor, Attacks, and the Wi-Fi results screen so they
+// read as one system.
+constexpr int kMenuPerPage = 4;
+constexpr int kMenuFirstY = 58;
+constexpr int kMenuRowPitch = 50;
+constexpr int kMenuRowHeight = 44;
+constexpr int kMenuCardHeight = 44;
+
+// Shared menu card: a bold title over a muted one-line description. `y` is the
+// card's top; `outline` colors the border (kAccent normally, kGood when active,
+// kBad for destructive entries).
+void drawMenuCard(int y, const String& title, const String& detail, uint16_t outline) {
+#ifdef AWOK_MINI_DISPLAY
+  // Mini: the category is the only selectable line (gets the ">" marker); the
+  // description is a separate, unmarked muted line beneath it so the two are
+  // clearly distinct.
+  display.button(8, y, 224, kMenuCardHeight, title.c_str(), outline);
+  if (detail.length()) {
+    display.setTextSize(1);
+    display.setTextColor(kMuted, kBackground);
+    display.setCursor(16, y + 22);
+    display.print(detail);
+  }
+#else
+  display.drawRoundRect(scaleX(8), scaleY(y), scaleX(224), scaleY(kMenuCardHeight), 5, outline);
+  display.setTextSize(title.length() <= 17 ? 2 : 1);
+  display.setTextColor(ILI9341_WHITE, kBackground);
+  display.setCursor(scaleX(16), scaleY(y + 5));
+  display.print(clipped(title, 34));
+  display.setTextSize(1);
+  display.setTextColor(kMuted, kBackground);
+  display.setCursor(scaleX(16), scaleY(y + 29));
+  display.print(clipped(detail, 34));
+#endif
+}
+
+// ---- Shared paging for the live scanner result screens ---------------------
+// One card page holds kMenuPerPage entries; reconResultPage is the shared index
+// (only one scanner runs at a time, and each start() resets it).
+int reconResultPages(int count) {
+  return max(1, (count + kMenuPerPage - 1) / kMenuPerPage);
+}
+
+// Header suffix like "  2/5" while there is more than one page (else empty).
+String reconResultPageLabel(int count) {
+  const int pages = reconResultPages(count);
+  if (reconResultPage >= pages) reconResultPage = pages - 1;
+  if (reconResultPage < 0) reconResultPage = 0;
+  return pages > 1 ? "  " + String(reconResultPage + 1) + "/" + String(pages) : "";
+}
+
+// Footer: Back + Prev/Next (and an optional action button) when paged; the plain
+// two-button footer otherwise. `action` is nullptr for Back-only screens.
+void drawReconResultFooter(const char* back, const char* action, int count) {
+  const int pages = reconResultPages(count);
+  if (pages > 1) {
+    if (action) drawFourButtonFooter(back, "Prev", "Next", action);
+    else drawThreeButtonFooter(back, "Prev", "Next");
+  } else {
+    // A Back-only screen would otherwise show two identical labels; give the
+    // second slot a Home button instead.
+    drawFooter(back, action ? action : "Home");
+  }
+}
+
+// Footer hit-test mirroring drawReconResultFooter. Returns 0=Back, 1=Prev,
+// 2=Next, 3=Action, 4=Home, and advances reconResultPage for Prev/Next.
+int reconResultFooterHit(int x, int count, bool hasAction) {
+  const int pages = reconResultPages(count);
+  if (pages > 1) {
+    if (hasAction) {
+      if (x < 60) return 0;
+      if (x < 120) { reconResultPage = (reconResultPage - 1 + pages) % pages; return 1; }
+      if (x < 180) { reconResultPage = (reconResultPage + 1) % pages; return 2; }
+      return 3;
+    }
+    if (x < 80) return 0;
+    if (x < 160) { reconResultPage = (reconResultPage - 1 + pages) % pages; return 1; }
+    reconResultPage = (reconResultPage + 1) % pages;
+    return 2;
+  }
+  if (x < kDesignWidth / 2) return 0;
+  return hasAction ? 3 : 4;  // right slot: Action, or Home on a Back-only screen
+}
+
 void drawAboutPage() {
   display.fillScreen(kBackground);
   drawHeader("ABOUT", "AxD");
@@ -854,7 +968,7 @@ void drawAboutPage() {
   display.setTextColor(kMuted, kBackground);
   display.setCursor(scaleX(6), scaleY(218));
   display.print("Tap anywhere to go back.");
-  drawFooter("Back", "Back");
+  drawFooter("Back", "Home");  // both return to the Home tiles (overlay: any tap)
 }
 
 // Home destinations. Files and Settings are first-class entries here so neither
@@ -865,20 +979,26 @@ enum HomeAction {
 };
 struct HomeTile {
   const char* label;
+  const char* detail;
   uint16_t color;
   HomeAction action;
 };
 const HomeTile kHomeTiles[] = {
-    {"Recon", kAccent, kHomeRecon},   {"Attacks", kBad, kHomeAttacks},
-    {"Monitor", kAccent, kHomeMonitor}, {"GPS", kAccent, kHomeGps},
-    {"Files", kAccent, kHomeFiles},   {"Settings", kAccent, kHomeSettings},
-    {"Status", kAccent, kHomeStatus}, {"About", kAccent, kHomeAbout},
+    {"Recon", "Scan Wi-Fi, BLE, RF, LAN", kAccent, kHomeRecon},
+    {"Attacks", "Active RF - authorized use", kBad, kHomeAttacks},
+    {"Monitor", "Detectors & forensics", kAccent, kHomeMonitor},
+    {"GPS", "Fix, wardrive, link modes", kAccent, kHomeGps},
+    {"Files", "Browse & send SD captures", kAccent, kHomeFiles},
+    {"Settings", "Display, GPS, behavior", kAccent, kHomeSettings},
+    {"Status", "Device health & radios", kAccent, kHomeStatus},
+    {"About", "Version & authorized use", kAccent, kHomeAbout},
 };
 const int kHomeTileCount = sizeof(kHomeTiles) / sizeof(kHomeTiles[0]);
-const int kHomeTilesPerPage = 5;
-const int kHomeFirstY = 44;
-const int kHomeRowPitch = 44;
-const int kHomeTileHeight = 40;
+// Card metrics shared with the other menus (see drawMenuCard).
+const int kHomeTilesPerPage = 4;
+const int kHomeFirstY = 58;
+const int kHomeRowPitch = 50;
+const int kHomeTileHeight = kMenuCardHeight;
 
 int homePageCount() {
   return max(1, (kHomeTileCount + kHomeTilesPerPage - 1) / kHomeTilesPerPage);
@@ -922,8 +1042,8 @@ void drawHome() {
   const int rows = min(kHomeTilesPerPage, kHomeTileCount - start);
   for (int row = 0; row < rows; ++row) {
     const HomeTile& tile = kHomeTiles[start + row];
-    drawButton(12, kHomeFirstY + row * kHomeRowPitch, 216, kHomeTileHeight,
-               tile.label, tile.color);
+    drawMenuCard(kHomeFirstY + row * kHomeRowPitch, tile.label, tile.detail,
+                 tile.color);
   }
   // Standard paging: Prev on earlier pages, Next while more pages remain. The
   // firmware version fills the slot that has no page to move toward.
@@ -971,7 +1091,7 @@ void drawScanning(const String& kind) {
 
 void drawWifiResults() {
   currentView = View::kWifi;
-  const int pages = max(1, (wifiCount + kVisibleRows - 1) / kVisibleRows);
+  const int pages = max(1, (wifiCount + kMenuPerPage - 1) / kMenuPerPage);
   if (wifiPage >= pages) wifiPage = pages - 1;
   if (wifiPage < 0) wifiPage = 0;
   display.fillScreen(kBackground);
@@ -979,31 +1099,23 @@ void drawWifiResults() {
                   String(pages) + " | SD ";
   detail += lastScanSdWriteOk ? "saved" : (sdReady ? "write error" : "missing");
   drawHeader("WI-FI RESULTS", detail);
-  display.setTextSize(1);
-  const int start = wifiPage * kVisibleRows;
-  const int rows = min(kVisibleRows, wifiCount - start);
-#ifdef AWOK_MINI_DISPLAY
-  display.selectableRows(rows);
-#endif
+  const int start = wifiPage * kMenuPerPage;
+  const int rows = min(kMenuPerPage, wifiCount - start);
   for (int row = 0; row < rows; ++row) {
     const int index = start + row;
-    const int y = 48 + row * 22;  // design-space row top
-    display.setTextColor(isSaved(wifiEntries[index]) ? kAccent
-                                                     : ILI9341_WHITE,
-                         kBackground);
-    display.setCursor(scaleX(5), scaleY(y));
-    display.print(clipped(wifiEntries[index].ssid.length()
-                              ? wifiEntries[index].ssid
-                              : "<hidden>",
-                          20));
-    if (isSaved(wifiEntries[index])) display.print(" *");
-    display.setTextColor(kMuted, kBackground);
-    display.setCursor(scaleX(5), scaleY(y + 11));
-    display.printf("%4ld dBm  ch%-3ld %sG  %s",
-                   static_cast<long>(wifiEntries[index].rssi),
-                   static_cast<long>(wifiEntries[index].channel),
-                   bandLabel(wifiEntries[index].channel),
-                   authShortLabel(wifiEntries[index].auth));
+    const bool saved = isSaved(wifiEntries[index]);
+    // Saved networks read as green cards with a * on the SSID.
+    String title = wifiEntries[index].ssid.length() ? wifiEntries[index].ssid
+                                                     : String("<hidden>");
+    if (saved) title += " *";
+    char det[48];
+    snprintf(det, sizeof(det), "%ld dBm  ch%ld  %sG  %s",
+             static_cast<long>(wifiEntries[index].rssi),
+             static_cast<long>(wifiEntries[index].channel),
+             bandLabel(wifiEntries[index].channel),
+             authShortLabel(wifiEntries[index].auth));
+    drawMenuCard(kMenuFirstY + row * kMenuRowPitch, title, det,
+                 saved ? kGood : kAccent);
   }
   if (wifiCount == 0) {
     display.setTextColor(kMuted, kBackground);
@@ -1052,13 +1164,13 @@ void drawSavedNetworks() {
 }
 
 int blePageCount() {
-  return max(1, (bleCount + kVisibleRows - 1) / kVisibleRows);
+  return max(1, (bleCount + kMenuPerPage - 1) / kMenuPerPage);
 }
 
-// Maps a visible row to the retained result; the last page may be partial.
+// Maps a visible card row to the retained result; the last page may be partial.
 int bleResultIndex(int row) {
-  if (row < 0 || row >= kVisibleRows) return -1;
-  const int index = blePage * kVisibleRows + row;
+  if (row < 0 || row >= kMenuPerPage) return -1;
+  const int index = blePage * kMenuPerPage + row;
   return index >= 0 && index < bleCount ? index : -1;
 }
 
@@ -1072,24 +1184,18 @@ void drawBleResults() {
   detail +=
       lastBleScanSdWriteOk ? "saved" : (sdReady ? "write error" : "missing");
   drawHeader("BLE RESULTS", detail);
-#ifdef AWOK_MINI_DISPLAY
-  display.selectableRows(min(kVisibleRows, bleCount - blePage * kVisibleRows));
-#endif
-  display.setTextSize(1);
-  for (int row = 0; row < kVisibleRows; ++row) {
+  for (int row = 0; row < kMenuPerPage; ++row) {
     const int i = bleResultIndex(row);
     if (i < 0) break;
-    const int y = 48 + row * 22;  // design-space row top
-    display.setTextColor(ILI9341_WHITE, kBackground);
-    display.setCursor(scaleX(5), scaleY(y));
-    display.print(clipped(bleEntries[i].flipperLike
-                              ? String("[F?] ") + bleEntries[i].name
-                              : bleEntries[i].name.length() ? bleEntries[i].name : "<unnamed>",
-                          20));
-    display.setTextColor(kMuted, kBackground);
-    display.setCursor(scaleX(5), scaleY(y + 11));
-    display.printf("%4ld dBm  %s", static_cast<long>(bleEntries[i].rssi),
-                   bleEntries[i].address.c_str());
+    String title = bleEntries[i].flipperLike ? String("[F?] ") + bleEntries[i].name
+                   : bleEntries[i].name.length() ? bleEntries[i].name
+                                                 : String("<unnamed>");
+    char det[48];
+    snprintf(det, sizeof(det), "%ld dBm  %s", static_cast<long>(bleEntries[i].rssi),
+             bleEntries[i].address.c_str());
+    // Flipper-like advertisers flagged red.
+    drawMenuCard(kMenuFirstY + row * kMenuRowPitch, title, det,
+                 bleEntries[i].flipperLike ? kBad : kAccent);
   }
   if (bleCount == 0) {
     display.setTextColor(kMuted, kBackground);
@@ -1177,7 +1283,18 @@ void drawBleDetail() {
   const char* hint = (selectedBle.flipperLike ? "Flipper-like service" : "");
   display.print(*hint ? "Flipper-like UUID; identity unverified"
                       : "Passive advertisement metadata only.");
+#ifdef AWOK_GATT_AUDIT
+  if (selectedBle.connectable) {
+    display.fillRect(0, kFooterTop, kScreenWidth, kScreenHeight - kFooterTop,
+                     kBackground);
+    drawButton(4, 284, 112, 30, "Back", kMuted);
+    drawSmallButton(124, 284, 112, 30, "GATT Audit", kAccent);
+  } else {
+    drawFooter("Back", "Rescan");
+  }
+#else
   drawFooter("Back", "Rescan");
+#endif
 }
 
 int accessPointsOnChannel(int channel) {
@@ -1683,29 +1800,48 @@ void updateWifiSignalMonitor() {
   drawWifiSignalMonitor();
 }
 
-// Keep each Recon category small enough to scan on Touch and Mini. Network
-// Tools already has its own menu, so it opens directly from the picker.
+// Recon groups and tools render as Network-Tools-style cards (a title plus a
+// one-line description). Network Tools has its own menu, so it opens directly
+// from the picker.
 const char* const kReconCategories[] = {
     "Wi-Fi", "Bluetooth", "RF & Packets", "Field Tools", "Network Tools"};
+const char* const kReconCategoryDetails[] = {
+    "Scan, audit, WPS, hidden, HE",
+    "BLE scan, trackers, intel",
+    "Channels, spectrum, capture",
+    "Clients, cameras, harvest, RDF",
+    "LAN hosts, ports, services"};
 constexpr int kReconCategoryCount =
     static_cast<int>(sizeof(kReconCategories) / sizeof(kReconCategories[0]));
+static_assert(sizeof(kReconCategoryDetails) / sizeof(kReconCategoryDetails[0]) ==
+                  kReconCategoryCount,
+              "Recon category details must cover every group");
 struct ReconMenuItem {
   const char* label;
+  const char* detail;
   int category;
 };
 const ReconMenuItem kReconItems[] = {
-    {"Wi-Fi Scan", 0}, {"Saved", 0}, {"WPS Scan", 0},
-    {"Hidden SSID", 0}, {"Security Audit", 0}, {"Wi-Fi 6 Intel", 0},
-    {"BLE Scan", 1}, {"BLE Trackers", 1}, {"BLE Intel", 1},
-    {"Channel Map", 2}, {"Spectrogram", 2}, {"Packet Mon", 2},
-    {"Clients", 3}, {"Cameras", 3}, {"Harvester", 3},
-    {"Probe Intel", 3}, {"Fleet Hunter", 3}, {"Topology Map", 3}};
+    {"Wi-Fi Scan", "Discover 2.4/5 GHz access points", 0},
+    {"Saved", "Networks kept across reboots", 0},
+    {"WPS Scan", "APs advertising WPS setup", 0},
+    {"Hidden SSID", "Reveal hidden network names", 0},
+    {"Security Audit", "Rank AP encryption posture", 0},
+    {"Wi-Fi 6 Intel", "802.11ax HE capability decode", 0},
+    {"BLE Scan", "Discover BLE advertisers", 1},
+    {"BLE Trackers", "Flag AirTags / Tile / SmartTag", 1},
+    {"BLE Intel", "Decode vendor BLE payloads", 1},
+    {"Channel Map", "2.4/5 GHz channel occupancy", 2},
+    {"Spectrogram", "RF waterfall & duty cycle", 2},
+    {"Packet Mon", "Promiscuous pcap capture", 2},
+    {"Clients", "Probe-request station sniffer", 3},
+    {"Cameras", "Flag surveillance cameras", 3},
+    {"Harvester", "Passive EAPOL / PMKID grab", 3},
+    {"Probe Intel", "Preferred-network probe leaks", 3},
+    {"Fleet Hunter", "Multi-node RDF trilateration", 3},
+    {"Topology Map", "Client / AP association graph", 3}};
 constexpr int kReconItemCount =
     static_cast<int>(sizeof(kReconItems) / sizeof(kReconItems[0]));
-constexpr int kMenuPerPage = 6;
-constexpr int kMenuFirstY = 50;
-constexpr int kMenuRowPitch = 32;
-constexpr int kMenuRowHeight = 30;
 
 int reconVisibleItemCount() {
   if (reconCategory < 0) return kReconCategoryCount;
@@ -1733,6 +1869,16 @@ String reconItemLabel(int index) {
     return "Saved (" + String(savedCount) + ")";
   }
   return String(kReconItems[index].label);
+}
+
+String reconItemDetail(int index) {
+  if (index < 0 || index >= kReconItemCount) return "";
+  return String(kReconItems[index].detail);
+}
+
+// One Recon menu card: a bold title over a muted description (shared renderer).
+void drawReconCard(int row, const String& title, const String& detail) {
+  drawMenuCard(kMenuFirstY + row * kMenuRowPitch, title, detail, kAccent);
 }
 
 void launchReconItem(int index) {
@@ -1790,25 +1936,28 @@ void drawReconMenu() {
   const int pages = reconPageCount();
   if (reconPage < 0 || reconPage >= pages) reconPage = 0;
   display.fillScreen(kBackground);
-  const String title = reconCategory < 0 ? "RECON" : kReconCategories[reconCategory];
-  const String detail = reconCategory < 0 ? "choose a tool group" : "Recon / " + title;
-  drawHeader(title, pages > 1 ? detail + " " + String(reconPage + 1) +
-                                      "/" + String(pages) : detail);
+  const bool picker = reconCategory < 0;
+  const String title = picker ? "RECON" : kReconCategories[reconCategory];
+  String detail = picker ? "choose a tool group" : "Recon / " + title;
+  if (pages > 1) detail += " " + String(reconPage + 1) + "/" + String(pages);
+  drawHeader(title, detail);
   const int start = reconPage * kMenuPerPage;
   for (int row = 0; row < kMenuPerPage; ++row) {
     const int position = start + row;
     if (position >= reconVisibleItemCount()) break;
-    const String label = reconCategory < 0 ? String(kReconCategories[position])
-                                          : reconItemLabel(reconItemIndex(position));
-    drawButton(12, kMenuFirstY + row * kMenuRowPitch, 216, kMenuRowHeight, label);
+    if (picker) {
+      drawReconCard(row, kReconCategories[position],
+                    kReconCategoryDetails[position]);
+    } else {
+      const int index = reconItemIndex(position);
+      drawReconCard(row, reconItemLabel(index), reconItemDetail(index));
+    }
   }
-  if (pages > 1) {
-    drawThreeButtonFooter("Back", "Prev", "Next");
-  } else if (reconCategory < 0) {
-    drawFooter("Home", "Home");
-  } else {
-    drawFooter("< Groups", "Home");
-  }
+  // Footer matches Network Tools: Back (Home from the picker, Groups from a
+  // tool list), then Prev/Next only while more pages remain.
+  drawSmallButton(4, 280, 72, 36, picker ? "Home" : "Groups", kMuted);
+  if (reconPage > 0) drawSmallButton(84, 280, 72, 36, "Prev", kAccent);
+  if (reconPage + 1 < pages) drawSmallButton(164, 280, 72, 36, "Next", kAccent);
 }
 
 // Stable tool indices; grouping changes navigation only, not commands or View IDs.
@@ -1822,10 +1971,8 @@ const char* const kMonitorDescriptions[] = {
     "Combined Wi-Fi / BLE anomalies", "Inspect disconnect-frame evidence"};
 const uint8_t kMonitorGroups[] = {0, 0, 1, 0, 0, 0, 2, 2};
 const char* const kMonitorCategories[] = {"WI-FI", "BLUETOOTH", "ADVANCED"};
-const char* const kMonitorGroupDescriptions[] = {
-    "AP identity and Wi-Fi floods", "Bluetooth advertisement floods", "Combined detection and evidence"};
 constexpr int kMonitorItemCount = sizeof(kMonitorItems) / sizeof(kMonitorItems[0]);
-constexpr int kMonitorPerPage = 3;
+constexpr int kMonitorPerPage = 4;
 static_assert(sizeof(kMonitorGroups) / sizeof(kMonitorGroups[0]) == kMonitorItemCount, "Monitor groups must cover every tool");
 static_assert(sizeof(kMonitorDescriptions) / sizeof(kMonitorDescriptions[0]) == kMonitorItemCount, "Monitor descriptions must cover every tool");
 
@@ -1906,21 +2053,6 @@ void drawMonitorHeader(const String& title, bool running, const String& detail) 
   drawHeader(title, String(running ? "Running | " : "Stopped | ") + detail);
 }
 
-void drawMonitorCard(int row, const String& title, const String& state, const String& description, bool running) {
-  const int y = 48 + row * 68;
-#ifdef AWOK_MINI_DISPLAY
-  display.button(8, y, 224, 60, (title + " | " + state + " | " + description).c_str(), running ? kGood : kAccent);
-#else
-  display.drawRoundRect(scaleX(8), scaleY(y), scaleX(224), scaleY(60), 5, running ? kGood : kAccent);
-  display.setTextSize(2); display.setTextColor(ILI9341_WHITE, kBackground);
-  display.setCursor(scaleX(16), scaleY(y + 6)); display.print(title);
-  display.setTextSize(1); display.setTextColor(running ? kGood : kMuted, kBackground);
-  display.setCursor(scaleX(16), scaleY(y + 28)); display.print(state);
-  display.setTextColor(kMuted, kBackground);
-  display.setCursor(scaleX(16), scaleY(y + 44)); display.print(description);
-#endif
-}
-
 void openMonitorMenu() { monitorCategory = -1; monitorPage = 0; drawMonitorMenu(); }
 
 void drawMonitorMenu() {
@@ -1934,18 +2066,22 @@ void drawMonitorMenu() {
   for (int row = 0; row < kMonitorPerPage; ++row) {
     const int position = monitorPage * kMonitorPerPage + row;
     if (position >= monitorVisibleCount()) break;
+    const int y = kMenuFirstY + row * kMenuRowPitch;
     if (monitorCategory < 0) {
       int count = 0, active = 0;
       for (int i = 0; i < kMonitorItemCount; ++i) if (kMonitorGroups[i] == position) {
         ++count; if (monitorItemRunning(i)) ++active;
       }
-      drawMonitorCard(row, kMonitorCategories[position], String(count) + (count == 1 ? " tool | " : " tools | ") + String(active) + " running",
-                      kMonitorGroupDescriptions[position], active > 0);
+      // Running state rides the card outline (green) plus the count line.
+      drawMenuCard(y, kMonitorCategories[position],
+                   String(count) + (count == 1 ? " tool, " : " tools, ") + String(active) + " running",
+                   active > 0 ? kGood : kAccent);
     } else {
       const int index = monitorItemIndex(position);
       const bool running = monitorItemRunning(index);
-      drawMonitorCard(row, kMonitorItems[index], running ? "Running | tap to view" : "Stopped | tap to start",
-                      kMonitorDescriptions[index], running);
+      drawMenuCard(y, kMonitorItems[index],
+                   running ? "Running - tap to view" : String(kMonitorDescriptions[index]),
+                   running ? kGood : kAccent);
     }
   }
   if (monitorCategory < 0) drawSmallButton(4, 280, 232, 36, "Home", kMuted);
@@ -1961,7 +2097,7 @@ void drawMonitorMenu() {
 
 void handleMonitorTouch(int x, int y) {
   for (int row = 0; row < kMonitorPerPage; ++row) {
-    if (!gpsMenuHit(x, y, 8, 48 + row * 68, 224, 60)) continue;
+    if (!gpsMenuHit(x, y, 8, kMenuFirstY + row * kMenuRowPitch, 224, kMenuCardHeight)) continue;
     const int position = monitorPage * kMonitorPerPage + row;
     if (position >= monitorVisibleCount()) return;
     if (monitorCategory < 0) { monitorCategory = position; monitorPage = 0; drawMonitorMenu(); }
@@ -1980,22 +2116,26 @@ void handleMonitorTouch(int x, int y) {
   }
 }
 
+// Attack tools as danger-red cards, matching the shared menu look. The four
+// entries fit one page, so the footer is a single Home button.
+const char* const kAttackLabels[] = {"Beacon Flood", "Evil Portal", "Evil Twin",
+                                     "Probe Lure"};
+const char* const kAttackDetails[] = {
+    "Flood fake AP beacons", "Captive-portal credential grab",
+    "Clone the last-scanned AP", "Answer probes to lure clients"};
+constexpr int kAttackCount =
+    static_cast<int>(sizeof(kAttackLabels) / sizeof(kAttackLabels[0]));
+
 void drawAttacksMenu() {
   currentView = View::kAttacks;
   display.fillScreen(kBackground);
   drawHeader("ATTACK TOOLS", "active RF | authorized use only");
-  drawButton(12, 44, 216, 38, "Beacon Flood");
-  drawButton(12, 86, 216, 38, "Evil Portal");
-  drawButton(12, 128, 216, 38, "Evil Twin");
-  drawButton(12, 170, 216, 38, "Probe Lure");
-  display.setTextSize(1);
-  display.setTextColor(kMuted, kBackground);
-  display.setCursor(scaleX(18), scaleY(216));
-  display.print("Evil Twin/Probe Lure use the last-");
-  display.setCursor(scaleX(18), scaleY(228));
-  display.print("scanned SSID. Deauth: under an AP.");
+  for (int row = 0; row < kAttackCount; ++row) {
+    drawMenuCard(kMenuFirstY + row * kMenuRowPitch, kAttackLabels[row],
+                 kAttackDetails[row], kBad);
+  }
   drawConfirmBanner();
-  drawFooter("Home", "Home");
+  drawSmallButton(4, 280, 232, 36, "Home", kMuted);
 }
 
 void sortWifi() {
@@ -2052,7 +2192,7 @@ void showToolMemoryError(const char* tool) {
   display.print("Tool could not start.");
   display.setCursor(scaleX(6), scaleY(80));
   display.print("Check Serial Monitor.");
-  drawFooter("Home", "Home");
+  drawFooter("Back", "Home");  // overlay: any tap returns to the Home tiles
 }
 
 void showRadioError(const char* message) {
@@ -2068,13 +2208,18 @@ void showRadioError(const char* message) {
   display.print("Radio initialization failed.");
   display.setCursor(scaleX(6), scaleY(80));
   display.print("Check Serial Monitor for details.");
-  drawFooter("Home", "Home");
+  drawFooter("Back", "Home");  // overlay: any tap returns to the Home tiles
 }
 
 bool ensureWifiStation(bool releaseBle) {
   // Wi-Fi-only tools free the BLE controller to leave more runtime headroom.
   // Dual-radio views pass releaseBle=false to keep BLE up alongside Wi-Fi.
-  if (releaseBle) releaseBleMemory();
+  if (releaseBle) {
+    releaseBleMemory();
+#ifdef AWOK_GATT_AUDIT
+    if (gattAuditActive()) return false;  // disconnect could not finish safely
+#endif
+  }
   if (WiFi.getMode() == WIFI_STA) return true;
   logMemory("before Wi-Fi init");
   // A failed esp_wifi_init logs 0x3001 on its deinit cleanup (driver never
@@ -2122,6 +2267,14 @@ void releaseBleMemory() {
   // (enforced in awok_common.h) cleans up the scan timer BEFORE port teardown;
   // 2.5.0 instead dereferenced the freed NPL function table in ~NimBLEScan.
   if (!NimBLEDevice::isInitialized()) return;
+#ifdef AWOK_GATT_AUDIT
+  // NimBLEClient owns a host callout. Delete it while the host is alive;
+  // deinit(true) would otherwise destroy it after nimble_port_deinit().
+  if (gattAuditActive()) {
+    if (!stopGattAuditForRadio()) return;
+    Serial.println("[gatt] audit closed for radio switch");
+  }
+#endif
   NimBLEScan* scan = NimBLEDevice::getScan();
   if (scan) {
     scan->stop();
@@ -2469,7 +2622,26 @@ void initializeDisplayAndTouch() {
 #ifdef AWOK_HEADLESS
   display.begin();
   display.setTextWrap(false);
+#ifdef AWOK_LILYGO_T_DONGLE_C5_BRIDGE
+  // LCD and microSD share the bus and have independent chip selects.
+  pinMode(AwokPins::kDisplayCs, OUTPUT);
+  digitalWrite(AwokPins::kDisplayCs, HIGH);
+  pinMode(AwokPins::kSdCs, OUTPUT);
+  digitalWrite(AwokPins::kSdCs, HIGH);
+  SPI.begin(AwokPins::kSpiSck, AwokPins::kSpiMiso, AwokPins::kSpiMosi,
+            AwokPins::kSdCs);
+  bridgePanel.begin();
+#endif
 #elif defined(AWOK_MINI_DISPLAY)
+#ifdef AWOK_CARDPUTER_V11
+  if (!display.begin()) {
+    while (true) delay(1000);
+  }
+  pinMode(AwokPins::kSdCs, OUTPUT);
+  digitalWrite(AwokPins::kSdCs, HIGH);
+  SPI.begin(AwokPins::kSpiSck, AwokPins::kSpiMiso, AwokPins::kSpiMosi,
+            AwokPins::kSdCs);
+#else
   for (int pin : {AwokPins::kButtonLeft, AwokPins::kButtonCenter,
                   AwokPins::kButtonUp, AwokPins::kButtonRight,
                   AwokPins::kButtonDown}) {
@@ -2485,6 +2657,7 @@ void initializeDisplayAndTouch() {
   if (!display.begin()) {
     while (true) delay(1000);
   }
+#endif
   display.setTextWrap(false);
 #elif defined(PANCAKE_DISPLAY)
   // Pancake C5: ST7796 on the FSPI bus, FT6336 capacitive touch on I2C. Touch
@@ -2507,10 +2680,21 @@ void initializeDisplayAndTouch() {
   digitalWrite(AwokPins::kDisplayCs, HIGH);
   digitalWrite(AwokPins::kTouchCs, HIGH);
   digitalWrite(AwokPins::kSdCs, HIGH);
+#ifdef AWOK_CLASSIC_CYD
+  SPI.begin(AwokPins::kSpiSck, AwokPins::kSpiMiso, AwokPins::kSpiMosi, -1);
+  cydDisplaySpi.begin(AwokPins::kDisplaySpiSck, AwokPins::kDisplaySpiMiso,
+                      AwokPins::kDisplaySpiMosi, -1);
+  touch.begin();
+#else
   touch.begin();
   SPI.end();
   SPI.begin(AwokPins::kSpiSck, AwokPins::kSpiMiso, AwokPins::kSpiMosi, -1);
+#endif
+#ifdef AWOK_CYD_NATIVE_320X240
+  touch.setRotation(3);
+#else
   touch.setRotation(0);
+#endif
   pinMode(AwokPins::kBacklight, OUTPUT);
   digitalWrite(AwokPins::kBacklight, AwokPins::kBacklightOn ? HIGH : LOW);
   display.begin(27000000);
@@ -2567,6 +2751,9 @@ void setup() {
     delay(kBootScreenMs);
   }
   initializeSdCard();
+#ifdef AWOK_LILYGO_T_DONGLE_C5_BRIDGE
+  bridgePanel.update(sdReady, false, false);
+#endif
   initGps();
   initializeFirmwareAudit();
   recordFirmwareAudit(
@@ -2580,6 +2767,9 @@ void setup() {
 #ifdef AWOK_HEADLESS
   bridgeBleBegin();  // orange bridge: run the BLE GATT server the phone connects
                      // to; commands dispatch locally or relay to the white chip.
+#ifdef AWOK_LILYGO_T_DONGLE_C5_BRIDGE
+  bridgePanel.update(sdReady, true, g_bridgePhoneConnected);
+#endif
 #else
   remoteBegin();  // Touch and Mini alike: listen for the orange bridge chip so
                   // a phone can drive this screen chip over ESP-NOW.
@@ -2604,6 +2794,11 @@ void loop() {
   }
 #endif
 #ifdef AWOK_MINI_DISPLAY
+#ifdef AWOK_CARDPUTER_V11
+  M5Cardputer.update();
+  handleCardputerEscape();
+  handleCardputerTextInput();
+#endif
   updateMiniJoystick();
 #endif
   handleTouch();
@@ -2645,6 +2840,9 @@ void loop() {
   updateLink();
 #ifdef AWOK_HEADLESS
   bridgeServiceCommand();  // run any phone command off the BLE host task
+#ifdef AWOK_LILYGO_T_DONGLE_C5_BRIDGE
+  bridgePanel.update(sdReady, true, g_bridgePhoneConnected);
+#endif
   // Bridge: stream live status to the phone about once a second (no ESP-NOW).
   static uint32_t lastBridgeStatusMs = 0;
   if (g_bridgePhoneConnected && millis() - lastBridgeStatusMs >= 1000) {
