@@ -258,6 +258,12 @@ constexpr int kI2cSda = 9;
 constexpr int kI2cScl = 10;
 constexpr int kTouchReset = 8;
 constexpr int kStatusLed = 27;  // single addressable RGB LED
+// Optional external GPS on free pins (shared GPS block below is scoped to the
+// non-Pancake C5 branch, so Pancake defines its own here).
+constexpr int kGpsUart = 1;
+constexpr int kGpsRx = 14;  // ESP RX <- GPS TX
+constexpr int kGpsTx = 13;  // ESP TX -> GPS RX
+constexpr unsigned long kGpsBaud = 115200;
 #else
 constexpr int kSpiSck = 6;
 #ifdef AWOK_LILYGO_T_DONGLE_C5_BRIDGE
